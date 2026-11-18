@@ -84,12 +84,7 @@ pub enum ExprKind<'src> {
     /// `x.f`, `x?.f`, `x[i]`, `x?.[i]`. `x.f` and `x["f"]` are the same node.
     Member { obj: Box<Expr<'src>>, key: MemberKey<'src>, optional: bool },
     /// `x[a:b]`, `x?.[a:b]`
-    Slice {
-        obj: Box<Expr<'src>>,
-        from: Option<Box<Expr<'src>>>,
-        to: Option<Box<Expr<'src>>>,
-        optional: bool,
-    },
+    Slice { obj: Box<Expr<'src>>, from: Option<Box<Expr<'src>>>, to: Option<Box<Expr<'src>>>, optional: bool },
     /// `name(args)`. Pipes are already folded in as the first argument.
     Call { callee: Callee<'src>, callee_span: Span, args: Vec<Expr<'src>> },
     /// A predicate argument (`{ ... }` or the bare form). Only the parser creates it,

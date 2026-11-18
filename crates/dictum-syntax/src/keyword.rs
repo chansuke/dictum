@@ -4,8 +4,20 @@
 
 /// Words the lexer never returns as identifiers.
 pub(crate) const RESERVED: &[&str] = &[
-    "true", "false", "nil", "let", "if", "else", "not", "and", "or", "in", "matches",
-    "contains", "startsWith", "endsWith",
+    "true",
+    "false",
+    "nil",
+    "let",
+    "if",
+    "else",
+    "not",
+    "and",
+    "or",
+    "in",
+    "matches",
+    "contains",
+    "startsWith",
+    "endsWith",
 ];
 
 /// Whether `name` is a reserved word.

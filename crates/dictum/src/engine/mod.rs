@@ -61,7 +61,12 @@ impl Checked {
 ///
 /// Syntax errors stop before checking (so the checker never sees `Error` nodes);
 /// otherwise all type errors are reported together.
-pub(crate) fn check(src: &str, name: Option<&str>, schema: &Arc<SchemaCore>, expected: &Type) -> Result<Checked, CompileError> {
+pub(crate) fn check(
+    src: &str,
+    name: Option<&str>,
+    schema: &Arc<SchemaCore>,
+    expected: &Type,
+) -> Result<Checked, CompileError> {
     // TODO:
     // let ast = dictum_syntax::parse(src).map_err(|d| compile_error(src, name, d))?;
     // let mut ir = dictum_check::check(&ast, schema, expected).map_err(...)?;
@@ -80,7 +85,11 @@ pub(crate) struct Prepared {
 
 impl Prepared {
     /// Compile the fast tree. `slots` assigns shared-cache slots (RuleSet only).
-    pub(crate) fn new(checked: Checked, schema: Arc<SchemaCore>, slots: Option<&[Option<analysis::CacheSlot>]>) -> Result<Prepared, CompileError> {
+    pub(crate) fn new(
+        checked: Checked,
+        schema: Arc<SchemaCore>,
+        slots: Option<&[Option<analysis::CacheSlot>]>,
+    ) -> Result<Prepared, CompileError> {
         todo!()
     }
 

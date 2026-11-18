@@ -91,8 +91,15 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
             None => (apply_rename_all(rust_name, attrs.rename_all), ident.span()),
         };
         if !dictum_syntax::is_identifier(&name) {
-            let why = if dictum_syntax::is_reserved(&name) { "is a reserved word in dictum" } else { "is not a dictum identifier" };
-            return Err(Error::new(name_span, format!("`{name}` {why}; use #[dictum(rename = \"...\")] or #[dictum(skip)]")));
+            let why = if dictum_syntax::is_reserved(&name) {
+                "is a reserved word in dictum"
+            } else {
+                "is not a dictum identifier"
+            };
+            return Err(Error::new(
+                name_span,
+                format!("`{name}` {why}; use #[dictum(rename = \"...\")] or #[dictum(skip)]"),
+            ));
         }
         if names.contains(&name) {
             return Err(Error::new(name_span, format!("two fields are named `{name}` in rules")));
