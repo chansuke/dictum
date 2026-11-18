@@ -1,7 +1,13 @@
 name = "dictum-formal"
-defaultTargets = ["Dictum"]
+defaultTargets = ["Dictum", "dictum-oracle"]
 
 [[lean_lib]]
 name = "Dictum"
 # A `sorry` is a warning in Lean; make it (and every other warning) fail the build.
+leanOptions = { warningAsError = true }
+
+# The definitions as a test oracle for the Rust differential tests (Oracle.lean).
+[[lean_exe]]
+name = "dictum-oracle"
+root = "Oracle"
 leanOptions = { warningAsError = true }
