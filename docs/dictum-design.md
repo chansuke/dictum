@@ -6,6 +6,8 @@
 
 dictumは[expr-lang](https://expr-lang.org/)（Go）の構文を引き継いだRust製の式言語で、ルールエンジンへの組み込みを第一の用途とする。ルールは一度コンパイルし、多数の事実データに対して安全かつ高速に繰り返し評価する。
 
+このドキュメントは言語と外部APIの仕様を定める。クレートの内部構成、各決定の理由、退けた案は[アーキテクチャ](architecture.md)（英語）にまとめた。
+
 ### 目標
 
 - expr-langと同じ構文（リテラル、演算子、述語、pipe、let）を受け付ける
@@ -34,8 +36,8 @@ dictumは[expr-lang](https://expr-lang.org/)（Go）の構文を引き継いだR
 | 金額 | `float` で扱う | `Decimal` 型（`decimal` feature） |
 | 比較の連鎖 `a < b < c` | `a < b && b < c` に展開。`b` を2回評価する | 同じく展開するが、`b` は1回だけ評価する |
 | `a == b == c` | `(a == b) == c` | 構文エラー |
-| マップの順序 | 不定 | 挿入順（`IndexMap`） |
-| `now()` | 実時刻 | 評価コンテキストが渡す時計。テストで固定できる |
+| マップの順序 | 不定 | マップリテラルは書いた順、事実データの `BTreeMap` はキー順。`HashMap` は事実データに使えない |
+| `now()` | 実時刻 | `Ctx::with_now` で渡した時刻。渡さずに呼ぶと実行時エラー |
 | 日時の型 | Goの `time` | `jiff` の `Timestamp` と `SignedDuration` |
 | 実行時エラー | `error` と panic が混在 | すべて `Result` |
 
@@ -50,12 +52,12 @@ flowchart LR
     subgraph compile["コンパイル時（ルール登録時に一度だけ）"]
         SRC["ルール文字列<br/>例: user.Age >= 18"] --> PARSE["Parse<br/>dictum-syntax<br/>出力: AST"]
         PARSE --> CHECK["Check<br/>dictum-check<br/>出力: 型付きIR"]
-        CHECK --> COMPILE["Compile<br/>dictum-eval<br/>出力: クロージャ木"]
+        CHECK --> COMPILE["Compile<br/>dictum<br/>出力: クロージャ木"]
         DERIVE["#[derive(Dictum)]<br/>dictum-derive"] -- 型情報 --> SCHEMA["Schema<br/>型情報だけを持つ<br/>全ルールで共有"]
         SCHEMA --> CHECK
     end
     subgraph eval["評価時（事実データごとに何度でも）"]
-        FACTS["事実データ<br/>derive済みの構造体<br/>ゼロコピーで参照"] -- 入力 --> RUN["rule.eval()<br/>dictum<br/>実行上限つき"]
+        FACTS["事実データ<br/>derive済みの構造体<br/>借用して読む"] -- 入力 --> RUN["rule.eval()<br/>dictum<br/>実行上限つき"]
         RUN --> RESULT["結果<br/>bool などの戻り値<br/>explain() で理由も"]
     end
     COMPILE -- コンパイル済みRule --> RUN
@@ -65,26 +67,29 @@ flowchart LR
 
 | クレート | 責務 | 主な依存 |
 | --- | --- | --- |
-| `dictum-syntax` | Lexer、Parser、AST、Span | なし |
-| `dictum-check` | `Type`、`Schema`、型付きIR | `dictum-syntax` |
-| `dictum-eval` | `Value`、Optimizer、クロージャコンパイル、組み込み関数、実行上限 | `dictum-check`、`jiff`、`regex`、`indexmap` |
-| `dictum-derive` | `#[derive(Dictum)]` | `syn`、`quote` |
-| `dictum` | 外部向けAPI（`Rule`、`RuleSet`、`explain`） | 上記すべて |
+| `dictum-syntax` | Lexer、Parser、AST、Span、`Diagnostic` と `ErrorCode`、組み込み関数の名前の一覧 | なし |
+| `dictum-check` | `Type`、構造体の型情報 `StructDesc`、型付きIR、Checker | `dictum-syntax`、`jiff` |
+| `dictum` | 外部向けAPI（`Rule`、`RuleSet`、`Schema`、`Ctx`）と、非公開の評価エンジン（`Value`、定数の畳み込み、クロージャコンパイル、組み込み関数、実行上限、explain） | 上記すべて、`regex`、`libm` |
+| `dictum-derive` | `#[derive(Dictum)]` | `syn`、`quote`、`dictum-syntax` |
+
+評価エンジンは `dictum` の非公開モジュールに置く。別クレートにすると、`dictum` から使うために評価エンジンの内部型を公開しなければならず、利用者からもimportできてしまうためである。
 
 ### MSRVと `no_std`
 
 MSRVはRust 1.85。edition 2024 は1.85以上を要求するので、これより下げられない。MSRVを上げるのはマイナーバージョン更新時だけとし、CIで常に1.85をテストする。
 
-全クレートを `#![no_std]` + `alloc` で書き、`std` は既定で有効なfeatureにする。
+全クレートを `#![no_std]` + `alloc` で書き、`std` は既定で有効なfeatureにする。`std` の有無で評価結果は変わらない。
 
 | 依存 | `no_std` での使い方 |
 | --- | --- |
-| `regex` | `default-features = false` で `alloc` のみ。`std` がないと内部でスピンロックを使うので、気になる環境では `regex-automata` を直接使う |
+| `regex` | `default-features = false` で `alloc` のみ（1.13.1のソースで確認）。`std` がないと内部でスピンロックを使う |
 | `jiff` | `alloc` のみ。タイムゾーンDBは使えないので、`timezone()` は `std` が必要 |
-| `indexmap` | ハッシュ関数を明示する（`foldhash`） |
+| `libm` | `floor` `ceil` `round` `pow` は `core` にないので、`std` の有無にかかわらず常に `libm` を使う。ターゲット間で結果がビット単位で一致する |
 | `rust_decimal` | `default-features = false` |
 
-エラー型は `core::error::Error` を実装する。`now()` は評価コンテキスト `Ctx` から時計を受け取るので `no_std` でもそのまま動く。`no_std` でのビルドは `thumbv7em-none-eabihf` 向けにCIで確認する。
+ハッシュ関数を使うデータ構造は持たない。定数配列への `in` はソート済み配列の二分探索、マップリテラルは書いた順の配列で表す。
+
+エラー型は `core::error::Error` を実装する。時刻は呼び出し側が `Ctx` に渡すので、時計のない `no_std` 環境でも `now()` を呼ばないルールはそのまま動く。`no_std` でのビルドは `thumbv7em-none-eabihf` 向けにCIで確認する。
 
 ## 構文仕様
 
@@ -110,13 +115,14 @@ program     = { "let" ident "=" expr ";" } expr ;
 expr        = conditional ;
 conditional = pipe [ "?" [ expr ] ":" expr ]      (* a ?: b は a ? a : b *)
             | "if" expr "{" expr "}" "else" ( "{" expr "}" | conditional ) ;
-pipe        = binary { "|" ident "(" [ args ] ")" } ;
+pipe        = binary { "|" call } ;
 binary      = unary { binop unary } ;        (* 優先順位は下の表 *)
 unary       = ( "not" | "!" | "-" | "+" ) unary | postfix ;
-postfix     = primary { "." ident | "?." ident | "[" index "]" | "?.[" index "]" | "(" [ args ] ")" } ;
+postfix     = primary { "." ident | "?." ident | "[" index "]" | "?.[" index "]" } ;
 index       = expr | [ expr ] ":" [ expr ] ;
-primary     = literal | ident | "$env" | pointer | "." ident
+primary     = literal | call | ident | "$env" | pointer | "." ident
             | "(" expr ")" | "[" [ args ] "]" | "{" [ pairs ] "}" ;
+call        = ident "(" [ args ] ")" ;
 pointer     = "#" [ "index" | "acc" ] ;
 args        = arg { "," arg } [ "," ] ;
 arg         = expr | "{" expr "}" ;                (* 述語の括弧は省略可 *)
@@ -124,7 +130,7 @@ pairs       = key ":" expr { "," key ":" expr } [ "," ] ;
 key         = ident | string | "(" expr ")" ;
 ```
 
-`a | f(b)` はパース時に `f(a, b)` へ脱糖する。述語内の `.Field` は `#.Field` に変換する。
+`a | f(b)` はパース時に `f(a, b)` へ脱糖する。述語内の `.Field` は `#.Field` に変換する。関数を呼べるのは `名前(引数)` の形だけで、関数は値として扱えない。`f(x)(y)` や `user.Name()` のように名前以外の式に `(` を続けるとE0108になる。メソッド呼び出しはv0.1では扱わない。
 
 ### 演算子の優先順位（低い→高い）
 
@@ -143,7 +149,7 @@ key         = ident | string | "(" expr ")" ;
 | 10 | 単項 `-` `+` | 前置 | 90 |
 | 11 | `**` `^` | 右 | 100 |
 | 12 | `??` | 左 | 500 |
-| 13 | `.` `?.` `[]` `[:]` `()` | 後置 | |
+| 13 | `.` `?.` `[]` `[:]` | 後置 | |
 
 順位は[Go版の `operator.go` と `parser.go`](https://github.com/expr-lang/expr/tree/master/parser)（2026年7月のmain）で確認し、すべてGo版に合わせる。
 
@@ -152,46 +158,50 @@ key         = ident | string | "(" expr ")" ;
 - `-2 ** 2` は `-(2 ** 2)`。`a | f() ? x : y` は `f(a) ? x : y`。
 - 大小比較は連鎖できる。`18 <= user.Age < 65` は `18 <= user.Age && user.Age < 65` と同じ意味で、短絡評価する。中央の `user.Age` は1回だけ評価し、explainでは比較ごとの子ノードになる。
 - `<` と `>` のように向きを混ぜてもよい（Go版と同じ）。`==` `!=` `in` などは連鎖できず、`a == b == c` は構文エラー。
+- 式の入れ子は128段（`MAX_DEPTH`）までで、超えるとE0105。後段の処理と評価はすべて再帰で書くので、この上限でスタックの使用量を抑える。`&&` と `||` の並びは1つのノードにまとめるので、長い論理式はこの上限に当たらない。
 
 ## ASTとSpan
 
-全ノードがソース上のバイト範囲 `Span` を持ち、型エラーも実行時エラーもexplainもこのSpanで位置を示す。識別子はインターンして `Symbol`（`u32`）で持つ。
+全ノードがソース上のバイト範囲 `Span` を持ち、型エラーも実行時エラーもexplainもこのSpanで位置を示す。ASTは1回のコンパイルの間しか使わず、型付きIRで名前がすべて番号に置き換わるので、識別子はインターンせずソースを借用する（`&'src str`）。
 
 ```rust
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span { pub start: u32, pub end: u32 }   // バイトオフセット
 
-pub struct Expr { pub kind: ExprKind, pub span: Span }
+pub struct Program<'src> { pub lets: Vec<Let<'src>>, pub body: Expr<'src> }
+pub struct Let<'src> { pub name: Ident<'src>, pub value: Expr<'src> }
+pub struct Expr<'src> { pub kind: ExprKind<'src>, pub span: Span }
 
-pub enum ExprKind {
+pub enum ExprKind<'src> {
     // リテラル
     Nil, Bool(bool), Int(i64), Float(f64),
-    Str(Box<str>), Bytes(Box<[u8]>),
-    Array(Vec<Expr>),
-    Map(Vec<(MapKey, Expr)>),
+    Str(Cow<'src, str>), Bytes(Cow<'src, [u8]>),   // エスケープがなければ借用
+    Array(Vec<Expr<'src>>),
+    Map(Vec<(MapKey<'src>, Expr<'src>)>),
     // 参照
-    Ident(Symbol),
-    Env,                                   // $env
-    Pointer(Pointer),                      // #, #index, #acc
+    Ident(&'src str),
+    Env,                                           // $env
+    Pointer(Pointer),                              // #, #index, #acc
     // 演算
-    Unary  { op: UnaryOp,  expr: Box<Expr> },
-    Binary { op: BinaryOp, lhs: Box<Expr>, rhs: Box<Expr> },
-    Member { obj: Box<Expr>, key: MemberKey, optional: bool },
-    Slice  { obj: Box<Expr>, from: Option<Box<Expr>>, to: Option<Box<Expr>> },
-    Call   { callee: Symbol, args: Vec<Expr> },
-    Predicate(Box<Expr>),                  // all(xs, { ... }) の本体
+    Unary   { op: UnaryOp, expr: Box<Expr<'src>> },
+    Binary  { op: BinaryOp, lhs: Box<Expr<'src>>, rhs: Box<Expr<'src>> },
+    Logic   { op: LogicOp, operands: Vec<Expr<'src>> },   // && と || の並び（2個以上）
+    Compare { first: Box<Expr<'src>>, rest: Vec<(CompareOp, Expr<'src>)> },  // 比較の連鎖
+    Member  { obj: Box<Expr<'src>>, key: MemberKey<'src>, optional: bool },
+    Slice   { obj: Box<Expr<'src>>, from: Option<Box<Expr<'src>>>, to: Option<Box<Expr<'src>>>, optional: bool },
+    Call    { callee: Callee<'src>, callee_span: Span, args: Vec<Expr<'src>> },
+    Predicate(Box<Expr<'src>>),                    // all(xs, { ... }) の本体
     // 制御
-    Conditional { cond: Box<Expr>, then: Box<Expr>, otherwise: Box<Expr> },
-    Let { name: Symbol, value: Box<Expr>, body: Box<Expr> },
+    Conditional { cond: Box<Expr<'src>>, then: Box<Expr<'src>>, otherwise: Box<Expr<'src>> },
     // エラー回復
-    Error,                                 // 構文エラーの箇所。Parserが置く
+    Error,                                         // 構文エラーの箇所。Parserが置く
 }
 
-pub enum MemberKey { Field(Symbol), Index(Box<Expr>) }
+pub enum Callee<'src> { Builtin(Builtin), Func(&'src str) }   // 組み込み関数か、Schemaの関数
 pub enum Pointer { Current, Index, Acc }
 ```
 
-- pipeと述語内の `.Field` はパーサで脱糖するので、ASTに専用ノードはない。
+- pipe、述語内の `.Field`、`?:` はパーサで脱糖するので、ASTに専用ノードはない。`let` は文法どおりプログラムの先頭にだけ置ける。
 - `user.Name` と `user["Name"]` はどちらも `Member` になり、キーが定数ならCheckerがフィールド番号に解決する。
 - 初期実装は `Box` で組む。パース速度が問題になったらアリーナ化を検討する。
 
@@ -204,17 +214,19 @@ pub enum Type {
     Any, Nil, Bool, Int, Float, String, Bytes, Time, Duration,
     #[cfg(feature = "decimal")]
     Decimal,
-    Array(Box<Type>),
-    Map(Box<Type>, Box<Type>),
-    Option(Box<Type>),
-    Struct(Arc<StructType>),        // deriveが生成
-    Func(Arc<FuncSig>),
-    Error,                          // 型エラー後の置き換え。連鎖エラーを止める
+    Array(Arc<Type>),
+    Map(Arc<Type>),                 // キーは常に文字列
+    Option(OptionType),             // Type::option(t) で作る
+    Struct(&'static StructDesc),    // deriveが static として生成
 }
 
-pub struct StructType { pub name: &'static str, pub fields: Vec<Field> }
-pub struct Field { pub name: &'static str, pub ty: Type }
+pub struct StructDesc { name: &'static str, fields: &'static [FieldDesc] }
+pub struct FieldDesc { name: &'static str, ty: fn() -> Type }
 ```
+
+- `Type` に関数の型とエラー用の型はない。関数は値でないので関数の型は要らず、型エラーの箇所はChecker内部の型で印を付けるので、型付きIRに入る `Type` は常に実際の型になる。
+- `OptionType` の中身は非公開で、`Option<Option<T>>` や `Option<Nil>` は作れない。
+- `StructDesc` は `static` に置くので、アドレスの同一性が型の同一性になる。`FieldDesc::ty` を関数にしているのは、`static` の初期化式で `Arc` を作れず、また再帰的な構造体（`children: Vec<Node>`）を遅延初期化なしで表すためである。
 
 ### 型付け規則（主なもの）
 
@@ -223,32 +235,75 @@ pub struct Field { pub name: &'static str, pub ty: Type }
 | `Int + Int` | オーバーフローで実行時エラー | `Int` |
 | `Int + Float` | `Int` を `Float` に昇格 | `Float` |
 | `a / b` | `Int` と `Float` のどの組み合わせでも | `Float` |
+| `a ** b` | | `Float` |
 | `Decimal + Int` | `Int` を `Decimal` に昇格 | `Decimal` |
 | `Decimal / Decimal` | ゼロ除算と桁あふれは実行時エラー | `Decimal` |
 | `Decimal + Float` | コンパイルエラー。`decimal(x)` か `float(d)` で明示する | |
 | `String + String` | 連結 | `String` |
 | `s[i]`、`s[i:j]` | バイト位置。文字境界でなければ実行時エラー | `String` |
+| `xs[i]`（`xs: Array<T>`） | 負の添字は末尾から数える。範囲外は実行時エラー | `T` |
+| `m[k]`（`m: Map<T>`） | | `Option<T>` |
 | `Time - Time` | | `Duration` |
 | `x.f`（`x: Option<S>`） | コンパイルエラー。`?.` が必要 | |
 | `x?.f`（`x: Option<S>`, `f: T`） | | `Option<T>` |
+| `x?.f`（`x: S`） | `.` と同じ | `T` |
 | `a ?? b`（`a: Option<T>`, `b: T`） | | `T` |
 | `x in xs`（`xs: Array<T>`） | `x` は `T` と比較可能 | `Bool` |
 | `all(xs, p)` | `p` は `#: T` で `Bool` | `Bool` |
 | `x ⊕ Any` | 実行時に型を確認 | 演算子による |
 
-`Decimal` は `rust_decimal::Decimal`。構文を変えないため専用リテラルは設けず、事実データのフィールドか `decimal("19.99")` で作る。定数引数の `decimal()` はOptimizerがコンパイル時に値へ畳み込む。
+`Decimal` は `rust_decimal::Decimal`。構文を変えないため専用リテラルは設けず、事実データのフィールドか `decimal("19.99")` で作る。定数引数の `decimal()` はコンパイル時に値へ畳み込む。
 
 ### Schema API
 
+事実データの根になる構造体を1つ `#[derive(Dictum)]` し、そのフィールドをルールの変数にする。`$env` はこの根の構造体を指す。
+
 ```rust
-let schema = Schema::builder()
-    .var::<User>("user")                       // #[derive(Dictum)] の型情報
-    .var_type("tags", Type::array(Type::String))
-    .func("double", |x: i64| x * 2)            // シグネチャは型から推論
-    .build();                                  // Arcで共有できる
+#[derive(Dictum)]
+#[dictum(rename_all = "PascalCase")]      // ルールでは user.Age と書く（Go版と同じ）
+pub struct User {
+    pub age: i64,
+    pub group: String,
+    pub email: Option<String>,
+    pub tags: Vec<String>,
+    pub attrs: Dynamic,                   // ルールでは any 型（JSONの属性など）
+    #[dictum(skip)]
+    pub password_hash: [u8; 32],
+}
+
+/// スキーマの根。フィールドがルールの変数 user と order になる
+#[derive(Dictum)]
+pub struct Facts<'a> { pub user: &'a User, pub order: &'a Order }
+type F = Facts<'static>;
+
+let schema: Schema<F> = Schema::<F>::builder()
+    .pure_func("isHoliday", |t: Timestamp| is_holiday(t))
+    .build()?;                            // Cloneは Arc の複製
 ```
 
-`#[derive(Dictum)]` はフィールドのRust型から `Type` を作る。`String` → `String`、`Vec<T>` → `Array`、`Option<T>` → `Option`、`HashMap<String, T>` → `Map`、入れ子の構造体 → `Struct`。`#[dictum(rename = "Age")]` で式中の名前を変えられる。
+- 変数を名前と型で1つずつ登録するAPIはない。変数の一覧が事実データの型とは別にあると、両者をそろえ続ける必要があるためである。複数のデータ源は、根の構造体に参照のフィールドとして並べる。
+- `Schema<F>` は事実データの型 `F` を型引数に持つ。`F` は根の構造体の `'static` 版で、`Facts<'a>` のように部品を借用する根も、`Facts<'static>` に対してコンパイルしたルールで評価できる。
+
+`#[derive(Dictum)]` はフィールドのRust型から `Type` を作る。対応は次のとおりで、これ以外の型はRustのコンパイルエラーになる。
+
+| Rust型 | dictumの型 |
+| --- | --- |
+| `bool` | `Bool` |
+| `i8` `i16` `i32` `i64` `u8` `u16` `u32` | `Int` |
+| `f32` `f64` | `Float` |
+| `String` `&str` `Box<str>` | `String` |
+| `jiff::Timestamp`、`jiff::SignedDuration` | `Time`、`Duration` |
+| `Option<T>` | `Option` |
+| `Vec<T>` `Box<[T]>` `&[T]` | `Array` |
+| `BTreeMap<String, T>` | `Map` |
+| `&T` `Box<T>` | `T` と同じ |
+| `dictum::Dynamic` | `Any` |
+| derive済みの構造体 | `Struct` |
+
+- `HashMap` は使えない。反復順が決まらず、`keys(m)` の結果が実行ごとに変わるためである。
+- `u64`、`usize`、`i128` は `int`（`i64`）に収まらない値を持ちうるので使えない。
+- 型引数を持つ構造体とenumはderiveできない。`StructDesc` を `static` に置くので、型ごとに別の記述子を作れないためである。
+- 式中の名前は `#[dictum(rename_all = "PascalCase" | "camelCase")]` と `#[dictum(rename = "Age")]` で変えられる。予約語（`contains` など）や識別子として不正な名前はderiveがエラーにする。`#[dictum(skip)]` のフィールドはルールから見えない。
 
 ## 評価エンジン
 
@@ -256,51 +311,64 @@ let schema = Schema::builder()
 
 ### Value
 
+`Value` の内部表現は `dictum` の外に公開しない。
+
 ```rust
-pub enum Value<'a> {
+pub struct Value<'a>(Repr<'a>);
+
+enum Repr<'a> {
     Nil, Bool(bool), Int(i64), Float(f64),
     #[cfg(feature = "decimal")]
     Decimal(rust_decimal::Decimal),
-    Str(Cow<'a, str>),
-    Bytes(Cow<'a, [u8]>),
+    Str(Str<'a>),               // Borrowed(&'a str) | Shared(Arc<str>)
+    Bytes(Bytes<'a>),
     Time(jiff::Timestamp),
     Duration(jiff::SignedDuration),
-    Array(Cow<'a, [Value<'a>]>),
-    Map(Arc<IndexMap<Arc<str>, Value<'a>>>),
-    Object(&'a dyn Object),                  // derive済みの構造体を借用
+    Array(Seq<'a>),             // Borrowed(&'a dyn SeqView) | Owned(Arc<[Value]>) | Range { from, to }
+    Map(MapRef<'a>),            // Borrowed(&'a dyn MapView) | Owned(Arc<[(Arc<str>, Value)]>)
+    Object(&'a dyn Object),     // derive済みの構造体を借用
 }
 
-pub trait Object: Send + Sync {
-    fn struct_type(&self) -> &'static StructType;
+pub trait Object {
+    fn desc(&self) -> &'static StructDesc;
     fn field(&self, id: FieldId) -> Value<'_>;   // 名前でなく番号で引く
 }
 ```
 
-戻り値を保存したいときは `into_owned()` で `Value<'static>` にする。
+事実データのうち、何を借用し何をコピーするかは次のとおり。
+
+- 借用する：文字列の中身、入れ子の構造体、配列、マップ。配列とマップは `SeqView` と `MapView` を通して要素を読むときに値を作るので、`Vec<String>` のフィールドを `Vec<Value>` に変換することはない。
+- コピーする：スカラー（`bool`、整数、浮動小数、日時、期間）。
+- `Arc` で持つ：評価中に作った値（`filter` や `map` の結果、文字列の連結など）。
+- `1..n` は配列を作らず、反復するときに要素を数える。
+
+`Object` は `Send + Sync` を要求しない。事実データは1回の評価の間、1つのスレッドで借用するだけだからである。ルールの結果は型引数 `T` の値に変換して返すので、利用者が `Value` を扱うことはない。
 
 ### クロージャコンパイル
 
 ```rust
-type Node = Box<dyn for<'a> Fn(&mut Frame<'a>) -> Result<Value<'a>, EvalError> + Send + Sync>;
+type Node<K> = Box<dyn for<'a> Fn(&mut Frame<'a>) -> Result<K::Out<'a>, Fault> + Send + Sync>;
 
-pub struct Frame<'a> {
-    root: &'a dyn Object,      // 事実データ
-    slots: Vec<Value<'a>>,     // let 変数
-    pointers: Vec<Value<'a>>,  // #, #index, #acc のスタック
+struct Frame<'a> {
+    root: &'a dyn Object,             // 事実データの根
+    now: Option<jiff::Timestamp>,     // now() の値。None なら now() が ClockUnset
+    slots: Vec<Value<'a>>,            // let 変数。本体の前に順に評価する
+    scopes: Vec<Scope<'a>>,           // #, #index, #acc。内側の述語が最後
     budget: Budget,
-    clock: &'a dyn Clock,
-    cache: Vec<Option<Value<'a>>>,  // RuleSet の共通部分式（後述）
+    cache: Vec<Option<Value<'a>>>,    // RuleSet の共通部分式（後述）
 }
 ```
 
-- 型が確定しているので、`Int + Int` などは専用クロージャを生成し、実行時の型分岐を省く。
+- `K` はdictumの型に対応する（`IntK` なら `i64`、`BoolK` なら `bool`、型が決まらなければ `Value`）。`Int + Int` は2つの `Node<IntK>` を組み合わせるだけで、実行時の型分岐も `Value` への詰め替えもない。
 - `&&` と `||` は短絡評価。述語関数（`all` など）も結果が決まった時点で止める。
+- `Frame` は評価のたびに作って捨てる。コンパイル済みのルールは可変な状態を持たないので `Send + Sync` のままである。
 - ベンチマークで速度不足が分かったときに、クロージャ木をバイトコードVMに後から差し替える。
 
-### Optimizer（クロージャ生成の前）
+### 最適化（クロージャ生成の前）
 
-- 定数の畳み込み：`60 * 60 * 24` → `86400`
-- 定数配列への `in`：ハッシュ集合に置き換える
+- 定数の畳み込み：`60 * 60 * 24` → `86400`。演算の意味を二重に実装しないよう、定数の部分木をクロージャにして実行し、その値で置き換える。実行時エラーになる部分木は畳み込まずに残す（`false && 1/0 > 0` もコンパイルできる）
+- `pure_func` で登録した関数を定数の引数で呼んでいる箇所も、コンパイル時に呼んで畳み込む
+- 定数配列への `in`：ソート済み配列の二分探索にする（要素が8個未満なら線形探索）
 - `x in 1..100`：配列を作らず範囲チェックにする
 - 定数パターンの `matches`：コンパイル時に `Regex` を構築する
 
@@ -308,17 +376,16 @@ pub struct Frame<'a> {
 
 ```rust
 pub struct Limits {
-    pub max_steps: u64,        // コレクションの反復回数の合計
-    pub max_alloc_items: u64,  // 生成する配列・文字列の要素数の合計
-    pub max_depth: u32,        // 述語の入れ子の深さ
+    pub max_steps: u64,   // 反復した要素数の合計。超えると StepLimit（E0305）
+    pub max_alloc: u64,   // 確保した要素数とバイト数の合計。超えると AllocLimit（E0306）
 }
 ```
 
-各ノードで数えると遅いので、反復と確保の箇所だけで数える。`1..n` や `repeat` は確保する前に要素数を予算から引く。超えたら `EvalErrorKind::BudgetExceeded` のエラーを返す。
+各ノードで数えると遅いので、データの量に比例する処理（述語の反復、`in`、`join`、`sum` など）と確保の箇所だけで数える。確保は実行する前に予算から引くので、`repeat("x", 1 << 40)` は確保を試みずにエラーになる。入れ子の深さは構文の段階で `MAX_DEPTH` に制限するので、`Limits` には含めない。
 
 ## 組み込み関数
 
-expr-langの組み込み関数をすべて提供し、ルールでよく使うものをMVPに入れる。各関数はシグネチャを持ち、Checkerが引数の型を検査する。
+expr-langの組み込み関数をすべて提供し、ルールでよく使うものをMVPに入れる。各関数はシグネチャを持ち、Checkerが引数の型を検査する。組み込み関数の名前は `dictum-syntax` の一覧1つで管理し、Checkerと評価エンジンはその一覧を網羅的に照合する。関数を一覧に足すと、型付けと実装の両方を書くまでビルドが通らない。
 
 | カテゴリ | MVP | その後 |
 | --- | --- | --- |
@@ -331,48 +398,79 @@ expr-langの組み込み関数をすべて提供し、ルールでよく使う�
 | 日時 | `now` `duration` `date` | `timezone` |
 | その他 | `get` | ビット演算 `bitand` `bitor` など |
 
-`indexOf` は添字と同じくバイト位置を返すので、`s[indexOf(s, "x"):]` がそのまま使える。一方、`len` は文字数を返すので、ASCII以外を含む文字列では `len` の値を添字の計算に使えない。
+`indexOf` は添字と同じくバイト位置を返すので、`s[indexOf(s, "x"):]` がそのまま使える。一方、`len` は文字数を返すので、ASCII以外を含む文字列では `len` の値を添字の計算に使えない。誤って文字の途中を指した場合は `CharBoundary`（E0304）になり、エラーには添字がバイト位置であることを説明するヘルプが付く。
+
+`duration(s)` はGo版と同じ書式（`1h30m`、`-1.5h`、`300ms`）を受け付ける。`date(s)` はRFC 3339を受け付け、オフセットのない日付や日時はUTCとして読む。
 
 ### ユーザー定義関数
 
 ```rust
-let schema = Schema::builder()
-    .func("isHoliday", |d: Timestamp| -> bool { /* ... */ })
-    .func_fallible("rate", |code: &str| -> Result<f64, MyError> { /* ... */ })
-    .build();
+let schema = Schema::<F>::builder()
+    .pure_func("isHoliday", |d: Timestamp| -> bool { /* ... */ })
+    .func("rate", |code: &str| -> Result<f64, MyError> { /* ... */ })
+    .build()?;
 ```
 
-引数と戻り値のRust型から `FuncSig` を作るので、型を手で書く必要はない。関数には副作用がないことを前提とする。同じ引数に必ず同じ値を返す関数には `pure` を指定でき、引数が定数ならOptimizerが畳み込む。
+引数と戻り値のRust型からシグネチャを作るので、型を手で書く必要はない。ただし、クロージャの引数には型注釈が要る。引数に使える型は `bool` `i64` `f64` `&str` `Timestamp`、戻り値は `bool` `i64` `f64` `String` と、それらの `Result<_, E>`（`E: core::error::Error + Send + Sync`）である。`Err` を返すと `EvalErrorKind::Function` になる。
+
+関数には副作用がないことを前提とし、純粋かどうかは登録するメソッドで区別する。
+
+- `pure_func`：同じ引数に必ず同じ値を返す関数。引数が定数ならコンパイル時に畳み込み、`RuleSet` では同じ呼び出しを1回だけ評価する。
+- `func`：設定や為替レートを読むなど、同じ引数でも結果が変わりうる関数。評価のたびに呼び、畳み込みも共有もしない。
+
+関数名の重複と組み込み関数との衝突は `build()` が `SchemaError` で報告する。
 
 ## ルールエンジンAPI
 
-外部に見せるのは `Rule<T>` と `RuleSet<T>` の二つ。`T` はルールの戻り値型で、戻り値の型が `T` と合わないルールはコンパイルの時点でエラーになる。
+外部に見せるのは `Rule<T, F>` と `RuleSet<T, F>` の二つ。`T` はルールの戻り値型で、戻り値の型が `T` と合わないルールはコンパイルの時点でエラーになる。`F` は事実データの型で、別の事実データの型で評価しようとするとRustのコンパイルエラーになる。
 
 ```rust
-use dictum::{Rule, RuleSet, Schema, Ctx};
+use dictum::jiff::Timestamp;
+use dictum::{Ctx, Rule, RuleSet, Schema};
 
 // 単体のルール
-let rule: Rule<bool> = Rule::compile(r#"user.Group in ["admin"] && user.Age >= 18"#, &schema)?;
-let ok = rule.eval(&Ctx::new(&facts))?;
+let rule: Rule<bool, F> = Rule::compile(r#"user.Group in ["admin"] && user.Age >= 18"#, &schema)?;
+let facts = Facts { user: &user, order: &order };
+let ctx = Ctx::new(&facts).with_now(Timestamp::now());
+let ok = rule.eval(&ctx)?;
 
-// 理由つき
-let report = rule.explain(&Ctx::new(&facts))?;
+// 理由つき。explainは失敗しない（評価のエラーはReportの中に入る）
+let report = rule.explain(&ctx);
 println!("{report}");
 
+// bool 以外の戻り値型
+let discount: Rule<f64, F> = Rule::compile("order.Total > 100 ? 0.1 : 0", &schema)?;
+let anything: Rule<Dynamic, F> = Rule::compile("map(order.Items, .Sku)", &schema)?;
+
 // 複数のルール
-let mut set = RuleSet::<bool>::new(schema.clone());
-set.insert("adult", "user.Age >= 18")?;
-set.insert("staff", r#"user.Group in ["admin", "moderator"]"#)?;
-let matched: Vec<&str> = set.matching(&Ctx::new(&facts))?;
+let mut builder = RuleSet::builder(&schema);
+builder.insert("adult", "user.Age >= 18")?;
+builder.insert("staff", r#"user.Group in ["admin", "moderator"]"#)?;
+let set: RuleSet<bool, F> = builder.build();
+let outcomes = set.eval(&ctx)?;
+let matched: Vec<&str> = outcomes.matched().collect();
 ```
+
+- `RuleSetBuilder::insert` はその場でパースと型チェックを行い、エラーをルールごとに返す。エラーになったルールは追加されず、同じ名前のルールの追加はE0001になる。多数のルールを読み込むときは `insert` をループで呼び、必要なエラーを集める。
+- `build()` で全ルールのクロージャ木と共通部分式のスロットを一度に決める。できた `RuleSet` は変更できない。
+- `RuleSet::eval` はルールを追加した順に評価し、最初のエラーで止まる。エラーの `EvalError::rule()` が失敗したルールの名前を返す。
+- 戻り値型 `T` に使えるのは `bool` `i64` `f64` `String` `Timestamp` `SignedDuration`、`decimal` featureの `Decimal`、それらの `Option<T>` と `Vec<T>`、どの型でも受け取れる `Dynamic` である。この一覧は `Output` トレイトで決まり、外部から型を足すことはできない。
 
 ### Ctx
 
-評価ごとの入力をまとめる。事実データ、時計（`now()` の値）、実行上限を持つ。時計も入力として外から渡すので、事実データと時計が同じなら同じ結果になる（ユーザー定義関数が `pure` である限り）。
+評価ごとの入力をまとめる。事実データ、`now()` が返す時刻、実行上限を持つ。
+
+```rust
+let ctx = Ctx::new(&facts)                                   // 時刻なし、既定の上限
+    .with_now(Timestamp::now())                              // now() が返す時刻
+    .with_limits(Limits::default().with_max_steps(10_000));
+```
+
+時計のオブジェクトも既定の時刻もない。呼び出し側が時刻を一度読んで渡すので、`Ctx` が同じなら同じ結果になる（ユーザー定義関数が `pure` である限り）。テストでは定数を渡せば時刻を固定できる。`with_now` を呼ばずに作った `Ctx` で `now()` を呼ぶルールを評価すると、`EvalErrorKind::ClockUnset`（E0311）になる。`now()` を呼ばないルールは時刻なしで評価できる。
 
 ### explain
 
-評価したノードごとに、Span・値・子ノードを持つ木を返す。短絡評価で飛ばしたノードは `Skipped` になる。
+評価したノードごとに、Span・値・子ノードを持つ木を返す。短絡評価で飛ばしたノードは `Skipped`、エラーが起きたノードは `Failed` になる。
 
 ```
 user.Group in ["admin"] && user.Age >= 18   → false
@@ -380,55 +478,74 @@ user.Group in ["admin"] && user.Age >= 18   → false
 └─ user.Age >= 18                          → false  (user.Age = 16)
 ```
 
-通常の `eval` を遅くしないよう、記録つきのクロージャ木は `explain` が初めて呼ばれたときに別に生成する。
+- `explain` は `Report<T>` を返し、失敗しない。評価が失敗したときこそ説明が要るので、エラーは `Report::result()` に入れ、木はどこまで評価が進んだかを示す。
+- 述語の本体のノードには、結果を決めた要素（`all` なら最初の `false`、`any` なら最初の `true`）の値を示し、何番目の要素かを `element()` で返す。
+- `explain` はクロージャ木を使わず、型付きIRを直接たどる仕様インタプリタで評価する。通常の `eval` には記録のためのコードが入らないので、`eval` の速度は `explain` の有無で変わらない。仕様インタプリタもpanicせず、クロージャ木と同じ箇所で実行上限を数える。
 
-### ルールをまたいだ共通部分式の最適化
+### ルールをまたいだ共通部分式の共有
 
-`RuleSet` に入った複数のルールに現れる同じ部分式（例：`user.Age >= 18`、`len(order.Items)`）は、一回の `matching` の中で1回だけ評価する。
+`RuleSet` に入った複数のルールに現れる同じ部分式（例：`user.Age >= 18`、`len(order.Items)`）は、一回の `eval` の中で1回だけ評価する。
 
-1. 各ルールの型付きIRを正規化する（定数畳み込み後、`a == b` と `b == a` など可換な演算の引数を並べ替える）
-2. 部分木ごとに構造ハッシュを取り、`RuleSet` 全体で2回以上現れる純粋な部分木にキャッシュ用のスロット番号を振る
+1. `build()` で各ルールの型付きIRを定数畳み込みの後にたどり、部分木ごとに構造をキーにする。`==` `!=` `+` `*` は引数の順序を無視して比べるので、`a == b` と `b == a` は同じ部分木になる。`&&` と `||` は短絡評価するので順序を無視しない（`false && 1/0` は `false` だが、`1/0 && false` はエラーになる）
+2. `RuleSet` 全体で2回以上現れる部分木にキャッシュ用のスロット番号を振る
 3. その部分木のクロージャは「スロットに値があればそれを返し、なければ計算して保存する」形に包む
-4. スロットは `Frame` が評価ごとに持ち、評価が終われば捨てる。`Rule` 自体は状態を持たないので `Send + Sync` のまま
+4. スロットは `Frame` が評価ごとに持ち、評価が終われば捨てる。`RuleSet` 自体は状態を持たないので `Send + Sync` のまま
 
-対象は値が入力だけで決まる部分木で、`now()` と `pure` 指定のないユーザー定義関数を含むものは共有しない。実行上限のステップは実際に計算したときだけ数える。小さすぎる部分木（フィールド参照だけなど）はキャッシュの方が高くつくので、コストの下限を設ける。
+- 対象は値が入力（事実データと `now()`）だけで決まる部分木で、`pure_func` でない関数の呼び出しを含むものは共有しない。`now()` は1回の評価の中で同じ値なので共有してよい。
+- エラーはキャッシュしない。各ルールは共有する部分木にも自分のクロージャを持つので、エラーは失敗したルール自身のSpanを指す。
+- 実行上限はルールごとに数え、共有した計算は最初に計算したルールの分として数える。
+- 小さすぎる部分木（フィールド参照だけなど）はキャッシュの方が高くつくので、コストの下限を設ける。
 
 ### ホットリロード
 
 - `Rule` と `RuleSet` は `Send + Sync` で、`Arc` で共有する。
-- 更新時は新しい `RuleSet` をコンパイルし、`arc-swap` で差し替える。評価中のスレッドは古いルールのまま最後まで評価する。
+- 更新時は新しい `RuleSet` をビルドし、`arc-swap` で差し替える。評価中のスレッドは古いルールのまま最後まで評価する。
 - ルールはソース文字列で保存し、読み込み時にコンパイルする。コンパイル済み形式のシリアライズは提供しない。
 
 ## エラー報告
 
-エラーは発生段階ごとに分け、すべてSpanとエラーコードを持つ。
+エラーは発生段階ごとに型を分け、すべてSpanとエラーコードを持つ。全段階をまとめる列挙型は設けない。どちらの型も `core::error::Error` を実装するので、利用者のエラー型へ `?` で変換できる。
 
 ```rust
-pub enum Error {
-    Compile(CompileError), // E01xx 構文、E02xx 型。複数件をまとめて持つ
-    Eval(EvalError),       // E03xx: 実行時エラー。1件
+pub struct CompileError {          // E00xx API、E01xx 構文、E02xx 型。複数件をまとめて持つ
+    source: Arc<str>,
+    rule: Option<Arc<str>>,        // RuleSet に追加したときのルール名
+    diagnostics: Box<[Diagnostic]>,
+    dropped: usize,                // 上限を超えて捨てた件数
 }
 
-pub struct EvalError { pub kind: EvalErrorKind, pub span: Span }
+pub struct EvalError {             // E03xx 実行時エラー。1件
+    kind: EvalErrorKind,
+    span: Span,
+    source: Arc<str>,
+    rule: Option<Arc<str>>,
+}
 
 pub enum EvalErrorKind {
-    Overflow, DivisionByZero, IndexOutOfBounds, CharBoundary,
-    BudgetExceeded, TypeMismatch,   // Any 型の実行時チェック
-    Function(Box<dyn core::error::Error + Send + Sync>),
+    Overflow, DivisionByZero,
+    IndexOutOfBounds { index: i64, len: u64 },
+    CharBoundary { index: i64 },
+    StepLimit, AllocLimit,
+    TypeMismatch { expected: &'static str, found: &'static str },   // Any 型の実行時チェック
+    InvalidArgument { what: &'static str },   // duration("1x") など
+    DuplicateKey(Box<str>),                   // 計算したキーが重複したマップリテラル
+    ClockUnset,                               // 時刻なしの Ctx で now()
+    Function { name: Box<str>, error: Box<dyn core::error::Error + Send + Sync> },
+    Internal(&'static str),                   // dictumのバグ。panicの代わりに返す
 }
 ```
 
-`Display` はGo版と同じく該当箇所を `^` で示す。
+エラーコードとメッセージのひな形は `ErrorCode` の一覧1つで管理する。`Display` はGo版と同じく該当箇所を `^` で示す。
 
 ```
-error[E0201]: 型が合いません: int を期待しましたが string でした
+error[E0201]: expected int, found string
  --> rule:1:12
   |
 1 | user.Age + "x"
   |            ^^^ string
 ```
 
-- エラー文は日英どちらにもできるよう、コードと引数を分けて持つ。
+- 組み込みのメッセージは英語だけにする。エラーはコードと引数を分けて持つので、利用者はコードをキーにして翻訳できる。
 - エラー表示は外部クレートに依存しない。`miette` featureを有効にすると `miette::Diagnostic` を実装する。
 
 ### 複数エラーの扱い
@@ -438,47 +555,44 @@ error[E0201]: 型が合いません: int を期待しましたが string でし�
 | 段階 | 方針 |
 | --- | --- |
 | Parser | 同期点（`,` `)` `]` `}` `;`）まで読み飛ばして続行する。壊れた箇所は `ExprKind::Error` にする |
-| Checker | 型エラーの箇所を `Type::Error` にして続行する。`Type::Error` を含む式からは新しいエラーを出さないので、連鎖エラーは出ない |
+| Checker | 型エラーの箇所にChecker内部で印を付けて続行する。印の付いた式からは新しいエラーを出さないので、連鎖エラーは出ない |
 | 上限 | 1ルールあたり最大20件。構文エラーがあれば型チェックはしない |
-| 実行時 | 最初のエラーで `Err` を返す |
+| 実行時 | 最初のエラーで `Err` を返す。`RuleSet` も最初に失敗したルールで止まる |
 
 ```rust
-pub struct CompileError { pub diagnostics: Vec<Diagnostic> }   // 1件以上、位置順
-
 pub struct Diagnostic {
-    pub code: ErrorCode,      // E0201 など
-    pub span: Span,
-    pub args: Vec<Arg>,       // メッセージの引数（翻訳用）
-    pub help: Option<Help>,   // 「`?.` を使ってください」など
+    code: ErrorCode,      // E0201 など
+    span: Span,
+    args: Vec<Arg>,       // メッセージの引数（翻訳用）
+    help: Option<Help>,   // `?.` を使うよう促すなどの補足
 }
 ```
 
-`RuleSet::insert_many` は全ルールをコンパイルしてから、ルール名ごとのエラーをまとめて返す。
-
 ## テスト戦略
 
-互換性はGo版のテストを移植して測る。クロージャ木の正しさは差分テストで確かめ、参照インタプリタと同じ結果を返すかを比べる。
+互換性はGo版のテストを移植して測る。クロージャ木の正しさは差分テストで確かめ、仕様インタプリタと同じ結果を返すかを比べる。
 
 | 種類 | 内容 | ツール |
 | --- | --- | --- |
 | 適合テスト | [expr-lang/expr](https://github.com/expr-lang/expr)のテストケースを `tests/conformance/*.toml` に移植。意図的な差分は `deviation = "..."` で理由を書く | 自前のランナー |
-| 差分テスト | ランダムに生成した型付き式を、木をたどる参照インタプリタとクロージャ木の両方で評価し、結果を比べる | `proptest` |
+| 差分テスト | ランダムに生成した型付き式とランダムな事実データ・時刻で、`rule.eval(ctx)` と `rule.explain(ctx).into_result()` が一致することを確かめる。`RuleSet` では、成功時の値が各ルールを単体で評価した値と一致し、失敗時のエラーが単体で最初に失敗するルールのエラーと一致することを確かめる | `proptest` |
 | ファジング | Lexer、Parser、Checkerがどんな入力でもpanicしないこと | `cargo-fuzz` |
 | スナップショット | エラー表示とexplainの出力 | `insta` |
+| コンパイル失敗のテスト | deriveが不正なフィールド型・名前・構造体を拒否すること | `trybuild` |
 | ベンチマーク | 代表的なルールをGo版と同じ条件で比較 | `criterion` |
 
-参照インタプリタは速度を気にせず仕様どおりに書き、`dictum-eval` の `reference` featureの中に置く。
+仕様インタプリタは速度を気にせず仕様どおりに書く。`explain` の実装を兼ねるので、テスト専用のfeatureには置かず、公開APIを通して差分テストの基準にする。演算の基本操作（`checked_add` など）はクロージャ木と共有するので、差分テストが確かめるのは制御の流れ、型ごとの特化、キャッシュ、実行上限である。
 
 ## マイルストーン
 
-各段階は前の段階に依存する。完了条件を満たしたら次に進む。
+各段階は前の段階に依存する。完了条件を満たしたら次に進む。参照評価は `FieldId` でフィールドを読むので、`FieldId` を作る型チェックを先に置く。
 
-1. 構文（`dictum-syntax`）：Lexer、Prattパーサ、AST、エラー表示。完了条件は、適合テストの全式がパースでき、ファジングでpanicしないこと
-2. 参照評価：型なしの木をたどるインタプリタと `Value`。MVPの組み込み関数を実装し、適合テストを通す
-3. 型チェック（`dictum-check`）：`Type`、`Schema`、型付きIR。`dictum-derive` の最小版もここで作る
-4. 高速評価（`dictum-eval`）：Optimizer、クロージャコンパイル、実行上限。差分テストを通し、Go版とのベンチマークを取る
-5. ルールエンジン（`dictum`）：`Rule`、`RuleSet`、`explain`、時計の注入。crates.ioに0.1を公開する
-6. 拡張：残りの組み込み関数、CLIとREPL、WASM対応
+1. 構文（`dictum-syntax`）：Lexer、Prattパーサ、AST、エラー表示。完了条件は、適合テストの全式がパースできること、パーサのファジングを10 CPU分回してpanicしないこと、優先順位の表の全行にテストがあること、エラー表示のスナップショットがあること
+2. 型チェック（`dictum-check`）：`Type`、`Schema`、型付きIR、`dictum-derive` の最小版。完了条件は、適合テストの各式が期待した型になるか、期待したE02xxのコードとSpanで失敗すること、全ケースで型付きIRの不変条件を検証すること、Checkerのファジングを10 CPU分回してpanicしないこと、deriveが対応する全フィールド型を受け付け、enum・型引数・予約語・重複名・`HashMap`・`u64` を拒否すること
+3. 参照評価：仕様インタプリタとMVPの組み込み関数。完了条件は、適合テストを通し、Go版との意図的な差分をすべて `deviation` に書くこと
+4. 高速評価：定数の畳み込み、クロージャコンパイル、実行上限。完了条件は、差分テストが10万ケース通ること、Go版とのベンチマークを記録すること
+5. ルールエンジン（`dictum`）：`Rule`、共通部分式を共有する `RuleSet`、`explain`、`Ctx`。完了条件は、`RuleSet` の差分テストが通ること、使用例（`examples/quickstart.rs`）が動くこと。crates.ioに0.1を公開する
+6. 拡張：残りの組み込み関数、CLIとREPL、WASM対応。それぞれ別に完了させる。組み込み関数は、一覧への追加、型付け、実装、移植した適合テストがそろったら完了とする。CLIは `dictum eval --facts f.json '<expr>'` が適合テストの全式で結果を表示したら完了とする（実行時に記述したスキーマを扱う方式を先に決める必要がある）。WASMは、CIで適合テストのランナーが `wasm32-wasip1` 上のwasmtimeで通ったら完了とする
 
 ## 決定事項
 
@@ -486,8 +600,15 @@ pub struct Diagnostic {
 | --- | --- | --- |
 | pipe・三項演算子・`??` の優先順位 | Go版のパーサで確認し、`not` の順位と `??` の混在禁止を含めてすべてGo版に合わせる | 構文仕様 |
 | 比較の連鎖 | `<` `>` `<=` `>=` は連鎖可。中央の式は1回だけ評価。`==` などは連鎖不可 | 構文仕様、Go版との差分 |
+| 関数呼び出し | `名前(引数)` の形だけ。関数は値でない | 構文仕様、型システム |
 | 文字列の添字 | バイト単位。文字境界でなければエラー。`len` は文字数のまま | Go版との差分、型システム |
 | `Decimal` 型 | `decimal` featureで提供。`Float` との暗黙の混在は禁止 | 型システム、評価エンジン |
-| ルールをまたいだ共通部分式 | `RuleSet` で実施。評価ごとのキャッシュスロット方式 | ルールエンジンAPI |
-| エラーの件数 | コンパイル時はまとめて（最大20件）、実行時は1件 | エラー報告 |
+| 事実データとスキーマ | derive済みの根の構造体1つ。そのフィールドが変数。`Schema<F>`、`Rule<T, F>` で事実データの型を固定する | 型システムとSchema、ルールエンジンAPI |
+| 借用する範囲 | 文字列、構造体、配列、マップを借用し、スカラーはコピー。`HashMap` は使えない | 評価エンジン |
+| 純粋な関数 | `pure_func` と `func` で登録時に区別する | 組み込み関数 |
+| 時刻 | `Ctx::with_now` で渡す。渡さずに `now()` を呼ぶと `ClockUnset` | ルールエンジンAPI |
+| explain | 仕様インタプリタで実装し、差分テストの基準を兼ねる | ルールエンジンAPI、テスト戦略 |
+| ルールをまたいだ共通部分式 | `RuleSet` で実施。`build()` で決めるキャッシュスロットを評価ごとに持つ | ルールエンジンAPI |
+| エラーの件数 | コンパイル時はまとめて（最大20件）、実行時は1件。`RuleSet` も最初のエラーで止まる | エラー報告 |
+| クレート構成 | 4クレート。評価エンジンは `dictum` の非公開モジュール | アーキテクチャとクレート構成 |
 | MSRVと `no_std` | MSRV 1.85。全クレート `no_std` + `alloc` 対応 | アーキテクチャとクレート構成 |
