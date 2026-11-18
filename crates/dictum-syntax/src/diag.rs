@@ -5,6 +5,7 @@
 //! `(code, args)` and never parses the English text.
 
 use alloc::boxed::Box;
+use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -193,6 +194,53 @@ impl Diagnostics {
     }
 }
 
+impl Arg {
+    fn write(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Arg::Type(s) | Arg::Name(s) | Arg::Text(s) => f.write_str(s),
+            Arg::Int(n) => write!(f, "{n}"),
+        }
+    }
+}
+
+impl Help {
+    /// The English text.
+    pub const fn text(self) -> &'static str {
+        match self {
+            Help::UseSafeNavigation => "use `?.` to access a field of a value that may be nil",
+            Help::AddParentheses => "add parentheses",
+            Help::ByteIndices => {
+                "string indices are byte offsets; `len` counts characters, so `len(s)` is not a valid index into \
+                 non-ASCII text; use `indexOf` for byte positions"
+            }
+            Help::SplitComparison => "write `x == y && y == z`",
+        }
+    }
+}
+
+/// `template` with `{n}` replaced by `args[n]`. A placeholder without an argument
+/// is written as is.
+fn write_message(f: &mut fmt::Formatter<'_>, template: &str, args: &[Arg]) -> fmt::Result {
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        let (text, tail) = rest.split_at(open);
+        f.write_str(text)?;
+        let close = tail.find('}').unwrap_or(0);
+        let arg = tail.get(1..close).and_then(|n| n.parse::<usize>().ok()).and_then(|n| args.get(n));
+        match arg {
+            Some(arg) => {
+                arg.write(f)?;
+                rest = tail.get(close.saturating_add(1)..).unwrap_or("");
+            }
+            None => {
+                f.write_str("{")?;
+                rest = tail.get(1..).unwrap_or("");
+            }
+        }
+    }
+    f.write_str(rest)
+}
+
 /// Write `d` in the Go-like caret format:
 ///
 /// ```text
@@ -214,8 +262,29 @@ pub fn render(
     args: &[Arg],
     help: Option<Help>,
 ) -> fmt::Result {
-    // TODO: substitute `{n}` in `code.template()` with `args[n]`; compute line/column
-    // by counting '\n' before `span.start` (column in chars, 1-based); print the line
-    // and `^` under the span, clamped to that line; then `= help: ...` if any.
-    todo!()
+    write!(f, "error[{}]: ", code.as_str())?;
+    write_message(f, code.template(), args)?;
+    writeln!(f)?;
+
+    // The line the span starts on; a span past the end points just after the source.
+    let start = (span.start as usize).min(src.len());
+    let start = (0..=start).rev().find(|i| src.is_char_boundary(*i)).unwrap_or(0);
+    let line_start = src.get(..start).and_then(|s| s.rfind('\n')).map_or(0, |i| i.saturating_add(1));
+    let line_end = src.get(start..).and_then(|s| s.find('\n')).map_or(src.len(), |i| start.saturating_add(i));
+    let line_text = src.get(line_start..line_end).unwrap_or("");
+    let line_no = src.get(..line_start).map_or(0, |s| s.matches('\n').count()).saturating_add(1);
+    let column = src.get(line_start..start).map_or(0, |s| s.chars().count());
+    let end = (span.end as usize).clamp(start, line_end);
+    let width = src.get(start..end).map_or(0, |s| s.chars().count()).max(1);
+
+    let gutter = line_no.to_string().len();
+    let pad = "";
+    writeln!(f, "{pad:gutter$}--> {origin}:{line_no}:{}", column.saturating_add(1))?;
+    writeln!(f, "{pad:gutter$} |")?;
+    writeln!(f, "{line_no} | {line_text}")?;
+    write!(f, "{pad:gutter$} | {pad:column$}{}", "^".repeat(width))?;
+    if let Some(help) = help {
+        write!(f, "\n{pad:gutter$} = help: {}", help.text())?;
+    }
+    Ok(())
 }
