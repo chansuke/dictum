@@ -7,3 +7,4 @@ import Dictum.Opt.Simp
 import Dictum.Opt.Reorder
 import Dictum.Opt.Member
 import Dictum.Syntax
+import Dictum.Check
