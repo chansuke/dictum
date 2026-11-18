@@ -73,6 +73,10 @@ pub trait Field {
 pub trait SeqView {
     /// Number of elements.
     fn len(&self) -> usize;
+    /// `len() == 0`.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     /// Element `i`, or `None` past the end.
     fn get(&self, i: usize) -> Option<Value<'_>>;
 }
@@ -81,6 +85,10 @@ pub trait SeqView {
 pub trait MapView {
     /// Number of entries.
     fn len(&self) -> usize;
+    /// `len() == 0`.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     /// Lookup.
     fn get(&self, key: &str) -> Option<Value<'_>>;
     /// Visit entries in order until `f` breaks. Internal iteration keeps the trait

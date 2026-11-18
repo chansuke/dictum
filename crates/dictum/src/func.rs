@@ -105,7 +105,7 @@ impl FromArg for i64 {
     fn ty() -> Type {
         Type::Int
     }
-    fn from_value<'s>(v: &'s Value<'_>) -> Option<i64> {
+    fn from_value(v: &Value<'_>) -> Option<i64> {
         todo!()
     }
 }
@@ -115,7 +115,7 @@ impl FromArg for f64 {
     fn ty() -> Type {
         Type::Float
     }
-    fn from_value<'s>(v: &'s Value<'_>) -> Option<f64> {
+    fn from_value(v: &Value<'_>) -> Option<f64> {
         todo!()
     }
 }
@@ -125,7 +125,7 @@ impl FromArg for bool {
     fn ty() -> Type {
         Type::Bool
     }
-    fn from_value<'s>(v: &'s Value<'_>) -> Option<bool> {
+    fn from_value(v: &Value<'_>) -> Option<bool> {
         todo!()
     }
 }
@@ -146,7 +146,7 @@ impl FromArg for jiff::Timestamp {
     fn ty() -> Type {
         Type::Time
     }
-    fn from_value<'s>(v: &'s Value<'_>) -> Option<jiff::Timestamp> {
+    fn from_value(v: &Value<'_>) -> Option<jiff::Timestamp> {
         todo!()
     }
 }

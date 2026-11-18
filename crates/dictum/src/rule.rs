@@ -12,8 +12,12 @@ use crate::{CompileError, Ctx, Dictum, EvalError, Output, Report, Schema};
 /// it across threads or swap a newer one in with `arc-swap`.
 pub struct Rule<T, F> {
     pub(crate) prepared: Arc<Prepared>,
-    _types: PhantomData<(fn() -> T, fn(&F))>,
+    _types: TypeMarker<T, F>,
 }
+
+/// Ties a compiled rule to its result type `T` and facts type `F` without owning
+/// either, so it is `Send + Sync` whatever `T` and `F` are.
+pub(crate) type TypeMarker<T, F> = PhantomData<(fn() -> T, fn(&F))>;
 
 impl<T, F> Clone for Rule<T, F> {
     fn clone(&self) -> Self {

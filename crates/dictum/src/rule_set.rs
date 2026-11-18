@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 use core::marker::PhantomData;
 
 use crate::engine::{self, Checked, PreparedSet};
+use crate::rule::TypeMarker;
 use crate::{CompileError, Ctx, Dictum, EvalError, Output, Report, Schema};
 
 /// An immutable set of named rules with result type `T`.
@@ -16,7 +17,7 @@ use crate::{CompileError, Ctx, Dictum, EvalError, Output, Report, Schema};
 /// cache lives in the per-evaluation frame.
 pub struct RuleSet<T, F> {
     inner: Arc<PreparedSet>,
-    _types: PhantomData<(fn() -> T, fn(&F))>,
+    _types: TypeMarker<T, F>,
 }
 
 impl<T, F> Clone for RuleSet<T, F> {

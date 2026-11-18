@@ -15,7 +15,8 @@ pub(crate) fn mod_int(a: i64, b: i64) -> Result<i64, EvalErrorKind> {
     if b == 0 {
         return Err(EvalErrorKind::DivisionByZero);
     }
-    Ok(a.wrapping_rem(b))
+    // `None` here only for `i64::MIN % -1`, whose result is 0.
+    Ok(a.checked_rem(b).unwrap_or(0))
 }
 
 /// `float ** float` via `libm` (bit-identical on every target).
