@@ -1,2 +1,6 @@
 [files]
 extend-exclude = ["Cargo.lock", "flake.lock", "fuzz/corpus", "fuzz/artifacts"]
+
+# Lean hypothesis names: `hte` is "h: t of e", not "the".
+[default.extend-identifiers]
+hte = "hte"

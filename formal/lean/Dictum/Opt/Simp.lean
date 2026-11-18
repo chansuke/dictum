@@ -49,9 +49,9 @@ theorem safe_ok {env Γ ρ} (henv : EnvTy env Γ) (hρ : EnvRange env ρ) {e T} 
     exact ⟨v, by simp [eval, hv]⟩
   | @arith op a b hop hta htb iha ihb =>
     simp only [safe, Bool.and_eq_true] at hs
-    obtain ⟨⟨hsa, hsb⟩, hop'⟩ := hs
-    obtain ⟨x, hx⟩ := iha hsa
-    obtain ⟨y, hy⟩ := ihb hsb
+    obtain ⟨⟨sa, sb⟩, hop'⟩ := hs
+    obtain ⟨x, hx⟩ := iha sa
+    obtain ⟨y, hy⟩ := ihb sb
     obtain ⟨x, rfl, _⟩ := ok_int henv hta hx
     obtain ⟨y, rfl, _⟩ := ok_int henv htb hy
     rcases hop with rfl | rfl | rfl | rfl
@@ -322,9 +322,9 @@ theorem simp1_sound {e T} (ht : HasType Γ e T) : eval env (simp1 ρ e) = eval e
     simp only [simp1]
     split
     · next hs =>
-      obtain ⟨hsa, hsb⟩ := hs
-      obtain ⟨x, hx⟩ := safe_ok henv hρ hta hsa
-      obtain ⟨y, hy⟩ := safe_ok henv hρ htb hsb
+      obtain ⟨sa, sb⟩ := hs
+      obtain ⟨x, hx⟩ := safe_ok henv hρ hta sa
+      obtain ⟨y, hy⟩ := safe_ok henv hρ htb sb
       obtain ⟨x, rfl, _⟩ := ok_int henv hta hx
       obtain ⟨y, rfl, _⟩ := ok_int henv htb hy
       split
