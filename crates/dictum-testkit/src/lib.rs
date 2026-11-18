@@ -23,7 +23,7 @@ pub use fixture::{Facts, sample, sample_now};
 /// The last milestone whose behavior is implemented (0 = none; see
 /// docs/dictum-design.md, "マイルストーン"). Raise it in the change that completes a
 /// milestone; tests gated on a later milestone are reported as ignored, not passed.
-pub const MILESTONE: u8 = 0;
+pub const MILESTONE: u8 = 1;
 
 /// The conformance stage `MILESTONE` reaches. M2 (types) and M3 (reference
 /// evaluation) are swapped relative to the stage order on purpose: see the
