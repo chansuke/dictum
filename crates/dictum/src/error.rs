@@ -41,7 +41,18 @@ impl CompileError {
 impl fmt::Display for CompileError {
     /// Every diagnostic in caret format, then "and N more" if any were dropped.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        let origin = self.rule.as_deref().unwrap_or("rule");
+        for (i, d) in self.diagnostics.iter().enumerate() {
+            if i > 0 {
+                f.write_str("\n\n")?;
+            }
+            dictum_syntax::render(f, &self.source, origin, d.code(), d.span(), d.args(), d.help())?;
+        }
+        if self.dropped > 0 {
+            let s = if self.dropped == 1 { "" } else { "s" };
+            write!(f, "\n\nand {} more error{s}", self.dropped)?;
+        }
+        Ok(())
     }
 }
 

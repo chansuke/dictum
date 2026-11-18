@@ -67,13 +67,19 @@ pub(crate) fn check(
     schema: &Arc<SchemaCore>,
     expected: &Type,
 ) -> Result<Checked, CompileError> {
+    let ast = dictum_syntax::parse(src).map_err(|d| compile_error(src, name, d))?;
     // TODO:
-    // let ast = dictum_syntax::parse(src).map_err(|d| compile_error(src, name, d))?;
     // let mut ir = dictum_check::check(&ast, schema, expected).map_err(...)?;
     // let deps = analysis::dependence(&ir, schema);
     // fold::fold(&mut ir, schema, &deps);
     // let patterns = compile constant patterns of BinaryOp::Matches nodes; errors -> E0211
     todo!()
+}
+
+/// The diagnostics of one rule as a `CompileError`.
+pub(crate) fn compile_error(src: &str, name: Option<&str>, diags: dictum_syntax::Diagnostics) -> CompileError {
+    let (diagnostics, dropped) = diags.finish();
+    CompileError { source: src.into(), rule: name.map(Into::into), diagnostics: diagnostics.into(), dropped }
 }
 
 /// A rule ready to run.
