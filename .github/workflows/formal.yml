@@ -1,0 +1,59 @@
+# Lean proofs and TLA+ models. Cheap (about a minute each), so they run on every
+# PR, not only when formal/ changes: a code change can invalidate what a model
+# claims about the code, and the PR author should see the models next to it.
+name: Formal
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install elan (the Lean version comes from formal/lean/lean-toolchain)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.elan/toolchains
+            formal/lean/.lake
+          key: lean-${{ hashFiles('formal/lean/lean-toolchain', 'formal/lean/lake-manifest.json') }}
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: just
+      - run: just lean
+
+  tla:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Download TLA+ tools v1.7.4
+        run: |
+          curl -sSfL -o formal/tla/tla2tools.jar \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  formal/tla/tla2tools.jar" \
+            | sha256sum -c
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: just
+      - run: just tla
+        env:
+          TLC: java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC
