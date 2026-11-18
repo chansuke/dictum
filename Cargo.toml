@@ -10,12 +10,7 @@
 #   dictum-derive  #[derive(Dictum)]                                          (syn, quote, syntax)
 [workspace]
 resolver = "3"
-members = [
-    "crates/dictum-syntax",
-    "crates/dictum-check",
-    "crates/dictum",
-    "crates/dictum-derive",
-]
+members = ["crates/dictum-syntax", "crates/dictum-check", "crates/dictum", "crates/dictum-derive"]
 
 [workspace.package]
 version = "0.1.0"
@@ -37,7 +32,14 @@ regex = { version = "1.12", default-features = false, features = ["unicode", "pe
 libm = "0.2.15"
 rust_decimal = { version = "1.39", default-features = false }
 
-syn = { version = "2.0.110", default-features = false, features = ["derive", "parsing", "printing", "proc-macro", "visit-mut", "clone-impls"] }
+syn = { version = "2.0.110", default-features = false, features = [
+    "derive",
+    "parsing",
+    "printing",
+    "proc-macro",
+    "visit-mut",
+    "clone-impls",
+] }
 quote = "1.0.44"
 proc-macro2 = "1.0.103"
 
