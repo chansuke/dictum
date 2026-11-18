@@ -1,4 +1,4 @@
-import Dictum.Core
+import Dictum.Check
 import Dictum.Syntax
 
 /-!
@@ -11,8 +11,10 @@ separated by a tab.
 ```text
 parse <src>               ok <s-expression>  |  err <code>     (Dictum.Syntax.parse)
 eval <env> <expr>         ok int <n>  |  ok bool <b>  |  err <kind>   (Dictum.eval)
+check <types> <expr>      ok int  |  ok bool  |  err                    (Dictum.infer)
 ```
 
+`<types>` is the fact root's field types in order, space-separated: `int bool`.
 `<env>` is the fact root's fields in order, space-separated: `i:36 b:true`.
 `<expr>` is a core expression: `$0` (field 0), integers, `true`, `false`,
 `(+ a b)`, `(- a b)`, `(* a b)`, `(% a b)`, `(== a b)`, `(< a b)`, `(&& a b)`,
@@ -85,6 +87,14 @@ def toVal (s : String) : Option Val :=
     | _ => none
   | _ => none
 
+def toTy : String → Option Ty
+  | "int" => some .int
+  | "bool" => some .bool
+  | _ => none
+
+def readExpr (e : String) : Option Expr :=
+  (readSExp (tokenize e.toList)).bind fun (x, rest) => if rest.isEmpty then toExpr x else none
+
 def showResult : Except Err Val → String
   | .ok (.int n) => s!"ok\tint\t{n}"
   | .ok (.bool b) => s!"ok\tbool\t{b}"
@@ -108,9 +118,16 @@ def answer (line : String) : String :=
     | .error code => s!"err\t{code}"
   | ["eval", env, e] =>
     let env := (tokenize env.toList).mapM toVal
-    let e := (readSExp (tokenize e.toList)).bind fun (x, rest) => if rest.isEmpty then toExpr x else none
-    match env, e with
+    match env, readExpr e with
     | some env, some e => showResult (eval env e)
+    | _, _ => "bad"
+  | ["check", types, e] =>
+    match (tokenize types.toList).mapM toTy, readExpr e with
+    | some Γ, some e =>
+      match infer Γ e with
+      | some .int => "ok\tint"
+      | some .bool => "ok\tbool"
+      | none => "err"
     | _, _ => "bad"
   | _ => "bad"
 
