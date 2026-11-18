@@ -11,7 +11,14 @@ repository.workspace = true
 [dependencies]
 
 [dev-dependencies]
+dictum-testkit.workspace = true
+libtest-mimic.workspace = true
 proptest.workspace = true
+
+# Differential test against the Lean reference parser (formal/lean/Dictum/Syntax.lean).
+[[test]]
+name = "drt"
+harness = false
 
 [lints]
 workspace = true
