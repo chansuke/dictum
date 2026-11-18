@@ -10,5 +10,8 @@ repository.workspace = true
 # Always no_std + alloc. There is no `std` feature: nothing here changes with std.
 [dependencies]
 
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true
