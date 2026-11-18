@@ -1,0 +1,9 @@
+# The checks that judge a change must not be changed by that change alone.
+# With "Require review from Code Owners" enabled on main, a PR that edits a
+# check needs the owner's review.
+/.github/                       @chansuke
+/justfile                       @chansuke
+/formal/                        @chansuke
+/tests/conformance/             @chansuke
+/crates/dictum-testkit/         @chansuke
+/crates/dictum/tests/           @chansuke
