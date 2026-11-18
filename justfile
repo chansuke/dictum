@@ -71,9 +71,13 @@ nostd:
 bench-build:
     cargo bench -p dictum --no-run
 
+# The host triple. cargo-fuzz otherwise builds for the triple it was itself built
+# for, which is musl for the prebuilt binary CI installs, and ASan cannot link that.
+host := `rustc -vV | sed -n 's/^host: //p'`
+
 # Fuzz targets compile (nightly + cargo-fuzz).
 fuzz-build:
-    cargo +nightly fuzz build
+    cargo +nightly fuzz build --target {{host}}
 
 # Fuzz one target for `seconds`, if its milestone is reached.
 fuzz target seconds="60":
@@ -82,7 +86,7 @@ fuzz target seconds="60":
     need=$(grep -B3 '^name = "{{target}}"' fuzz/Cargo.toml | grep -oE '^# M[0-9]+' | grep -oE '[0-9]+')
     have=$(just milestone)
     if (( have < need )); then echo "{{target}}: pending M$need (MILESTONE = $have)"; exit 0; fi
-    cargo +nightly fuzz run {{target}} -- -max_total_time={{seconds}} -rss_limit_mb=2048
+    cargo +nightly fuzz run --target {{host}} {{target}} -- -max_total_time={{seconds}} -rss_limit_mb=2048
 
 # Lean proofs and the dictum-oracle executable (a `sorry` or any warning fails the build).
 lean:
