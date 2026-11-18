@@ -1,0 +1,7 @@
+name = "dictum-formal"
+defaultTargets = ["Dictum"]
+
+[[lean_lib]]
+name = "Dictum"
+# A `sorry` is a warning in Lean; make it (and every other warning) fail the build.
+leanOptions = { warningAsError = true }
