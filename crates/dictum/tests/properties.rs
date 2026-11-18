@@ -7,7 +7,8 @@
 //! - robustness: no input makes compilation panic.
 //!
 //! Each test names the milestone that makes it meaningful. Until then it is ignored,
-//! never weakened: the assertions are the specification.
+//! never weakened: the assertions are the specification. Case counts come from
+//! `PROPTEST_CASES` (default 256).
 // Test code: the workspace's no-panic lints are for evaluation code.
 #![allow(
     clippy::unwrap_used,
@@ -38,10 +39,9 @@ fn outcome(r: Result<Dynamic, EvalError>) -> Option<Result<Dynamic, (&'static st
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig { cases: 2_000, ..ProptestConfig::default() })]
-
-    /// M4 completion criterion (100k cases in CI's scheduled run; see
-    /// `PROPTEST_CASES` in the workflow).
+    /// M4 completion criterion: 100k cases, run by the scheduled workflow
+    /// (`PROPTEST_CASES=100000` in .github/workflows/deep.yml). PRs run the
+    /// default 256.
     #[test]
     #[ignore = "pending M4: closure compiler"]
     fn eval_agrees_with_explain((ty, src) in generate::any_rule(4)) {
