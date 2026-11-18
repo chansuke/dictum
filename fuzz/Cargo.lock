@@ -123,6 +123,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "dictum",
+ "dictum-syntax",
  "proptest",
  "serde",
  "toml",
