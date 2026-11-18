@@ -5,7 +5,8 @@
 //! - parse (M1): an E01xx case fails `dictum_syntax::parse` with that code first;
 //!   every other case parses.
 //! - check (M2): an E02xx case fails `dictum_check::check` with that code first;
-//!   every other case type-checks.
+//!   every other case type-checks, to an IR that passes `Program::validate`.
+//!   E0211 (an invalid constant pattern) is decided by `Rule::compile`, at eval.
 //! - eval (M3): through the public API only. `Rule::compile` fails with the
 //!   expected compile-time code, or succeeds and then `eval` gives the expected value
 //!   or runtime code, and `explain(ctx).into_result()` gives the same outcome.
@@ -68,7 +69,7 @@ fn run(case: &Case, reached: Stage) -> Result<(), Failed> {
         (Err(diags), Stage::Check) => return first_code_is(&diags.finish().0, expected_code).map_err(ctx),
         (Err(diags), _) => return Err(ctx(format!("check failed: {:?}", codes(&diags.finish().0)))),
         (Ok(_), Stage::Check) => return Err(ctx("type-checked, expected a type error".into())),
-        (Ok(_), _) => {}
+        (Ok(ir), _) => ir.validate(&env).map_err(|e| ctx(format!("IR invariant broken: {e}")))?,
     }
     if reached < Stage::Eval {
         return Ok(());
