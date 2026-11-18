@@ -17,7 +17,7 @@
     clippy::arithmetic_side_effects
 )]
 
-use dictum::{Ctx, Dynamic, EvalError, EvalErrorKind, Rule, RuleSet, Schema};
+use dictum::{Ctx, Dynamic, EvalError, EvalErrorKind, Limits, Rule, RuleSet, Schema};
 use dictum_testkit::generate::{self, Ty};
 use dictum_testkit::{Facts, sample, sample_now};
 use proptest::prelude::*;
@@ -69,42 +69,47 @@ proptest! {
         prop_assert_eq!(program.body().ty().tag().map(|t| t.name()), Some(ty.name()), "{}", src);
     }
 
-    /// M5: sharing never changes a result. On success every value equals the
-    /// standalone value; on failure the error is the first failing rule's, with its
-    /// own span.
+    /// M5: budgets aside, sharing changes nothing. Each rule's *meaning* is its
+    /// standalone result with no budget. On success every value equals the
+    /// meaning; on a runtime error the error is that of the first rule whose
+    /// meaning is an error, with that rule's own span; and if every rule succeeds
+    /// alone within the budget, the set succeeds.
+    ///
+    /// Comparing with the budgeted standalone result instead is wrong: a rule that
+    /// runs out of budget alone can finish in the set (another rule paid for
+    /// shared work) and then report a runtime error it never reached alone. The
+    /// TLA+ model formal/tla/RuleSetEval.tla found this case.
     #[test]
     #[ignore = "pending M5: RuleSet"]
     fn rule_set_agrees_with_standalone_rules(srcs in proptest::collection::vec(generate::rule(Ty::Bool, 3), 1..6)) {
         let schema = schema();
         let facts = sample();
         let ctx = Ctx::new(&facts).with_now(sample_now());
+        let unbounded = ctx.with_limits(Limits::default().with_max_steps(u64::MAX).with_max_alloc(u64::MAX));
         let mut builder = RuleSet::<bool, Facts>::builder(&schema);
-        let mut standalone = Vec::new();
+        let (mut meaning, mut alone) = (Vec::new(), Vec::new());
         for (i, src) in srcs.iter().enumerate() {
             builder.insert(&format!("r{i}"), src).unwrap();
-            standalone.push(Rule::<bool, Facts>::compile(src, &schema).unwrap().eval(&ctx));
+            let rule = Rule::<bool, Facts>::compile(src, &schema).unwrap();
+            meaning.push(rule.eval(&unbounded));
+            alone.push(rule.eval(&ctx));
         }
         let set = builder.build();
         let budget = |e: &EvalError| matches!(e.kind(), EvalErrorKind::StepLimit | EvalErrorKind::AllocLimit);
         match set.eval(&ctx) {
             Ok(outcomes) => {
-                for ((name, got), want) in outcomes.iter().zip(&standalone) {
-                    match want {
-                        Ok(want) => prop_assert_eq!(got, want, "{}", name),
-                        // Shared work may keep a rule within budget that fails alone.
-                        Err(e) => prop_assert!(budget(e), "{name}: set Ok, standalone {e}"),
-                    }
+                for ((name, got), want) in outcomes.iter().zip(&meaning) {
+                    prop_assert_eq!(Ok(*got), want.as_ref().map(|v| *v).map_err(|e| e.code()), "{}", name);
                 }
             }
+            Err(err) if budget(&err) => {}
             Err(err) => {
-                let first = standalone.iter().position(|r| r.as_ref().is_err_and(|e| !budget(e)));
-                if !budget(&err) {
-                    let i = first.expect("set failed but no standalone rule fails");
-                    let want = standalone[i].as_ref().unwrap_err();
-                    let name = format!("r{i}");
-                    prop_assert_eq!(err.rule(), Some(name.as_str()));
-                    prop_assert_eq!((err.code(), err.span()), (want.code(), want.span()));
-                }
+                prop_assert!(alone.iter().any(|r| r.is_err()), "every rule succeeds alone but the set fails: {err}");
+                let i = meaning.iter().position(|r| r.is_err()).expect("set failed but every rule means a value");
+                let want = meaning[i].as_ref().unwrap_err();
+                let name = format!("r{i}");
+                prop_assert_eq!(err.rule(), Some(name.as_str()));
+                prop_assert_eq!((err.code(), err.span()), (want.code(), want.span()));
             }
         }
     }
