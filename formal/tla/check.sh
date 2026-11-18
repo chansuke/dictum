@@ -2,9 +2,11 @@
 # Model-check every TLA+ model here with TLC.
 #
 #   <Spec>.cfg          must pass: "No error has been found".
-#   <Spec>_<x>_mutant.cfg / <Spec>_mutant.cfg
-#                       seeded bug: must be caught ("is violated"). A mutant that
-#                       passes means the model no longer checks what it claims to.
+#   <Spec>_<bug>_mutant.cfg
+#                       seeded bug: TLC must report a violation of the invariant
+#                       named on the cfg's `\* expect:` line. A mutant that passes,
+#                       or is caught by another invariant, means the model no
+#                       longer checks what it claims to.
 #
 # TLC is `tlc` (nix devShell) unless $TLC says otherwise, e.g.
 #   TLC="java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC" ./check.sh
@@ -16,11 +18,14 @@ for cfg in *.cfg; do
     spec="${cfg%.cfg}"
     spec="${spec%%_*}"
     out="$("${tlc[@]}" -workers auto -cleanup -config "$cfg" "$spec.tla" 2>&1 || true)"
-    if [[ "$cfg" == *mutant.cfg ]]; then
-        if grep -q "is violated" <<< "$out"; then
-            echo "ok    $cfg (seeded bug caught)"
+    if [[ "$cfg" == *_mutant.cfg ]]; then
+        expect="$(sed -n 's/^\\\* expect: *//p' "$cfg")"
+        if [[ -z "$expect" ]]; then
+            echo "FAIL  $cfg: no \`\\* expect: <Invariant>\` line"; status=1
+        elif grep -q "Invariant $expect is violated" <<< "$out"; then
+            echo "ok    $cfg (caught by $expect)"
         else
-            echo "FAIL  $cfg: the seeded bug was not caught"; echo "$out" | tail -20; status=1
+            echo "FAIL  $cfg: not caught by $expect"; echo "$out" | tail -20; status=1
         fi
     else
         if grep -q "No error has been found" <<< "$out"; then

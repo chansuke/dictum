@@ -22,10 +22,17 @@ CONSTANTS
     MaxLen,       \* node evaluations per rule
     MaxCost,      \* step cost of one node
     Budget,       \* Limits::max_steps, per rule
-    PerRuleBudget \* TRUE in dictum; FALSE is a seeded bug (one budget for the set)
+    Bug           \* "none" in dictum; anything else is a seeded bug (see Bugs)
 
 ASSUME NumRules \in Nat \ {0} /\ MaxLen \in Nat \ {0} /\ MaxCost \in Nat \ {0}
-ASSUME Budget \in Nat /\ PerRuleBudget \in BOOLEAN
+(* The seeded bugs. Each *_mutant.cfg turns one on and names the invariant
+   that must catch it; check.sh fails if TLC does not report that invariant.
+     budget_per_set    one budget for the whole set instead of one per rule
+     cache_errors      a failed node fills its slot as if it had a value
+     ignore_cache      shared nodes are recomputed and their slot rewritten *)
+Bugs == {"none", "budget_per_set", "cache_errors", "ignore_cache"}
+
+ASSUME Budget \in Nat /\ Bug \in Bugs
 
 RuleIds == 1..NumRules
 Traces == UNION {[1..n -> Nodes] : n \in 1..MaxLen}
@@ -81,7 +88,7 @@ Init ==
 
 Fixed == UNCHANGED <<rules, outcome, cost, shared>>
 
-Spent == IF PerRuleBudget THEN charged[r]
+Spent == IF Bug # "budget_per_set" THEN charged[r]
          ELSE LET S[q \in 0..NumRules] == IF q = 0 THEN 0 ELSE S[q - 1] + charged[q] IN S[NumRules]
 
 \* The current rule has finished: move on, or finish the set.
@@ -96,6 +103,7 @@ Hit ==
     LET n == rules[r][i] IN
     /\ result = Running /\ i <= Len(rules[r])
     /\ n \in shared /\ cache[n] = "value"
+    /\ Bug # "ignore_cache"
     /\ i' = i + 1
     /\ Fixed /\ UNCHANGED <<r, cache, writes, charged, result>>
 
@@ -104,14 +112,17 @@ Hit ==
 Compute ==
     LET n == rules[r][i] IN
     /\ result = Running /\ i <= Len(rules[r])
-    /\ ~(n \in shared /\ cache[n] = "value")
+    /\ (~(n \in shared /\ cache[n] = "value") \/ Bug = "ignore_cache")
     /\ IF Spent + cost[n] > Budget THEN
           /\ result' = Fail(r, "limit", n)
           /\ UNCHANGED <<i, cache, writes, charged>>
        ELSE IF outcome[n] = "err" THEN
           /\ result' = Fail(r, "eval", n)
           /\ charged' = [charged EXCEPT ![r] = @ + cost[n]]
-          /\ UNCHANGED <<i, cache, writes>>
+          /\ IF Bug = "cache_errors" /\ n \in shared
+                THEN cache' = [cache EXCEPT ![n] = "value"]
+                ELSE UNCHANGED cache
+          /\ UNCHANGED <<i, writes>>
        ELSE
           /\ charged' = [charged EXCEPT ![r] = @ + cost[n]]
           /\ IF n \in shared

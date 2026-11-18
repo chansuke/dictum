@@ -14,7 +14,16 @@ CONSTANTS
     Readers,      \* concurrent evaluations
     NumRules,     \* rules per set
     MaxVersion,   \* versions the writer publishes
-    PublishEarly  \* FALSE in dictum; TRUE is a seeded bug (swap in a half-built set)
+    Bug           \* "none" in dictum; anything else is a seeded bug (see Bugs)
+
+(* The seeded bugs. Each *_mutant.cfg turns one on and names the invariant
+   that must catch it; check.sh fails if TLC does not report that invariant.
+     publish_early     swap in a set before every rule is inserted
+     forget_readers    free the old set on swap, as if readers held no Arc
+     reload_per_rule   load the current set for every rule, not once per evaluation *)
+Bugs == {"none", "publish_early", "forget_readers", "reload_per_rule"}
+
+ASSUME Bug \in Bugs
 
 Versions == 0..MaxVersion
 
@@ -54,10 +63,10 @@ Insert ==
 \* build() then ArcSwap::store: the old Arc held by the swap is dropped.
 Publish ==
     /\ building # -1
-    /\ PublishEarly \/ built[building] = NumRules
+    /\ Bug = "publish_early" \/ built[building] = NumRules
     /\ current' = building
     /\ building' = -1
-    /\ refs' = [refs EXCEPT ![current] = @ - 1]
+    /\ refs' = [refs EXCEPT ![current] = IF Bug = "forget_readers" THEN 0 ELSE @ - 1]
     /\ UNCHANGED <<built, freed, reader>>
 
 \* An evaluation starts: ArcSwap::load_full clones the current Arc.
@@ -70,7 +79,8 @@ Load(r) ==
 \* Evaluate the next rule of the held set.
 Step(r) ==
     /\ reader[r].busy /\ reader[r].k < NumRules
-    /\ reader' = [reader EXCEPT ![r].k = @ + 1, ![r].seen = @ \cup {reader[r].ver}]
+    /\ reader' = [reader EXCEPT ![r].k = @ + 1,
+                                ![r].seen = @ \cup {IF Bug = "reload_per_rule" THEN current ELSE reader[r].ver}]
     /\ UNCHANGED <<built, current, building, refs, freed>>
 
 \* The evaluation ends and drops its Arc.
