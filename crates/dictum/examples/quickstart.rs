@@ -1,4 +1,4 @@
-//! The usage sketch from RATIONALE.md, type-checked by `cargo check --all-targets`.
+//! The usage sketch from docs/architecture.md, type-checked by `cargo check --all-targets`.
 //! (Bodies in the skeleton are `todo!()`, so running it panics; compiling it is the
 //! point: it proves the derive output, the schema builder's closure inference, and
 //! the rule APIs agree with the usage.)

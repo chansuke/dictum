@@ -1,8 +1,8 @@
-# dictum workspace (candidate 1 skeleton).
+# dictum workspace.
 #
 # Four crates. The design doc's `dictum-eval` is merged into `dictum` so that the
 # evaluator's internals (Value representation, closure tree, Frame, Budget, CSE)
-# are private modules of the one crate users depend on. See RATIONALE.md.
+# are private modules of the one crate users depend on. See docs/architecture.md.
 #
 #   dictum-syntax  lexer, parser, AST, Span, diagnostics, builtin name list   (no deps)
 #   dictum-check   Type, StructDesc, Env, typed IR, checker, overload tables  (syntax, jiff)
