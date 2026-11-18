@@ -6,3 +6,4 @@ import Dictum.Opt.Range
 import Dictum.Opt.Simp
 import Dictum.Opt.Reorder
 import Dictum.Opt.Member
+import Dictum.Syntax
