@@ -16,7 +16,9 @@ It mirrors the Rust code as follows:
 * `applyBin`          ~ the primitives in `engine/ops.rs`
 
 What is left out (strings, floats, collections, predicates, `let`, budgets) is
-covered by the property and differential tests instead.
+covered by the property and differential tests instead. The `Oracle` executable
+runs `eval` on inputs the Rust tests generate, so the Rust evaluator is compared
+with this definition, not only with itself.
 -/
 
 namespace Dictum
@@ -24,6 +26,10 @@ namespace Dictum
 /-- `i64::MIN` and `i64::MAX`. -/
 def minInt : Int := -(2 ^ 63)
 def maxInt : Int := 2 ^ 63 - 1
+
+/-- Fits in `i64`. Every value the engine holds does: literals are checked by the
+lexer, fields are `i64` or narrower, and every operation is checked. -/
+abbrev InI64 (n : Int) : Prop := minInt ≤ n ∧ n ≤ maxInt
 
 inductive Ty where
   | int
@@ -66,7 +72,7 @@ inductive Expr where
 
 /-- `checked_add` and friends: in range or `overflow`. -/
 def checked (n : Int) : Except Err Val :=
-  if minInt ≤ n ∧ n ≤ maxInt then .ok (.int n) else .error .overflow
+  if InI64 n then .ok (.int n) else .error .overflow
 
 def applyBin : BinOp → Val → Val → Except Err Val
   | .add, .int a, .int b => checked (a + b)
