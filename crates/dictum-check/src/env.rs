@@ -84,6 +84,16 @@ impl<P> Env<P> {
         Some((id, &self.funcs.get(id.index())?.sig))
     }
 
+    /// The name `id` was registered under, for runtime errors.
+    pub fn func_name(&self, id: FuncId) -> Option<&str> {
+        self.funcs.get(id.index()).map(|e| &*e.name)
+    }
+
+    /// How many functions the schema has.
+    pub fn func_count(&self) -> usize {
+        self.funcs.len()
+    }
+
     /// The implementation stored for `id`.
     ///
     /// `id` came from `func` on this same `Env` (the IR is checked against one `Env`
