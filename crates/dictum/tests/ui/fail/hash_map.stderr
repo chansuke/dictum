@@ -1,0 +1,40 @@
+error[E0277]: `HashMap<std::string::String, std::string::String>` cannot be used in a dictum fact
+ --> tests/ui/fail/hash_map.rs:5:16
+  |
+5 |     pub notes: HashMap<String, String>,
+  |                ^^^^^^^^^^^^^^^^^^^^^^^ the trait `dictum::__private::Field` is not implemented for `HashMap<std::string::String, std::string::String>`
+  |
+  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
+  = note: HashMap is rejected because its order is not deterministic; use BTreeMap
+  = note: use #[dictum(skip)] to keep the field out of rules
+  = help: the following other types implement trait `dictum::__private::Field`:
+            &T
+            &[T]
+            &str
+            BTreeMap<std::string::String, T>
+            Box<T>
+            Box<[T]>
+            Box<str>
+            Dynamic
+          and $N others
+
+error[E0277]: `HashMap<std::string::String, std::string::String>` cannot be used in a dictum fact
+ --> tests/ui/fail/hash_map.rs:3:10
+  |
+3 | #[derive(dictum::Dictum)]
+  |          ^^^^^^^^^^^^^^ the trait `dictum::__private::Field` is not implemented for `HashMap<std::string::String, std::string::String>`
+  |
+  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
+  = note: HashMap is rejected because its order is not deterministic; use BTreeMap
+  = note: use #[dictum(skip)] to keep the field out of rules
+  = help: the following other types implement trait `dictum::__private::Field`:
+            &T
+            &[T]
+            &str
+            BTreeMap<std::string::String, T>
+            Box<T>
+            Box<[T]>
+            Box<str>
+            Dynamic
+          and $N others
+  = note: this error originates in the derive macro `dictum::Dictum` (in Nightly builds, run with -Z macro-backtrace for more info)

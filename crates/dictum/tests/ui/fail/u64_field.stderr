@@ -1,0 +1,40 @@
+error[E0277]: `u64` cannot be used in a dictum fact
+ --> tests/ui/fail/u64_field.rs:3:13
+  |
+3 |     pub id: u64,
+  |             ^^^ the trait `dictum::__private::Field` is not implemented for `u64`
+  |
+  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
+  = note: HashMap is rejected because its order is not deterministic; use BTreeMap
+  = note: use #[dictum(skip)] to keep the field out of rules
+  = help: the following other types implement trait `dictum::__private::Field`:
+            f32
+            f64
+            i16
+            i32
+            i64
+            i8
+            u16
+            u32
+            u8
+
+error[E0277]: `u64` cannot be used in a dictum fact
+ --> tests/ui/fail/u64_field.rs:1:10
+  |
+1 | #[derive(dictum::Dictum)]
+  |          ^^^^^^^^^^^^^^ the trait `dictum::__private::Field` is not implemented for `u64`
+  |
+  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
+  = note: HashMap is rejected because its order is not deterministic; use BTreeMap
+  = note: use #[dictum(skip)] to keep the field out of rules
+  = help: the following other types implement trait `dictum::__private::Field`:
+            f32
+            f64
+            i16
+            i32
+            i64
+            i8
+            u16
+            u32
+            u8
+  = note: this error originates in the derive macro `dictum::Dictum` (in Nightly builds, run with -Z macro-backtrace for more info)

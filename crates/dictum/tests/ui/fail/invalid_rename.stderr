@@ -1,0 +1,5 @@
+error: `not-an-ident` is not a dictum identifier; use #[dictum(rename = "...")] or #[dictum(skip)]
+ --> tests/ui/fail/invalid_rename.rs:3:23
+  |
+3 |     #[dictum(rename = "not-an-ident")]
+  |                       ^^^^^^^^^^^^^^

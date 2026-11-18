@@ -81,3 +81,25 @@ impl<'a> Frame<'a> {
         todo!()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn budget_charges_before_the_work_and_stops_at_the_limit() {
+        let mut b = Budget::new(&Limits::default().with_max_steps(3).with_max_alloc(10));
+        assert!(b.step(2).is_ok());
+        assert!(b.step(1).is_ok());
+        assert!(matches!(b.step(1), Err(EvalErrorKind::StepLimit)));
+        assert!(b.alloc(10).is_ok());
+        assert!(matches!(b.alloc(1), Err(EvalErrorKind::AllocLimit)));
+    }
+
+    #[test]
+    fn an_oversized_request_fails_without_partial_charge() {
+        let mut b = Budget::new(&Limits::default().with_max_alloc(10));
+        assert!(matches!(b.alloc(u64::MAX), Err(EvalErrorKind::AllocLimit)));
+        assert!(b.alloc(10).is_ok(), "the failed request charged nothing");
+    }
+}

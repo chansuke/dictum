@@ -1,0 +1,5 @@
+error: `contains` is a reserved word in dictum; use #[dictum(rename = "...")] or #[dictum(skip)]
+ --> tests/ui/fail/reserved_name.rs:3:9
+  |
+3 |     pub contains: bool,
+  |         ^^^^^^^^

@@ -1,0 +1,5 @@
+error: two fields are named `x` in rules
+ --> tests/ui/fail/duplicate_name.rs:5:9
+  |
+5 |     pub x: bool,
+  |         ^

@@ -25,8 +25,17 @@ regex.workspace = true
 libm.workspace = true
 rust_decimal = { workspace = true, optional = true }
 
-# Dev-dependencies (proptest for the differential test, insta for snapshots) are
-# left out of the skeleton so `cargo check --offline` resolves; see RATIONALE.md.
+[dev-dependencies]
+dictum-testkit.workspace = true
+libtest-mimic.workspace = true
+proptest.workspace = true
+insta.workspace = true
+trybuild.workspace = true
+
+# End-to-end: tests/conformance/*.toml through the public API, one trial per case.
+[[test]]
+name = "conformance"
+harness = false
 
 [lints]
 workspace = true

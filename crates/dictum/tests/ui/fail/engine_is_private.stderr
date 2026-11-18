@@ -1,0 +1,11 @@
+error[E0603]: module `engine` is private
+ --> tests/ui/fail/engine_is_private.rs:1:13
+  |
+1 | use dictum::engine::Prepared;
+  |             ^^^^^^ private module
+  |
+note: the module `engine` is defined here
+ --> src/lib.rs
+  |
+  | mod engine;
+  | ^^^^^^^^^^

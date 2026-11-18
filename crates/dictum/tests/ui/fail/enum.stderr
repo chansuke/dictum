@@ -1,0 +1,5 @@
+error: #[derive(Dictum)] supports structs only
+ --> tests/ui/fail/enum.rs:2:10
+  |
+2 | pub enum Facts {
+  |          ^^^^^

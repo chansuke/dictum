@@ -1,0 +1,5 @@
+error: #[derive(Dictum)] supports lifetime parameters only: a struct's descriptor is a `static`, which cannot depend on type or const parameters
+ --> tests/ui/fail/generic.rs:2:18
+  |
+2 | pub struct Facts<T> {
+  |                  ^

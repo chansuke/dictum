@@ -1,0 +1,18 @@
+error[E0271]: type mismatch resolving `<B as Dictum>::Static == A`
+  --> tests/ui/fail/wrong_facts_type.rs:15:23
+   |
+15 |     let _ = rule.eval(&Ctx::new(b));
+   |                  ---- ^^^^^^^^^^^^ type mismatch resolving `<B as Dictum>::Static == A`
+   |                  |
+   |                  required by a bound introduced by this call
+   |
+note: expected this to be `A`
+  --> tests/ui/fail/wrong_facts_type.rs:10:12
+   |
+10 | pub struct B {
+   |            ^
+note: required by a bound in `dictum::Rule::<T, F>::eval`
+  --> src/rule.rs
+   |
+   |     pub fn eval<G: Dictum<Static = F>>(&self, ctx: &Ctx<'_, G>) -> Result<T, EvalError> {
+   |                           ^^^^^^^^^^ required by this bound in `Rule::<T, F>::eval`
