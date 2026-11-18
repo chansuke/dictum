@@ -202,7 +202,6 @@ Changed after review:
 - Not verified against the Go source: `**` returning `float`; `?:` being exactly `a ? a : b` with a `bool` `a` (implemented as `a || b`); and how expr-lang treats `{` in predicate position (I chose "always predicate braces", so a map-literal body is written `{{a: #}}`). These should be pinned by conformance cases before M1 ends.
 - Newtype fields (`UserId(i64)`). Add `#[dictum(transparent)]`, or let users implement `Field` by delegating (possible because `Value` is opaque)?
 - Risk: the bevy-style double bound in `IntoFunc` compiles on 1.85.1 and nightly for the shapes in the example (`|t: Timestamp|`, `|code: &str| -> Result<..>`). Closures without type annotations will not infer, so the docs must say "annotate parameters".
-- Risk: `thumbv7em-none-eabihf` was not built because the target is not installed.
 
 ## Next implementation step
 
@@ -219,4 +218,4 @@ Run at the repository root, offline, with no network installs:
 - `cargo +1.85.1 check --workspace --offline --all-targets` (MSRV, fresh target dir): ok.
 - `cargo tree -p dictum --no-default-features -e features`: no dependency has its `std` feature enabled.
 - A separate probe crate confirmed the six compile-time rejections listed under Usage. That probe ran against candidate 1 before the grafts and was not re-run; the grafts did not touch those code paths except `Field`, whose `HashMap` rejection is unchanged.
-- Not run: `thumbv7em-none-eabihf` (target not installed), clippy, and tests. Dev-dependencies (proptest, insta, trybuild, criterion) are left out so offline resolution stays guaranteed.
+- Since then, `just ci` (docs/verification.md) also builds for `thumbv7em-none-eabihf`, runs clippy with `-D warnings`, the tests, the Lean proofs and the TLA+ models.
