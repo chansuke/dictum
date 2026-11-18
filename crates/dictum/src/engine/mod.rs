@@ -68,12 +68,44 @@ pub(crate) fn check(
     expected: &Type,
 ) -> Result<Checked, CompileError> {
     let ast = dictum_syntax::parse(src).map_err(|d| compile_error(src, name, d))?;
-    // TODO:
-    // let mut ir = dictum_check::check(&ast, schema, expected).map_err(...)?;
-    // let deps = analysis::dependence(&ir, schema);
-    // fold::fold(&mut ir, schema, &deps);
-    // let patterns = compile constant patterns of BinaryOp::Matches nodes; errors -> E0211
-    todo!()
+    let ir = dictum_check::check(&ast, schema, expected).map_err(|d| compile_error(src, name, d))?;
+    // TODO(M4): let deps = analysis::dependence(&ir, schema); fold::fold(&mut ir, schema, &deps);
+    // Folding runs the closure compiler on constant subtrees, so it arrives with it.
+    let patterns = patterns(&ir).map_err(|d| compile_error(src, name, d))?;
+    Ok(Checked { source: src.into(), name: name.map(Into::into), ir, patterns })
+}
+
+/// Compile every constant `matches` pattern once. An invalid one is E0211.
+fn patterns(ir: &ir::Program) -> Result<BTreeMap<NodeId, Arc<regex::Regex>>, dictum_syntax::Diagnostics> {
+    fn visit(e: &ir::Expr, out: &mut BTreeMap<NodeId, Arc<regex::Regex>>, diags: &mut dictum_syntax::Diagnostics) {
+        let constant = match e.kind() {
+            ir::ExprKind::Binary { op: ir::BinaryOp::Matches, rhs, .. } => match rhs.kind() {
+                ir::ExprKind::Const(ir::Const::Str(pattern)) => Some((pattern, rhs.span())),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((pattern, span)) = constant {
+            match regex::Regex::new(pattern) {
+                Ok(re) => {
+                    out.insert(e.id(), Arc::new(re));
+                }
+                Err(err) => {
+                    let args = alloc::vec![dictum_syntax::Arg::Text(alloc::format!("{err}").into())];
+                    diags.push(dictum_syntax::Diagnostic::new(dictum_syntax::ErrorCode::InvalidPattern, span, args));
+                }
+            }
+        }
+        for c in e.children() {
+            visit(c, out, diags);
+        }
+    }
+    let mut out = BTreeMap::new();
+    let mut diags = dictum_syntax::Diagnostics::new();
+    for root in ir.lets().iter().chain(core::iter::once(ir.body())) {
+        visit(root, &mut out, &mut diags);
+    }
+    if diags.is_empty() { Ok(out) } else { Err(diags) }
 }
 
 /// The diagnostics of one rule as a `CompileError`.
