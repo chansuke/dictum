@@ -68,9 +68,8 @@ for (name, src) in rows {
     if let Err(e) = builder.insert(name, src) { errors.push(e) }      // per-rule diagnostics
 }
 let set: RuleSet<bool, F> = builder.build();                         // sharing decided here
-let outcomes = set.eval(&ctx);
+let outcomes = set.eval(&ctx)?;                                      // first failing rule: err.rule()
 for name in outcomes.matched() { ... }
-for (name, err) in outcomes.errors() { ... }                         // one bad rule doesn't block others
 if let Some(report) = set.explain("adult", &ctx) { ... }
 ```
 
@@ -125,7 +124,7 @@ Flow. `Rule::compile`: `parse → check(expected = T::expected()) → dependence
 - `Object: Send + Sync` is dropped. Facts are borrowed by one evaluation on one thread. `Rule: Send + Sync` holds for any `F`, asserted at compile time with a `!Sync` `F`.
 - `RuleSet::insert` on a live set would recompute shared slots on every insert. Replaced by a `RuleSetBuilder` and an immutable `RuleSet`, which also matches the doc's hot-reload model. `insert_many` is dropped (a loop over `insert` does the same).
 - CSE: each rule keeps its own closure for a shared node, and only the cache slot is shared. A value from rule A is valid for rule B, but an error is not, because its spans would point into A's source. So errors are never cached, and a rule that hits one recomputes with its own spans.
-- `RuleSet::eval` returns per-rule outcomes. "Stops at the first error" applies to each rule. Each rule has its own budget, and shared work is charged to the rule that computes it first.
+- `RuleSet::eval` runs rules in insertion order and stops at the first error, as the doc's `matching` did. The error names the failing rule (`EvalError::rule`). Each rule has its own budget, and shared work is charged to the rule that computes it first.
 - Errors are typed per operation (`CompileError`, `EvalError`). The umbrella `Error` enum is gone.
 - Constant folding runs the closure compiler on the constant subtree, so operator semantics are not implemented twice. Fold failures leave the node unfolded: `false && 1/0 > 0` must still compile.
 - Undecided points, decided here: `m[k]` gives `Option<V>`; array out-of-bounds is E0303 (negative indices count from the end); `?.` on a non-optional value acts like `.`; `let` bindings are evaluated eagerly in order; `**` gives `float` (per my reading of Go's `runtime.Exponent`, not checked against the Go source); `date(s)` without an offset is read as UTC; `duration(s)` uses Go's grammar, implemented in-crate.
@@ -148,8 +147,8 @@ Interface depth: users write `#[derive(Dictum)]` and call `Schema::builder` → 
 1. Syntax. Every conformance expression parses. `cargo fuzz` (parser) runs 10 CPU-minutes without a panic. Precedence tests cover every row of the binding-power table. Insta snapshots cover diagnostic rendering.
 2. Types (was M3). Every conformance case type-checks to its expected type, or fails with its expected E02xx code and span. A debug validator asserts the `ir::Program` invariants on every case. The checker fuzz target runs 10 CPU-minutes without a panic. Minimal derive: trybuild pass tests for every supported field type, and fail tests for enum, generic, reserved name, duplicate name, `HashMap` and `u64`. A property test: for derived structs, `field(i)`'s tag matches `fields()[i].ty()`.
 3. Reference evaluation (was M2). The spec interpreter (`engine/interp.rs`) over the typed IR plus the MVP builtins passes the conformance suite. Every intentional deviation from Go is recorded as `deviation = "..."`.
-4. Fast evaluation. Folding, closure compiler, budget. The proptest differential suite (`rule.eval(ctx) == rule.explain(ctx).into_result()`, and each `RuleSet` outcome equal to the standalone `Rule` outcome) passes 100k cases. Criterion benchmarks against Go are recorded.
-5. Rule engine. `Rule`, `RuleSet` with sharing, explain, `Ctx`. A differential test shows each `RuleSet` outcome equals the standalone `Rule` outcome. The quickstart example runs. 0.1 is published.
+4. Fast evaluation. Folding, closure compiler, budget. The proptest differential suite (`rule.eval(ctx) == rule.explain(ctx).into_result()`, and a `RuleSet` result equal to the standalone `Rule` results: every value on success, the first failing rule's error otherwise) passes 100k cases. Criterion benchmarks against Go are recorded.
+5. Rule engine. `Rule`, `RuleSet` with sharing, explain, `Ctx`. A differential test shows each `RuleSet` result equals the standalone `Rule` results. The quickstart example runs. 0.1 is published.
 6. Extensions, each done separately. Each remaining builtin has its `Builtin` entry, typing, implementation, and ported conformance cases. CLI/REPL: `dictum eval --facts f.json '<expr>'` prints the result for the whole conformance corpus, which requires the dynamic-root decision below. WASM: the conformance runner passes on `wasm32-wasip1` under wasmtime in CI.
 
 ## Synthesis decision
@@ -174,6 +173,7 @@ Rejected from candidate 2:
 
 Changed after review:
 - The clock follows candidate 2 after all: `Ctx::new(&facts)` takes no time, `with_now` sets one, and `now()` without one is `ClockUnset` (E0311). The synthesis had required `now` in `Ctx::new`; the reviewer preferred the smaller constructor and rules that need no time.
+- `RuleSet::eval` stops at the first error and returns `Result<Outcomes, EvalError>`, as the doc's `matching` did. The synthesis had returned a result per rule so that one bad rule did not block the others; the reviewer chose the doc's behavior.
 
 ## Tradeoffs accepted
 
@@ -184,6 +184,7 @@ Changed after review:
 - We accept linear-time map-literal lookup and binary-search constant sets, in exchange for no hasher in `no_std` and no hash-seeding questions.
 - We accept that `explain` runs a tree-walking interpreter, slower than the closure tree and held to the same no-panic and budget bar, in exchange for no second compiler, no once-cell, exact per-node spans, and a differential oracle reachable through the public API.
 - We accept that a rule in a set may stay within its budget only because another rule paid for shared work, in exchange for computing shared work once.
+- We accept that one failing rule in a set hides the values of every rule, including those that ran before it, in exchange for one `Result` to handle, as in the doc. A caller that needs the others evaluates them as separate `Rule`s.
 - We accept `ops.rs` primitives being shared by the spec interpreter, which narrows what the differential test checks to control flow, specialization, caching and budgets, in exchange for having one definition of `checked_add`.
 - We accept the `__private` module and its trait names (`Field`, `Object`, `Arg`, ...) as nameable, unavoidable for derive output, and contain them in one doc-hidden module without stability promises.
 
@@ -197,7 +198,6 @@ Changed after review:
 ## Open questions and risks
 
 - Dynamic roots. Should a schema be buildable from a runtime description (JSON keys become `any` variables) for the CLI and for config-defined schemas? `StructDesc` needs `'static` names, so this means leaking a descriptor or adding a second descriptor kind. Which does M6 want?
-- Should `RuleSet::eval` evaluate every rule after one fails (as here), or stop at the first error as the doc's `matching` did?
 - Is `MAX_DEPTH = 128` right for the smallest no_std stacks you target? Should it be a compile option?
 - Not verified against the Go source: `**` returning `float`; `?:` being exactly `a ? a : b` with a `bool` `a` (implemented as `a || b`); and how expr-lang treats `{` in predicate position (I chose "always predicate braces", so a map-literal body is written `{{a: #}}`). These should be pinned by conformance cases before M1 ends.
 - Newtype fields (`UserId(i64)`). Add `#[dictum(transparent)]`, or let users implement `Field` by delegating (possible because `Value` is opaque)?

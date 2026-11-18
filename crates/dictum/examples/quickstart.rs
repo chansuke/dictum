@@ -107,20 +107,19 @@ fn load_rules(schema: &Schema<F>, rows: &[(String, String)]) -> (RuleSet<bool, F
     (builder.build(), errors)
 }
 
-fn evaluate_set(set: &RuleSet<bool, F>, user: &User, order: &Order) {
+fn evaluate_set(set: &RuleSet<bool, F>, user: &User, order: &Order) -> Result<(), dictum::EvalError> {
     let facts = Facts { user, order };
     // No rule in this set calls `now()`, so no time is needed.
     let ctx = Ctx::new(&facts);
-    let outcomes = set.eval(&ctx);
+    // Stops at the first failing rule; `err.rule()` names it.
+    let outcomes = set.eval(&ctx)?;
     for name in outcomes.matched() {
         println!("matched {name}");
-    }
-    for (name, err) in outcomes.errors() {
-        eprintln!("{name}: {err}");
     }
     if let Some(report) = set.explain("adult", &ctx) {
         println!("{report}");
     }
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -152,6 +151,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::thread::spawn(move || {
         let _names: Vec<&str> = worker.names().collect();
     });
-    evaluate_set(&shared, &user, &order);
+    evaluate_set(&shared, &user, &order)?;
     Ok(())
 }

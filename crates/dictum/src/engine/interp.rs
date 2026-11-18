@@ -17,7 +17,8 @@
 //!            checker are exercised too)
 //! property: for random facts and `now`,
 //!           rule.eval(ctx) == rule.explain(ctx).into_result()          // compiler, folder
-//!           RuleSet of N variants: each outcome == standalone Rule outcome
+//!           RuleSet of N variants: Ok(values) == every standalone Rule value,
+//!           Err(e) == the first rule (insertion order) whose standalone eval fails
 //!                                                                    // sharing
 //! equality: values equal, or both errors with the same ErrorCode and span
 //!           (cases that hit a budget limit are skipped: the RuleSet charges shared

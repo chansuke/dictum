@@ -31,18 +31,19 @@ impl<T: Output, F: Dictum<Static = F>> RuleSet<T, F> {
         RuleSetBuilder { schema: schema.clone(), rules: Vec::new(), _types: PhantomData }
     }
 
-    /// Evaluate every rule against one `ctx`.
+    /// Evaluate every rule against one `ctx`, in insertion order.
     ///
-    /// Each rule's result is independent: a rule that fails (its evaluation stops at
-    /// its first error) does not stop the others. A pure subexpression that occurs in
-    /// several rules is computed once per call; `now()` is the same for all rules.
-    /// Each rule has its own budget (`ctx`'s limits); shared work is charged to the
-    /// rule that computes it first (rules run in insertion order).
-    pub fn eval<G: Dictum<Static = F>>(&self, ctx: &Ctx<'_, G>) -> Outcomes<'_, T> {
+    /// Stops at the first error: the result is either every rule's value or the error
+    /// of the first rule that failed (`EvalError::rule` names it). A pure
+    /// subexpression that occurs in several rules is computed once per call; `now()`
+    /// is the same for all rules. Each rule has its own budget (`ctx`'s limits);
+    /// shared work is charged to the rule that computes it first.
+    pub fn eval<G: Dictum<Static = F>>(&self, ctx: &Ctx<'_, G>) -> Result<Outcomes<'_, T>, EvalError> {
         // TODO: one Frame for the whole call with cache = vec![None; inner.cache_slots()];
-        // for each rule in order: reset budget, slots and scopes; run; on Ok cache keeps
-        // the values it filled, on Err nothing is cached (each rule recomputes with its
-        // own closure tree, so errors carry that rule's own spans).
+        // for each rule in order: reset budget, slots and scopes; run; on Ok the cache
+        // keeps the values it filled; on Err return it. Errors are never cached: each
+        // rule computes a shared node with its own closure tree when the slot is empty,
+        // so an error carries the failing rule's own spans.
         todo!()
     }
 
@@ -93,28 +94,23 @@ impl<T: Output, F: Dictum<Static = F>> RuleSetBuilder<T, F> {
     }
 }
 
-/// Per-rule results of one [`RuleSet::eval`], in insertion order.
+/// Every rule's value from one successful [`RuleSet::eval`], in insertion order.
 pub struct Outcomes<'s, T> {
     names: Vec<&'s str>,
-    results: Vec<Result<T, EvalError>>,
+    values: Vec<T>,
 }
 
 impl<'s, T> Outcomes<'s, T> {
-    /// Every rule with its result.
-    pub fn iter(&self) -> impl Iterator<Item = (&'s str, &Result<T, EvalError>)> {
-        self.names.iter().copied().zip(self.results.iter())
-    }
-
-    /// Rules that failed.
-    pub fn errors(&self) -> impl Iterator<Item = (&'s str, &EvalError)> {
-        self.iter().filter_map(|(n, r)| r.as_ref().err().map(|e| (n, e)))
+    /// Every rule with its value.
+    pub fn iter(&self) -> impl Iterator<Item = (&'s str, &T)> {
+        self.names.iter().copied().zip(self.values.iter())
     }
 }
 
 impl<'s> Outcomes<'s, bool> {
     /// Rules that evaluated to `true`.
     pub fn matched(&self) -> impl Iterator<Item = &'s str> {
-        self.iter().filter_map(|(n, r)| matches!(r, Ok(true)).then_some(n))
+        self.iter().filter_map(|(n, v)| v.then_some(n))
     }
 }
 
