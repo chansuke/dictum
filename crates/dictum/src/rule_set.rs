@@ -4,6 +4,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
+use dictum_syntax::{Arg, ErrorCode};
+
 use crate::engine::{self, Checked, PreparedSet};
 use crate::rule::TypeMarker;
 use crate::{CompileError, Ctx, Dictum, EvalError, Output, Report, Schema};
@@ -77,8 +79,14 @@ impl<T: Output, F: Dictum<Static = F>> RuleSetBuilder<T, F> {
     ///
     /// Loading many rules is a loop over `insert`, collecting the errors you want.
     pub fn insert(&mut self, name: &str, src: &str) -> Result<(), CompileError> {
-        // TODO: if self.rules.iter().any(|r| r.name() == Some(name)) -> CompileError
-        //       with one Diagnostic(DuplicateRule, span = whole source, [Arg::Name(name)])
+        if self.rules.iter().any(|r| r.name() == Some(name)) {
+            let end = u32::try_from(src.len()).unwrap_or(u32::MAX);
+            let span = dictum_syntax::Span { start: 0, end };
+            let d = dictum_syntax::Diagnostic::new(ErrorCode::DuplicateRule, span, alloc::vec![Arg::Name(name.into())]);
+            let mut diags = dictum_syntax::Diagnostics::new();
+            diags.push(d);
+            return Err(engine::compile_error(src, Some(name), diags));
+        }
         let checked = engine::check(src, Some(name), &self.schema.core, &T::expected())?;
         self.rules.push(checked);
         Ok(())
