@@ -1,6 +1,7 @@
-# Lean proofs and TLA+ models. Cheap (about a minute each), so they run on every
-# PR, not only when formal/ changes: a code change can invalidate what a model
-# claims about the code, and the PR author should see the models next to it.
+# Lean proofs, the differential tests against the Lean definitions, and TLA+
+# models. Cheap (about a minute each), so they run on every PR, not only when
+# formal/ changes: a code change can invalidate what a model claims about the
+# code, and the differential tests are what connect the two.
 name: Formal
 
 on:
@@ -32,10 +33,13 @@ jobs:
             ~/.elan/toolchains
             formal/lean/.lake
           key: lean-${{ hashFiles('formal/lean/lean-toolchain', 'formal/lean/lake-manifest.json') }}
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
         with:
           tool: just
-      - run: just lean
+      # `drt` builds the proofs and dictum-oracle first.
+      - run: just drt
 
   tla:
     runs-on: ubuntu-latest

@@ -1,5 +1,5 @@
-# Long runs that do not fit in a PR: fuzzing per target and 100k-case property
-# tests. Targets and tests whose milestone is not reached yet report "pending"
+# Long runs that do not fit in a PR: fuzzing per target, and 100k-case property
+# and differential tests. Targets and tests whose milestone is not reached yet report "pending"
 # and pass; see `just fuzz` and `just pending`.
 name: Deep
 
@@ -56,5 +56,23 @@ jobs:
         with:
           tool: just,cargo-nextest
       - run: just test
+        env:
+          PROPTEST_CASES: "100000"
+
+  differential:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install elan (the Lean version comes from formal/lean/lean-toolchain)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: just
+      - run: just drt
         env:
           PROPTEST_CASES: "100000"
