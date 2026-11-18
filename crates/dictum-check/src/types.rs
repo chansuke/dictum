@@ -79,14 +79,49 @@ impl Type {
     /// The runtime tag of a value of this type, if it is fixed. `None` for `Any` and
     /// `Option` (whose values are `Nil` or the inner tag).
     pub fn tag(&self) -> Option<Tag> {
-        todo!()
+        Some(match self {
+            Type::Any | Type::Option(_) => return None,
+            Type::Nil => Tag::Nil,
+            Type::Bool => Tag::Bool,
+            Type::Int => Tag::Int,
+            Type::Float => Tag::Float,
+            #[cfg(feature = "decimal")]
+            Type::Decimal => Tag::Decimal,
+            Type::String => Tag::String,
+            Type::Bytes => Tag::Bytes,
+            Type::Time => Tag::Time,
+            Type::Duration => Tag::Duration,
+            Type::Array(_) => Tag::Array,
+            Type::Map(_) => Tag::Map,
+            Type::Struct(_) => Tag::Struct,
+        })
+    }
+
+    /// Whether `nil` is a value of this type.
+    pub fn admits_nil(&self) -> bool {
+        matches!(self, Type::Any | Type::Nil | Type::Option(_))
+    }
+
+    /// The type without `Option`: `Option<T>` is `T`, others are themselves.
+    pub fn non_optional(&self) -> &Type {
+        match self {
+            Type::Option(o) => o.inner(),
+            other => other,
+        }
     }
 }
 
 impl fmt::Display for Type {
     /// `int`, `array<string>`, `Option<User>`, ... (used in diagnostics).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        match self {
+            Type::Any => f.write_str("any"),
+            Type::Array(t) => write!(f, "array<{t}>"),
+            Type::Map(t) => write!(f, "map<string, {t}>"),
+            Type::Option(o) => write!(f, "Option<{}>", o.inner()),
+            Type::Struct(d) => f.write_str(d.name()),
+            other => f.write_str(other.tag().map_or("any", Tag::name)),
+        }
     }
 }
 
@@ -176,7 +211,9 @@ impl StructDesc {
     /// Resolve a rule-visible field name. Linear scan: this runs at compile time only
     /// and structs have tens of fields.
     pub fn field(&self, name: &str) -> Option<(FieldId, &'static FieldDesc)> {
-        todo!()
+        let fields = self.fields;
+        let i = fields.iter().position(|f| f.name == name)?;
+        Some((FieldId(u16::try_from(i).ok()?), fields.get(i)?))
     }
 }
 
