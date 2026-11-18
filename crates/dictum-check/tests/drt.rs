@@ -19,6 +19,7 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
 
+use dictum_check::ir::{Conversion, Expr, ExprKind};
 use dictum_check::{Env, Type};
 use dictum_testkit::Facts;
 use dictum_testkit::generate::{core_types, core_untyped};
@@ -44,6 +45,13 @@ fn main() {
     libtest_mimic::run(&args, trials).exit();
 }
 
+fn unerased(e: &Expr) -> &Type {
+    match e.kind() {
+        ExprKind::Convert { op: Conversion::Erase, arg } => arg.ty(),
+        _ => e.ty(),
+    }
+}
+
 fn agree(path: PathBuf) -> Result<(), Failed> {
     let oracle = RefCell::new(Oracle::spawn(&path));
     let env = Env::<()>::new(<Facts as dictum::Dictum>::__desc(), Vec::new()).map_err(|e| format!("{e:?}"))?;
@@ -53,7 +61,8 @@ fn agree(path: PathBuf) -> Result<(), Failed> {
         .run(&core_untyped(4), |(src, core)| {
             let ast = dictum_syntax::parse(&src).map_err(|_| TestCaseError::fail(format!("{src}: does not parse")))?;
             let rust = match dictum_check::check(&ast, &env, &Type::Any) {
-                Ok(p) => match p.body().ty() {
+                // Asked for `any`, the body is erased to it; compare the type before that.
+                Ok(p) => match unerased(p.body()) {
                     Type::Int => Some(CoreTy::Int),
                     Type::Bool => Some(CoreTy::Bool),
                     other => return Err(TestCaseError::fail(format!("{src}: unexpected type {other}"))),
