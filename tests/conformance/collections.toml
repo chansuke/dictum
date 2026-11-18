@@ -97,8 +97,14 @@ expect = 31
 
 [[case]]
 name = "first and last"
-expr = "first(nums) + last(nums)"
+expr = "(first(nums) ?? 0) + (last(nums) ?? 0)"
 expect = 9
+
+[[case]]
+name = "first is optional"
+expr = "first(nums) + last(nums)"
+error = "E0208"
+deviation = "Go returns nil for an empty array and adds dynamically; dictum types first and last as Option<T>, so arithmetic needs ??"
 
 [[case]]
 name = "join"
