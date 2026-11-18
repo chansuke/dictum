@@ -324,6 +324,40 @@ pub fn core_expr(ty: Ty, depth: u32) -> BoxedStrategy<(String, String)> {
     }
 }
 
+/// An expression of the core fragment that may be ill typed (`true + 1`,
+/// `user.Age && limit`, `1 ? 2 : 3`), as dictum source and as the oracle's
+/// s-expression, for the type checker differential test. The fields are those of
+/// [`core_expr`]; see [`core_types`].
+pub fn core_untyped(depth: u32) -> BoxedStrategy<(String, String)> {
+    let leaf = prop_oneof![
+        (0i64..=3).prop_map(|n| (n.to_string(), n.to_string())),
+        any::<bool>().prop_map(|b| (b.to_string(), b.to_string())),
+        proptest::sample::select(&[("user.Age", "$0"), ("limit", "$1"), ("user.Active", "$2")][..])
+            .prop_map(|(s, e)| (s.to_owned(), e.to_owned())),
+    ]
+    .boxed();
+    if depth == 0 {
+        return leaf;
+    }
+    let sub = core_untyped(depth - 1);
+    prop_oneof![
+        leaf.clone(),
+        leaf,
+        (sub.clone(), proptest::sample::select(&["+", "-", "*", "%", "==", "<", "&&", "||"][..]), sub.clone())
+            .prop_map(|((a, aa), op, (b, bb))| (format!("({a} {op} {b})"), format!("({op} {aa} {bb})"))),
+        sub.clone().prop_map(|(a, aa)| (format!("(not {a})"), format!("(not {aa})"))),
+        (sub.clone(), sub.clone(), sub)
+            .prop_map(|((c, cc), (t, tt), (e, ee))| (format!("({c} ? {t} : {e})"), format!("(? {cc} {tt} {ee})"))),
+    ]
+    .boxed()
+}
+
+/// The oracle's field types for [`core_expr`] and [`core_untyped`].
+pub const fn core_types() -> [crate::oracle::CoreTy; 3] {
+    use crate::oracle::CoreTy;
+    [CoreTy::Int, CoreTy::Int, CoreTy::Bool]
+}
+
 /// The oracle's fact root for [`core_expr`]: the fields it names, from `facts`.
 pub fn core_env(facts: &crate::Facts) -> [crate::oracle::CoreVal; 3] {
     use crate::oracle::CoreVal;

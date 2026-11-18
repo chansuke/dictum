@@ -109,6 +109,32 @@ impl Oracle {
     }
 }
 
+/// A type of the Lean core fragment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CoreTy {
+    Int,
+    Bool,
+}
+
+impl Oracle {
+    /// `Dictum.infer types expr`: the type, or `None` if the rule is not well typed.
+    pub fn check(&mut self, types: &[CoreTy], expr: &str) -> Option<CoreTy> {
+        let types: Vec<&str> = types
+            .iter()
+            .map(|t| match t {
+                CoreTy::Int => "int",
+                CoreTy::Bool => "bool",
+            })
+            .collect();
+        let answer = self.ask(&["check", &types.join(" "), expr]);
+        match (answer[0].as_str(), answer.get(1).map(String::as_str)) {
+            ("ok", Some("int")) => Some(CoreTy::Int),
+            ("ok", Some("bool")) => Some(CoreTy::Bool),
+            _ => None,
+        }
+    }
+}
+
 impl Drop for Oracle {
     fn drop(&mut self) {
         let _ = self.child.kill();
