@@ -1,0 +1,32 @@
+[package]
+name = "dictum"
+description = "A statically typed expr-lang dialect for rule engines: compile once, evaluate many times."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["std"]
+# std only buys performance (regex thread-local pool) and, later, `timezone()`.
+# Semantics are identical with and without it.
+std = ["regex/std", "jiff/std"]
+decimal = ["dep:rust_decimal", "dictum-check/decimal"]
+
+[dependencies]
+dictum-syntax.workspace = true
+dictum-check.workspace = true
+dictum-derive.workspace = true
+jiff.workspace = true
+regex.workspace = true
+# Always libm (not std's float intrinsics) for floor/ceil/round/pow, so results are
+# bit-identical across targets and between std and no_std builds.
+libm.workspace = true
+rust_decimal = { workspace = true, optional = true }
+
+# Dev-dependencies (proptest for the differential test, insta for snapshots) are
+# left out of the skeleton so `cargo check --offline` resolves; see RATIONALE.md.
+
+[lints]
+workspace = true

@@ -1,0 +1,57 @@
+# dictum workspace (candidate 1 skeleton).
+#
+# Four crates. The design doc's `dictum-eval` is merged into `dictum` so that the
+# evaluator's internals (Value representation, closure tree, Frame, Budget, CSE)
+# are private modules of the one crate users depend on. See RATIONALE.md.
+#
+#   dictum-syntax  lexer, parser, AST, Span, diagnostics, builtin name list   (no deps)
+#   dictum-check   Type, StructDesc, Env, typed IR, checker, overload tables  (syntax, jiff)
+#   dictum         public API + engine (value, fold, closure compiler, CSE)   (check, derive, jiff, regex, libm)
+#   dictum-derive  #[derive(Dictum)]                                          (syn, quote, syntax)
+[workspace]
+resolver = "3"
+members = [
+    "crates/dictum-syntax",
+    "crates/dictum-check",
+    "crates/dictum",
+    "crates/dictum-derive",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/chansuke/dictum"
+
+[workspace.dependencies]
+# Inner crates are pinned exactly: they publish no semver promise of their own and
+# move in lockstep with `dictum`.
+dictum-syntax = { path = "crates/dictum-syntax", version = "=0.1.0" }
+dictum-check = { path = "crates/dictum-check", version = "=0.1.0", default-features = false }
+dictum-derive = { path = "crates/dictum-derive", version = "=0.1.0" }
+
+# no_std + alloc for every runtime dependency; `std` is forwarded from `dictum/std`.
+jiff = { version = "0.2.38", default-features = false, features = ["alloc"] }
+regex = { version = "1.12", default-features = false, features = ["unicode", "perf"] }
+libm = "0.2.15"
+rust_decimal = { version = "1.39", default-features = false }
+
+syn = { version = "2.0.110", default-features = false, features = ["derive", "parsing", "printing", "proc-macro", "visit-mut", "clone-impls"] }
+quote = "1.0.44"
+proc-macro2 = "1.0.103"
+
+[workspace.lints.rust]
+# Every `pub` item must be reachable from its crate root. Internals are `pub(crate)`,
+# so an import of an internal from another crate fails the build.
+unreachable_pub = "deny"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# Evaluation never panics. These make the "no panic" rule a build failure in CI
+# (`cargo clippy -- -D warnings`); test code opts out locally.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+indexing_slicing = "warn"
+arithmetic_side_effects = "warn"

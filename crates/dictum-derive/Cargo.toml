@@ -1,0 +1,21 @@
+[package]
+name = "dictum-derive"
+description = "Internal crate of dictum: #[derive(Dictum)]. Use it through `dictum::Dictum`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn.workspace = true
+quote.workspace = true
+proc-macro2.workspace = true
+# Single source of truth for "is this a valid, non-reserved dictum identifier".
+dictum-syntax.workspace = true
+
+[lints]
+workspace = true

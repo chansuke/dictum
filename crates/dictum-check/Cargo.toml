@@ -1,0 +1,21 @@
+[package]
+name = "dictum-check"
+description = "Internal crate of dictum: types, schema environment, typed IR and the type checker. No API stability; depend on `dictum`."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+decimal = ["dep:rust_decimal"]
+
+[dependencies]
+dictum-syntax.workspace = true
+# Only for `ir::Const::{Time, Duration}` (folded `date("..")` / `duration("..")`).
+jiff.workspace = true
+rust_decimal = { workspace = true, optional = true }
+
+[lints]
+workspace = true
