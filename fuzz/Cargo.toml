@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4.13"
 dictum = { path = "../crates/dictum" }
+dictum-check = { path = "../crates/dictum-check" }
 dictum-syntax = { path = "../crates/dictum-syntax" }
 dictum-testkit = { path = "../crates/dictum-testkit", features = ["arbitrary"] }
 
@@ -27,7 +28,16 @@ test = false
 doc = false
 bench = false
 
-# M2: parse + check + fold + closure compile never panic.
+# M2: parse + check never panic, and an accepted rule satisfies the IR invariants.
+[[bin]]
+name = "check"
+path = "fuzz_targets/check.rs"
+test = false
+doc = false
+bench = false
+
+# M4: parse + check + fold + closure compile never panic. (It was M2 before the
+# checker had a target of its own; folding and closures arrive in M4.)
 [[bin]]
 name = "compile"
 path = "fuzz_targets/compile.rs"
