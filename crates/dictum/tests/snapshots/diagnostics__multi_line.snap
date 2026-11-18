@@ -1,0 +1,9 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "compile_error(\"let a = 1;\\nlet b = \\\"x\\\";\\na + b\")"
+---
+error[E0208]: no operator `+` for int and string
+ --> rule:3:1
+  |
+3 | a + b
+  | ^^^^^

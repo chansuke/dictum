@@ -37,16 +37,18 @@ fn rules_that_do_not_call_now_need_no_time() {
 }
 
 #[test]
-#[ignore = "pending M2: checker"]
 fn result_type_is_checked_at_compile_time() {
     let err = Rule::<bool, Facts>::compile("user.Age", &schema()).err().unwrap();
     assert_eq!(err.diagnostics()[0].code().as_str(), "E0209");
-    // int is promoted to float.
+}
+
+#[test]
+#[ignore = "pending M4: closure compiler (compiling a valid rule builds closures)"]
+fn int_result_is_promoted_to_float() {
     assert!(Rule::<f64, Facts>::compile("user.Age", &schema()).is_ok());
 }
 
 #[test]
-#[ignore = "pending M2: checker"]
 fn compile_errors_are_collected_and_capped() {
     let src = (0..30).map(|i| format!("x{i}")).collect::<Vec<_>>().join(" + ");
     let err = Rule::<Dynamic, Facts>::compile(&src, &schema()).err().unwrap();
@@ -86,7 +88,6 @@ fn rule_set_reports_matches_in_insertion_order() {
 }
 
 #[test]
-#[ignore = "pending M2: checker"]
 fn duplicate_rule_names_are_rejected() {
     let schema = schema();
     let mut b = RuleSet::<bool, Facts>::builder(&schema);

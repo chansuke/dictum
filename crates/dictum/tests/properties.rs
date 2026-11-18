@@ -60,13 +60,20 @@ proptest! {
     /// The generator only produces well-typed rules; a type error means the generator
     /// or the checker is wrong.
     #[test]
-    #[ignore = "pending M2: checker"]
     fn generated_rules_type_check((ty, src) in generate::any_rule(4)) {
         let ast = dictum_syntax::parse(&src).map_err(|d| TestCaseError::fail(format!("{src}: {:?}", d.finish().0)))?;
         let env = dictum_check::Env::<()>::new(<Facts as dictum::Dictum>::__desc(), Vec::new()).unwrap();
-        let program = dictum_check::check(&ast, &env, &dictum_check::Type::Any)
+        let expected = match ty {
+            generate::Ty::Bool => dictum_check::Type::Bool,
+            generate::Ty::Int => dictum_check::Type::Int,
+            generate::Ty::Float => dictum_check::Type::Float,
+            generate::Ty::Str => dictum_check::Type::String,
+        };
+        // Checked against its own type, the body needs no conversion.
+        let program = dictum_check::check(&ast, &env, &expected)
             .map_err(|d| TestCaseError::fail(format!("{src}: {:?}", d.finish().0)))?;
-        prop_assert_eq!(program.body().ty().tag().map(|t| t.name()), Some(ty.name()), "{}", src);
+        prop_assert_eq!(program.body().ty(), &expected, "{}", src);
+        prop_assert!(program.validate(&env).is_ok(), "{}: {:?}", src, program.validate(&env));
     }
 
     /// M5: budgets aside, sharing changes nothing. Each rule's *meaning* is its
@@ -115,13 +122,13 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "pending M2: parser and checker"]
+    #[ignore = "pending M4: closure compiler (compiling a valid rule folds and builds closures)"]
     fn compile_never_panics_on_token_soup(src in generate::token_soup()) {
         let _ = Rule::<Dynamic, Facts>::compile(&src, &schema());
     }
 
     #[test]
-    #[ignore = "pending M2: parser and checker"]
+    #[ignore = "pending M4: closure compiler (compiling a valid rule folds and builds closures)"]
     fn compile_never_panics_on_arbitrary_text(src in "\\PC{0,64}") {
         let _ = Rule::<Dynamic, Facts>::compile(&src, &schema());
     }

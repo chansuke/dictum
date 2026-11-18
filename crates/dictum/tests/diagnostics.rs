@@ -27,7 +27,6 @@ fn syntax_errors() {
 }
 
 #[test]
-#[ignore = "pending M2: checker"]
 fn type_errors() {
     insta::assert_snapshot!("type_mismatch", compile_error(r#"user.Age + "x""#));
     insta::assert_snapshot!("optional_access_help", compile_error("user.Manager.Name"));
