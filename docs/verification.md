@@ -5,8 +5,8 @@ What "done" means for a change, and which check gives the evidence. Every check 
 | when | command | time |
 | --- | --- | --- |
 | before every commit | `just verify` (formatting, clippy, rustdoc, typos, actionlint, all tests) | ~1 min |
-| every PR | `just ci` (adds cargo-deny, MSRV, no_std, bench and fuzz builds, Lean, TLA+) | ~1 min locally, parallel jobs in CI |
-| nightly | `.github/workflows/deep.yml`: 10 min of fuzzing per target, property tests with 100k cases | |
+| every PR | `just ci` (adds cargo-deny, MSRV, no_std, bench and fuzz builds, Lean, the differential tests against Lean, TLA+) | ~1 min locally, parallel jobs in CI |
+| nightly | `.github/workflows/deep.yml`: 10 min of fuzzing per target, property and differential tests with 100k cases | |
 
 Tools come from `nix develop`. Rust comes from rustup (`rust-toolchain.toml`, pinned).
 
@@ -23,8 +23,9 @@ Tools come from `nix develop`. Rust comes from rustup (`rust-toolchain.toml`, pi
 | snapshots (insta) | rendered diagnostics | `crates/dictum/tests/diagnostics.rs` |
 | compile-fail (trybuild) | what the derive and the type system reject: `HashMap`, `u64`, reserved names, generics, enums, a wrong facts type, a non-`Output` result, the private engine | `crates/dictum/tests/ui` |
 | fuzzing (cargo-fuzz) | parser, compiler and eval/explain agreement on arbitrary input and facts | `fuzz/` |
-| Lean | proofs over a core fragment (see below) | `formal/lean` |
-| TLA+ (TLC) | exhaustive model checking of `RuleSet::eval` sharing and hot reload, each with a seeded mutant that must be caught | `formal/tla` |
+| Lean | proofs over a core fragment: soundness, and every optimization the engine may apply (see below) | `formal/lean` |
+| differential tests against Lean | the Rust code computes what the Lean definitions say: the parser against the reference parser, `Rule::eval` against `Dictum.eval` | `just drt`: `crates/dictum-syntax/tests/drt.rs`, `crates/dictum/tests/drt_eval.rs` |
+| TLA+ (TLC) | exhaustive model checking of `RuleSet::eval` sharing and hot reload, one seeded bug per invariant, and validation of recorded runs | `formal/tla` |
 | builds | MSRV 1.85, `thumbv7em-none-eabihf` without std, benchmarks, fuzz targets | `just msrv nostd bench-build fuzz-build` |
 
 All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`, `sample()`, `sample_now()`), so a rule that fails anywhere can be pasted into a conformance case.
@@ -33,13 +34,16 @@ All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`,
 
 | invariant | evidence |
 | --- | --- |
-| a well-typed rule never hits `Internal` | Lean `soundness`, `never_internal`; fuzz `compile`, `eval_differential` |
+| a well-typed rule never hits `Internal`, and its `int` values fit in `i64` | Lean `soundness`, `never_internal`; fuzz `compile`, `eval_differential` |
+| the parser follows the precedence table | `#guard`s in Lean `Dictum.Syntax`; `drt` against the reference parser; `parser.rs` row tests |
+| evaluation is the Lean `eval` on the core fragment | `drt_eval` |
 | evaluation never panics | clippy no-panic lints; fuzz; proptest `compile_never_panics_*` |
 | constant folding changes no outcome, errors included | Lean `fold_sound`; proptest `eval_agrees_with_explain` (explain runs the unfolded IR) |
 | CSE may identify `a + b` with `b + a` but not `a && b` with `b && a` | Lean `comm_ok`, `and_not_comm`, `or_not_comm`; test `short_circuit_operands_are_not_shared_across_orders` |
 | errors are never cached; a slot is written once | TLA+ `CacheHoldsOnlyValues`, `SlotWrittenOnce` |
 | budgets aside, a `RuleSet` gives what its rules give alone | TLA+ `OkMeansEveryRuleMeansAValue`, `ErrorIsFirstMeaningfulError`; proptest `rule_set_agrees_with_standalone_rules` |
 | sharing never makes a rule pay more | TLA+ `NeverChargedMore`, `LimitMeansStandaloneLimit` |
+| the implemented `RuleSet::eval` follows the model | TLA+ trace validation (`RuleSetTrace.tla`); the Rust side records traces from M5 |
 | hot reload: readers see only complete sets, one per evaluation, never freed under them | TLA+ `HotReload`: `OnlyCompleteSetsArePublished`, `OneSetPerEvaluation`, `NoUseAfterFree`, `EvaluationsFinish` |
 | schema and facts agree | derive generates both from one field list; trybuild |
 | a rule runs only with its own facts type and result type | trybuild `wrong_facts_type`, `result_type_not_output` |
@@ -48,12 +52,45 @@ All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`,
 
 The Lean fragment (`formal/lean/Dictum/Core.lean`) has checked 64-bit integers, booleans, field reads, strict binary operators, short-circuit `&&`/`||`, `not` and conditionals. It mirrors the spec interpreter (`engine/interp.rs`) and the primitives (`engine/ops.rs`). Strings, floats, collections, predicates, `let` and budgets are left to the tests.
 
+### Optimizations, and the theorem that allows each
+
+The engine may only apply an optimization that has a theorem here, under the same side conditions. Each theorem says the optimized rule gives the same result as the original on every input, errors included. A new optimization is proved first, then implemented, and the differential tests compare the two.
+
+| optimization | condition | theorem |
+| --- | --- | --- |
+| constant folding | the subtree reads no facts and evaluates without error | `fold_sound` (`Fold.lean`) |
+| skip an overflow check (`wrapping_add` instead of `checked_add`) | the interval analysis bounds the result inside `i64`; field ranges come from the Rust field type (`u8`, `i32`, ...) | `evalFast_eq` (`Opt/Range.lean`) |
+| `x + 0`, `x - 0`, `x * 1`, `1 * x` → `x`; `not not x` → `x`; `true && x` → `x`, `false && x` → `false`, and the `\|\|` duals; `if true`/`if false` | the rule type-checks | `simp_sound` (`Opt/Simp.lean`) |
+| `x * 0` → `0`; `x && false` → `false`; `x == x` → `true`; `if c { t } else { t }` → `t`; `a < b` decided by the ranges | additionally, `x` (or `c`, `a`, `b`) is `safe`: it cannot fail | `simp_sound`, `safe_ok` |
+| evaluate cheap `&&`/`\|\|` operands first | only within a run of consecutive `safe` operands | `and_assoc`, `and_swap_in_chain`, `or_swap_in_chain` (`Opt/Reorder.lean`) |
+| `x in [constants]` by binary search | the constants are sorted | `bsearch_iff` (`Opt/Member.lean`) |
+| `x in lo..hi` as `lo <= x && x <= hi` | none | `mem_rangeList` |
+| share `a + b` with `b + a` across rules (CSE) | `+`, `*`, `==` only, never `&&`/`\|\|`; values only, never errors | `comm_ok`, `and_not_comm`, `comm_error_differs` (`Commute.lean`) |
+
+The examples at the end of each file show what the analyses decide, for instance that `age + 1` with `age: u8` needs no overflow check and that `7 % 0 * 0` is not simplified to `0`.
+
+### Connecting the proofs to the code
+
+The theorems are about Lean definitions. `dictum-oracle` (`formal/lean/Oracle.lean`, built by `just lean`) runs those definitions, and the differential tests send it the same generated inputs as the Rust code:
+
+- `drt`: generated sources in the operator language, and token soup. Both parsers must accept the same sources and build the same tree. The reference parser (`Dictum/Syntax.lean`) follows Go expr-lang's `parseExpression`, not the Pratt parser, so both share only the table. It is checked by examples and by this agreement, not proved.
+- `drt_eval`: generated well-typed rules of the core fragment, evaluated by `Rule::eval` on the fixture and by `Dictum.eval` on the same field values.
+
+Each test also has a trial that runs before its milestone. It checks that the generator is useful: most sources parse, the rules are well typed, and they produce values, overflows and divisions by zero.
+
+### TLA+
+
 The TLA+ models treat a rule as the sequence of node evaluations its closure tree performs, with fixed outcomes and costs, and check every configuration up to the sizes in the `.cfg` files.
+
+Each model has a `Bug` constant. Each `<Spec>_<bug>_mutant.cfg` turns one seeded bug on and names, on its `\* expect:` line, the invariant that must catch it. `check.sh` fails if TLC reports no violation or a different invariant. Every invariant has a mutant: `budget_per_set`, `cache_errors` and `ignore_cache` for `RuleSetEval`; `publish_early`, `forget_readers` and `reload_per_rule` for `HotReload`.
+
+`RuleSetTrace.tla` checks one recorded run against `RuleSetEval`: the configuration, the events (hit, compute, fail, next rule) and the returned result. An event the model does not allow is a deadlock. A wrong result violates `SameResult`. `Trace_accept_*` must pass and `Trace_reject_*` must fail. From M5, a Rust test records traces of generated rule sets in this format.
 
 Update the models in the same change when you change what they describe:
 
-- operator semantics, folding policy or the CSE key: `formal/lean`
-- the cache, budgets, `RuleSet::eval` order or error policy: `formal/tla/RuleSetEval.tla`
+- operator semantics, folding policy, an optimization or the CSE key: `formal/lean`, and the oracle if the fragment grows
+- the precedence table: `formal/lean/Dictum/Syntax.lean` and `dictum_testkit::syntax`
+- the cache, budgets, `RuleSet::eval` order or error policy: `formal/tla/RuleSetEval.tla` and `RuleSetTrace.tla`
 - how sets are built, published or dropped: `formal/tla/HotReload.tla`
 
 ## Milestones and pending checks
@@ -70,6 +107,7 @@ Most checks describe behavior that does not exist yet (bodies are `todo!()`). Th
 - Do not weaken an assertion, special-case a fixture value, or mark a test ignored to make a check pass. If the check is wrong, fix it and write why next to it. For example, the `RuleSet` property compares against unbudgeted standalone results because TLC found that a rule can reach an error in a set that it never reaches alone.
 - Flaky tests: no retries, sleeps or skips. Find the cause. If you cannot, delete the test and write down why.
 - If a check still fails after three attempts to fix the code, stop and ask.
-- A seeded mutant (`*_mutant.cfg`) must keep failing. If a model change makes a mutant pass, the model has stopped checking that property.
+- A seeded mutant (`*_mutant.cfg`) must keep failing, by the invariant it names. If a model change makes a mutant pass, the model has stopped checking that property.
+- A differential test disagreement is a bug in the Rust code or in the Lean definition. Find out which before changing either, and say which in the commit.
 - Changes to checks (`.github/`, `justfile`, `formal/`, `tests/conformance/`, test files, `dictum-testkit`) need code-owner review (`.github/CODEOWNERS`).
 - Every conformance case whose expected result differs from Go's says why in `deviation`.

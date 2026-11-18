@@ -15,8 +15,10 @@ description: Verify a change to dictum before committing. Runs the checks in doc
 
    | the diff touches | also run |
    | --- | --- |
-   | `engine/ops.rs`, `engine/fold.rs`, `engine/analysis.rs`, `engine/interp.rs`, typing rules | `just lean`, and update `formal/lean` if the semantics changed |
-   | `engine/frame.rs`, `engine/set.rs`, `rule_set.rs`, cache or budget code | `just tla`, and update `formal/tla/RuleSetEval.tla` if the behavior changed |
+   | `engine/ops.rs`, `engine/fold.rs`, `engine/analysis.rs`, `engine/interp.rs`, `engine/compile.rs`, typing rules | `just drt`, and update `formal/lean` if the semantics changed |
+   | a new optimization, or a wider condition for an existing one | prove it in `formal/lean/Dictum/Opt` first (docs/verification.md, "Optimizations, and the theorem that allows each"), then `just drt` |
+   | the lexer, parser or precedence table | `just drt`; a precedence change also changes `formal/lean/Dictum/Syntax.lean` |
+   | `engine/frame.rs`, `engine/set.rs`, `rule_set.rs`, cache or budget code | `just tla`, and update `formal/tla/RuleSetEval.tla` and `RuleSetTrace.tla` if the behavior changed |
    | hot reload, `Arc` ownership of `Rule`/`RuleSet` | `just tla` (`HotReload.tla`) |
    | anything compiled for `no_std`, `Cargo.toml` features or dependencies | `just nostd msrv deny` |
    | `fuzz/`, `benches/`, `dictum-testkit` | `just fuzz-build bench-build` |
