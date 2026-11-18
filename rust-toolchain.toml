@@ -1,5 +1,7 @@
 # Pinned so clippy, rustfmt and trybuild's expected compiler output do not change
-# under us. MSRV (1.85) is checked separately in CI.
+# under us. MSRV (1.85) is checked separately (`just msrv`).
 [toolchain]
 channel = "1.99.0"
 components = ["rustfmt", "clippy"]
+# The no_std check builds for a bare-metal target.
+targets = ["thumbv7em-none-eabihf"]

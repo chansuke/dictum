@@ -1,0 +1,93 @@
+# Every check, by name. CI runs these same recipes (.github/workflows), so a
+# green `just verify` locally predicts a green PR. Tools come from `nix develop`.
+#
+#   just verify   before every commit: formatting, lints, tests  (~1 min)
+#   just ci       everything CI runs, including formal models and builds
+
+set shell := ["bash", "-euo", "pipefail", "-c"]
+
+published := "-p dictum -p dictum-syntax -p dictum-check -p dictum-derive"
+
+# List recipes.
+default:
+    @just --list
+
+# Before every commit.
+verify: fmt lint test
+
+# Everything CI runs.
+ci: fmt lint deny test msrv nostd bench-build fuzz-build lean tla
+
+# rustfmt and taplo, check only.
+fmt:
+    cargo fmt --all --check
+    taplo fmt --check
+
+# Apply formatting.
+fmt-fix:
+    cargo fmt --all
+    taplo fmt
+
+# clippy for each feature set, rustdoc, typos, workflow files.
+lint:
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --all-features
+    typos
+    actionlint
+
+# Licenses, advisories, sources.
+deny:
+    cargo deny check
+
+# Tests waiting for a milestone are reported as ignored; `just pending` lists them.
+# Unit, property, conformance (e2e), API e2e, trybuild and doc tests.
+test:
+    cargo nextest run --workspace --all-features --no-fail-fast
+    cargo nextest run --workspace --no-default-features --no-fail-fast
+    cargo test --workspace --all-features --doc
+
+# What is still ignored, by milestone.
+pending:
+    @echo "MILESTONE = $(just milestone)"
+    @cargo nextest list --workspace --all-features --run-ignored only 2>/dev/null | wc -l | xargs echo "ignored tests:"
+    @grep -rhoE 'ignore = "pending M[0-9]+[^"]*"' crates | sort | uniq -c
+
+# The last completed milestone (dictum_testkit::MILESTONE).
+milestone:
+    @grep -oE 'MILESTONE: u8 = [0-9]+' crates/dictum-testkit/src/lib.rs | grep -oE '[0-9]+$'
+
+# The published crates build on the MSRV.
+msrv:
+    cargo +1.85.1 check {{published}} --all-features --target-dir target/msrv
+    cargo +1.85.1 check -p dictum --no-default-features --target-dir target/msrv
+
+# dictum builds without std for a bare-metal target.
+nostd:
+    cargo build -p dictum --no-default-features --target thumbv7em-none-eabihf
+    cargo build -p dictum --no-default-features --features decimal --target thumbv7em-none-eabihf
+
+# Benchmarks compile (they run against Go from M4 on).
+bench-build:
+    cargo bench -p dictum --no-run
+
+# Fuzz targets compile (nightly + cargo-fuzz).
+fuzz-build:
+    cargo +nightly fuzz build
+
+# Fuzz one target for `seconds`, if its milestone is reached.
+fuzz target seconds="60":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    need=$(grep -B3 '^name = "{{target}}"' fuzz/Cargo.toml | grep -oE '^# M[0-9]+' | grep -oE '[0-9]+')
+    have=$(just milestone)
+    if (( have < need )); then echo "{{target}}: pending M$need (MILESTONE = $have)"; exit 0; fi
+    cargo +nightly fuzz run {{target}} -- -max_total_time={{seconds}} -rss_limit_mb=2048
+
+# Lean proofs (a `sorry` or any warning fails the build).
+lean:
+    cd formal/lean && lake build
+
+# TLA+ models, including the seeded mutants that must be caught.
+tla:
+    formal/tla/check.sh
