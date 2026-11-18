@@ -4,6 +4,7 @@
 //! `Ast.sexpr`): the differential test compares the two strings, so a change here
 //! needs the same change there.
 
+use dictum_syntax::Span;
 use dictum_syntax::ast::{
     BinaryOp, Callee, CompareOp, Expr, ExprKind, LogicOp, MapKey, MemberKey, Pointer, Program, UnaryOp,
 };
@@ -111,4 +112,71 @@ pub fn program(p: &Program<'_>) -> String {
     let mut parts: Vec<String> = p.lets.iter().map(|l| format!("(let {} {})", l.name.name, sexpr(&l.value))).collect();
     parts.push(sexpr(&p.body));
     parts.join(" ")
+}
+
+/// Every span in the program (nodes, names, keys), for the invariant that they all
+/// lie inside the source on character boundaries.
+pub fn spans(p: &Program<'_>) -> Vec<Span> {
+    let mut out = Vec::new();
+    for l in &p.lets {
+        out.push(l.name.span);
+        expr_spans(&l.value, &mut out);
+    }
+    expr_spans(&p.body, &mut out);
+    out
+}
+
+fn expr_spans(e: &Expr<'_>, out: &mut Vec<Span>) {
+    out.push(e.span);
+    match &e.kind {
+        ExprKind::Array(xs) | ExprKind::Logic { operands: xs, .. } => xs.iter().for_each(|x| expr_spans(x, out)),
+        ExprKind::Call { callee_span, args, .. } => {
+            out.push(*callee_span);
+            args.iter().for_each(|x| expr_spans(x, out));
+        }
+        ExprKind::Map(pairs) => {
+            for (k, v) in pairs {
+                match k {
+                    MapKey::Name(_, span) => out.push(*span),
+                    MapKey::Computed(k) => expr_spans(k, out),
+                }
+                expr_spans(v, out);
+            }
+        }
+        ExprKind::Unary { expr, .. } | ExprKind::Predicate(expr) => expr_spans(expr, out),
+        ExprKind::Binary { lhs, rhs, .. } => {
+            expr_spans(lhs, out);
+            expr_spans(rhs, out);
+        }
+        ExprKind::Compare { first, rest } => {
+            expr_spans(first, out);
+            rest.iter().for_each(|(_, x)| expr_spans(x, out));
+        }
+        ExprKind::Member { obj, key, .. } => {
+            expr_spans(obj, out);
+            match key {
+                MemberKey::Field(f) => out.push(f.span),
+                MemberKey::Index(i) => expr_spans(i, out),
+            }
+        }
+        ExprKind::Slice { obj, from, to, .. } => {
+            expr_spans(obj, out);
+            from.iter().chain(to.iter()).for_each(|x| expr_spans(x, out));
+        }
+        ExprKind::Conditional { cond, then, otherwise } => {
+            expr_spans(cond, out);
+            expr_spans(then, out);
+            expr_spans(otherwise, out);
+        }
+        ExprKind::Nil
+        | ExprKind::Bool(_)
+        | ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bytes(_)
+        | ExprKind::Ident(_)
+        | ExprKind::Env
+        | ExprKind::Pointer(_)
+        | ExprKind::Error => {}
+    }
 }

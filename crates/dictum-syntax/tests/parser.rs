@@ -11,7 +11,9 @@
 )]
 
 use dictum_syntax::{ErrorCode, parse};
-use dictum_testkit::syntax::program;
+use dictum_testkit::generate::{operator_soup, operator_source, token_soup};
+use dictum_testkit::syntax::{program, spans};
+use proptest::prelude::*;
 
 #[track_caller]
 fn parses_as(src: &str, expected: &str) {
@@ -34,7 +36,6 @@ fn fails_with(src: &str, code: ErrorCode) -> usize {
 }
 
 #[test]
-#[ignore = "pending M1: parser"]
 fn precedence_table_rows() {
     // 1: conditional, right-associative
     parses_as("a ? b : c ? d : e", "(? a b (? c d e))");
@@ -72,7 +73,6 @@ fn precedence_table_rows() {
 }
 
 #[test]
-#[ignore = "pending M1: parser"]
 fn desugarings() {
     parses_as("a | f(b)", "(call f a b)");
     parses_as("xs | filter(# > 1) | len()", "(call len (call filter xs {(cmp # > 1)}))");
@@ -85,7 +85,6 @@ fn desugarings() {
 }
 
 #[test]
-#[ignore = "pending M1: parser"]
 fn literals() {
     parses_as("0x2A + 0o7 + 0b11 + 1_000", "(+ (+ (+ 42 7) 3) 1000)");
     parses_as(".5 + 1e3", "(+ 0.5 1000.0)");
@@ -95,7 +94,6 @@ fn literals() {
 }
 
 #[test]
-#[ignore = "pending M1: parser"]
 fn syntax_errors() {
     fails_with("1 ==", ErrorCode::UnexpectedToken);
     fails_with("1 == 1 == true", ErrorCode::ChainedEquality);
@@ -106,13 +104,11 @@ fn syntax_errors() {
 }
 
 #[test]
-#[ignore = "pending M1: parser"]
 fn recovery_reports_errors_in_several_places() {
     assert!(fails_with("[1, , 2] + (3 + )", ErrorCode::UnexpectedToken) >= 2);
 }
 
 #[test]
-#[ignore = "pending M1: parser"]
 fn depth_is_bounded_without_overflowing_the_stack() {
     let deep = format!("{}1{}", "(".repeat(10_000), ")".repeat(10_000));
     fails_with(&deep, ErrorCode::TooDeep);
@@ -121,4 +117,17 @@ fn depth_is_bounded_without_overflowing_the_stack() {
     // A long conjunction is one flattened node, not 1000 levels.
     let wide = vec!["a"; 1000].join(" && ");
     assert!(parse(&wide).is_ok());
+}
+
+proptest! {
+    /// Every node, name and key span of a parsed program lies inside the source and
+    /// on character boundaries (the crate's first invariant).
+    #[test]
+    fn spans_lie_in_the_source(src in prop_oneof![operator_source(4), operator_soup(), token_soup()]) {
+        if let Ok(p) = parse(&src) {
+            for span in spans(&p) {
+                prop_assert!(span.text(&src).is_some(), "{span:?} in {src:?}");
+            }
+        }
+    }
 }
