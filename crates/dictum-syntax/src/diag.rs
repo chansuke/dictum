@@ -24,6 +24,9 @@ macro_rules! error_codes {
         }
 
         impl ErrorCode {
+            /// Every code, in declaration order (for message catalogs and tests).
+            pub const ALL: &'static [ErrorCode] = &[$(ErrorCode::$variant),*];
+
             /// `"E0201"` etc.
             pub const fn as_str(self) -> &'static str {
                 match self { $(ErrorCode::$variant => $code,)* }
