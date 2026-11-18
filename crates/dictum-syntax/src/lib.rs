@@ -15,7 +15,6 @@
 //! - `(` follows only a plain identifier (no method or computed calls);
 //! - tree depth is at most [`MAX_DEPTH`], so every later recursive pass is bounded.
 #![no_std]
-#![allow(dead_code, unused_variables)] // skeleton: bodies are `todo!()`; remove in Phase D.
 
 extern crate alloc;
 
