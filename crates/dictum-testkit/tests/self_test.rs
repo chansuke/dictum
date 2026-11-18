@@ -1,7 +1,13 @@
 //! Tests of the test tooling itself: a broken generator or loader would make every
 //! property and conformance run meaningless while still passing.
 // Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    clippy::arithmetic_side_effects
+)]
 
 use dictum_testkit::conformance::{self, Expect, Stage};
 use dictum_testkit::generate;
