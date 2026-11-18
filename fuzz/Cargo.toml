@@ -1,0 +1,44 @@
+[package]
+name = "dictum-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+dictum = { path = "../crates/dictum" }
+dictum-syntax = { path = "../crates/dictum-syntax" }
+dictum-testkit = { path = "../crates/dictum-testkit", features = ["arbitrary"] }
+
+# Not part of the main workspace: needs nightly and libFuzzer.
+[workspace]
+
+# Each target names the milestone that makes it meaningful (see `MILESTONE` in
+# crates/dictum-testkit/src/lib.rs); the scheduled workflow skips the others.
+
+# M1: the parser never panics and never overflows the stack.
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+# M2: parse + check + fold + closure compile never panic.
+[[bin]]
+name = "compile"
+path = "fuzz_targets/compile.rs"
+test = false
+doc = false
+bench = false
+
+# M4: on arbitrary facts, eval and explain agree.
+[[bin]]
+name = "eval_differential"
+path = "fuzz_targets/eval_differential.rs"
+test = false
+doc = false
+bench = false
