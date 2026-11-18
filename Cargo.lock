@@ -331,8 +331,11 @@ dependencies = [
 name = "dictum-check"
 version = "0.1.0"
 dependencies = [
+ "dictum",
  "dictum-syntax",
+ "dictum-testkit",
  "jiff",
+ "libtest-mimic",
  "proptest",
  "rust_decimal",
 ]

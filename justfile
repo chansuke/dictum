@@ -95,10 +95,12 @@ lean:
 oracle := justfile_directory() / "formal/lean/.lake/build/bin/dictum-oracle"
 
 # Differential tests against the Lean definitions: the parser against the reference
-# parser, evaluation against `Dictum.eval`. Tests whose milestone is not reached are
+# parser, the checker against `Dictum.infer`, evaluation against `Dictum.eval`. Tests
+# whose milestone is not reached are
 # ignored; with DICTUM_ORACLE set, a missing oracle fails instead of skipping.
 drt: lean
     DICTUM_ORACLE={{oracle}} cargo test -p dictum-syntax --test drt
+    DICTUM_ORACLE={{oracle}} cargo test -p dictum-check --test drt
     DICTUM_ORACLE={{oracle}} cargo test -p dictum --test drt_eval
 
 # TLA+ models, the seeded mutants that must be caught, and trace validation.

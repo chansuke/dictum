@@ -18,7 +18,15 @@ jiff.workspace = true
 rust_decimal = { workspace = true, optional = true }
 
 [dev-dependencies]
+dictum = { path = "../dictum" }
+dictum-testkit.workspace = true
+libtest-mimic.workspace = true
 proptest.workspace = true
+
+# Differential test against the Lean type checker (formal/lean/Dictum/Check.lean).
+[[test]]
+name = "drt"
+harness = false
 
 [lints]
 workspace = true
