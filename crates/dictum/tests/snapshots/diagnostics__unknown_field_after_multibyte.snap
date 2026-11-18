@@ -1,0 +1,9 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "compile_error(r#\"\"héllo\" + user.Nickname\"#)"
+---
+error[E0204]: `User` has no field `Nickname`
+ --> rule:1:16
+  |
+1 | "héllo" + user.Nickname
+  |                ^^^^^^^^

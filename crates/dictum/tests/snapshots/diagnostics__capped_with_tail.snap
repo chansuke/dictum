@@ -1,0 +1,125 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: compile_error(&many)
+---
+error[E0202]: unknown variable `x0`
+ --> rule:1:1
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  | ^^
+
+error[E0202]: unknown variable `x1`
+ --> rule:1:6
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |      ^^
+
+error[E0202]: unknown variable `x2`
+ --> rule:1:11
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |           ^^
+
+error[E0202]: unknown variable `x3`
+ --> rule:1:16
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                ^^
+
+error[E0202]: unknown variable `x4`
+ --> rule:1:21
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                     ^^
+
+error[E0202]: unknown variable `x5`
+ --> rule:1:26
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                          ^^
+
+error[E0202]: unknown variable `x6`
+ --> rule:1:31
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                               ^^
+
+error[E0202]: unknown variable `x7`
+ --> rule:1:36
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                    ^^
+
+error[E0202]: unknown variable `x8`
+ --> rule:1:41
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                         ^^
+
+error[E0202]: unknown variable `x9`
+ --> rule:1:46
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                              ^^
+
+error[E0202]: unknown variable `x10`
+ --> rule:1:51
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                   ^^^
+
+error[E0202]: unknown variable `x11`
+ --> rule:1:57
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                         ^^^
+
+error[E0202]: unknown variable `x12`
+ --> rule:1:63
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                               ^^^
+
+error[E0202]: unknown variable `x13`
+ --> rule:1:69
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                                     ^^^
+
+error[E0202]: unknown variable `x14`
+ --> rule:1:75
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                                           ^^^
+
+error[E0202]: unknown variable `x15`
+ --> rule:1:81
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                                                 ^^^
+
+error[E0202]: unknown variable `x16`
+ --> rule:1:87
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                                                       ^^^
+
+error[E0202]: unknown variable `x17`
+ --> rule:1:93
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                                                             ^^^
+
+error[E0202]: unknown variable `x18`
+ --> rule:1:99
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                                                                   ^^^
+
+error[E0202]: unknown variable `x19`
+ --> rule:1:105
+  |
+1 | x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + x13 + x14 + x15 + x16 + x17 + x18 + x19 + x20 + x21 + x22 + x23 + x24
+  |                                                                                                         ^^^
+
+and 5 more errors

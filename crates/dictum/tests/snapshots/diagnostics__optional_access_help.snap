@@ -1,0 +1,10 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "compile_error(\"user.Manager.Name\")"
+---
+error[E0206]: `Option<User>` may be nil
+ --> rule:1:1
+  |
+1 | user.Manager.Name
+  | ^^^^^^^^^^^^
+  = help: use `?.` to access a field of a value that may be nil
