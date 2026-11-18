@@ -1,0 +1,10 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "compile_error(\"1 == 1 == true\")"
+---
+error[E0106]: `==` cannot be chained; use `&&`
+ --> rule:1:8
+  |
+1 | 1 == 1 == true
+  |        ^^
+  = help: write `x == y && y == z`

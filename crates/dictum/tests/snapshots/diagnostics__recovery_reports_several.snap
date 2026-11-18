@@ -1,0 +1,15 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "compile_error(\"[1, , 2] + (3 + )\")"
+---
+error[E0101]: expected an expression, found `,`
+ --> rule:1:5
+  |
+1 | [1, , 2] + (3 + )
+  |     ^
+
+error[E0101]: expected an expression, found `)`
+ --> rule:1:17
+  |
+1 | [1, , 2] + (3 + )
+  |                 ^

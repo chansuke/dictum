@@ -19,7 +19,6 @@ fn compile_error(src: &str) -> String {
 }
 
 #[test]
-#[ignore = "pending M1: parser and rendering"]
 fn syntax_errors() {
     insta::assert_snapshot!("unexpected_token", compile_error("user.Age >= "));
     insta::assert_snapshot!("unterminated_string", compile_error("user.Name == \"Ada"));

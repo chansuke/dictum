@@ -1,0 +1,9 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "compile_error(\"user.Age >= \")"
+---
+error[E0101]: expected an expression, found end of input
+ --> rule:1:13
+  |
+1 | user.Age >= 
+  |             ^

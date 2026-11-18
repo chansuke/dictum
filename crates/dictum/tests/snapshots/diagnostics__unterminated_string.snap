@@ -1,0 +1,9 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "compile_error(\"user.Name == \\\"Ada\")"
+---
+error[E0102]: unterminated string literal
+ --> rule:1:14
+  |
+1 | user.Name == "Ada
+  |              ^^^^
