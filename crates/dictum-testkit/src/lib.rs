@@ -1,5 +1,5 @@
 //! Test support for dictum: the fixture every test compiles against, generators of
-//! well-typed rules, and the conformance case loader.
+//! well-typed rules, the conformance case loader, and the client for the Lean oracle.
 //!
 //! One fixture for unit, property, conformance, fuzz and benchmark code means a rule
 //! that fails in one of them can be pasted into any other.
@@ -15,6 +15,7 @@
 pub mod conformance;
 pub mod fixture;
 pub mod generate;
+pub mod oracle;
 pub mod syntax;
 
 pub use fixture::{Facts, sample, sample_now};

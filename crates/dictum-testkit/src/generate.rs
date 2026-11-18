@@ -171,3 +171,161 @@ pub fn token_soup() -> BoxedStrategy<String> {
     ];
     proptest::collection::vec(proptest::sample::select(TOKENS), 0..40).prop_map(|t| t.concat()).boxed()
 }
+
+/// Sources in the operator language the Lean reference parser covers
+/// (`formal/lean/Dictum/Syntax.lean`), for the parser differential test.
+///
+/// Unlike [`expr`], these are not parenthesized to fix their meaning: each operand
+/// is wrapped in parentheses only by chance, so the precedence table decides the
+/// tree, and many sources are syntax errors (`a == b == c`, `a ?? b + c`). Both
+/// parsers must agree on which sources parse and on the tree. Tokens are separated
+/// by spaces, so the lexers' handling of adjacent tokens is not compared here.
+pub fn operator_source(depth: u32) -> BoxedStrategy<String> {
+    let binding = operator_expr(depth.saturating_sub(1)).prop_map(|v| format!("let v = {v}; "));
+    (proptest::option::weighted(0.2, binding), operator_expr(depth))
+        .prop_map(|(lets, body)| lets.unwrap_or_default() + &body)
+        .boxed()
+}
+
+const OPERATOR_ATOMS: &[&str] = &["a", "b", "c", "x", "0", "1", "42", "true", "false", "nil", "$env"];
+const BINARY_OPS: &[&str] = &[
+    "+",
+    "-",
+    "*",
+    "/",
+    "%",
+    "**",
+    "^",
+    "??",
+    "==",
+    "!=",
+    "<",
+    ">",
+    "<=",
+    ">=",
+    "in",
+    "not in",
+    "matches",
+    "contains",
+    "startsWith",
+    "endsWith",
+    "..",
+    "&&",
+    "||",
+    "and",
+    "or",
+];
+const POSTFIXES: &[&str] = &[" .b", " ?.c", " [0]", " ?.[x]", " [1:]", " [:2]", " [:]", " [a:b]"];
+
+fn paren(wrap: bool, s: String) -> String {
+    if wrap { format!("( {s} )") } else { s }
+}
+
+fn operator_expr(depth: u32) -> BoxedStrategy<String> {
+    let atom = proptest::sample::select(OPERATOR_ATOMS).prop_map(str::to_owned).boxed();
+    if depth == 0 {
+        return atom;
+    }
+    // Built once per level and cloned: the strategy tree stays linear in `depth`.
+    let inner = operator_expr(depth - 1);
+    let wrapped_once = (inner.clone(), any::<bool>()).prop_map(|(s, w)| paren(w, s)).boxed();
+    let args_once = proptest::collection::vec(inner.clone(), 0..3).prop_map(|xs| xs.join(" , ")).boxed();
+    let sub = move || inner.clone();
+    let wrapped = move || wrapped_once.clone();
+    let args = move || args_once.clone();
+    prop_oneof![
+        atom.clone(),
+        atom,
+        (wrapped(), proptest::sample::select(BINARY_OPS), wrapped()).prop_map(|(a, op, b)| format!("{a} {op} {b}")),
+        (wrapped(), proptest::sample::select(BINARY_OPS), wrapped(), proptest::sample::select(BINARY_OPS), wrapped())
+            .prop_map(|(a, p, b, q, c)| format!("{a} {p} {b} {q} {c}")),
+        (proptest::sample::select(&["not", "!", "-", "+"][..]), wrapped()).prop_map(|(op, a)| format!("{op} {a}")),
+        (wrapped(), wrapped(), wrapped()).prop_map(|(c, t, e)| format!("{c} ? {t} : {e}")),
+        (wrapped(), proptest::sample::select(&["?:", "? :"][..]), wrapped())
+            .prop_map(|(a, op, b)| format!("{a} {op} {b}")),
+        (sub(), sub(), sub(), any::<bool>()).prop_map(|(c, t, e, braces)| if braces {
+            format!("if {c} {{ {t} }} else {{ {e} }}")
+        } else {
+            format!("if {c} {{ {t} }} else {e}")
+        }),
+        (wrapped(), proptest::sample::select(POSTFIXES)).prop_map(|(a, p)| format!("{a}{p}")),
+        (proptest::sample::select(&["f", "g"][..]), args()).prop_map(|(f, xs)| format!("{f} ( {xs} )")),
+        (wrapped(), args()).prop_map(|(a, xs)| format!("{a} | f ( {xs} )")),
+        args().prop_map(|xs| format!("[ {xs} ]")),
+        (sub(), sub()).prop_map(|(k, v)| format!("{{ k : {k} , ( x ) : {v} }}")),
+    ]
+    .boxed()
+}
+
+/// Token sequences from the operator language, mostly not well formed, for the
+/// parser differential test: both parsers must reject the same ones.
+pub fn operator_soup() -> BoxedStrategy<String> {
+    const TOKENS: &[&str] = &[
+        "a", "b", "f", "1", "0", "true", "nil", "$env", "(", ")", "[", "]", "{", "}", ",", ":", "?", "?:", "??", "?.",
+        "?.[", ".", "|", "+", "-", "*", "/", "%", "**", "^", "==", "!=", "<", "<=", ">", ">=", "..", "&&", "||", "and",
+        "or", "not", "!", "in", "matches", "if", "else", "let", "=", ";",
+    ];
+    proptest::collection::vec(proptest::sample::select(TOKENS), 0..30).prop_map(|t| t.join(" ")).boxed()
+}
+
+/// A well-typed expression of the Lean core fragment (`formal/lean/Dictum/Core.lean`),
+/// as dictum source over [`Facts`](crate::fixture::Facts) and as the oracle's
+/// s-expression, for the evaluation differential test.
+///
+/// Field `$0` is `user.Age`, `$1` is `limit`, `$2` is `user.Active`; see
+/// [`core_env`]. Every composite is parenthesized in the source.
+pub fn core_expr(ty: Ty, depth: u32) -> BoxedStrategy<(String, String)> {
+    let leaf: BoxedStrategy<(String, String)> = match ty {
+        Ty::Int => prop_oneof![
+            (0i64..=10).prop_map(|n| (n.to_string(), n.to_string())),
+            // Zero again, so `%` divides by zero often enough to compare that error too.
+            Just(("0".to_owned(), "0".to_owned())),
+            proptest::sample::select(&[i64::MAX, 1 << 62, 3_037_000_500][..])
+                .prop_map(|n| (n.to_string(), n.to_string())),
+            proptest::sample::select(&[("user.Age", "$0"), ("limit", "$1")][..])
+                .prop_map(|(s, e)| (s.to_owned(), e.to_owned())),
+        ]
+        .boxed(),
+        _ => prop_oneof![
+            any::<bool>().prop_map(|b| (b.to_string(), b.to_string())),
+            Just(("user.Active".to_owned(), "$2".to_owned())),
+        ]
+        .boxed(),
+    };
+    if depth == 0 {
+        return leaf;
+    }
+    let (ints, bools) = (core_expr(Ty::Int, depth - 1), core_expr(Ty::Bool, depth - 1));
+    let sub = move |t: Ty| if t == Ty::Int { ints.clone() } else { bools.clone() };
+    let cond = (sub(Ty::Bool), sub(ty), sub(ty))
+        .prop_map(|((c, cc), (t, tt), (e, ee))| (format!("({c} ? {t} : {e})"), format!("(? {cc} {tt} {ee})")));
+    match ty {
+        Ty::Int => prop_oneof![
+            leaf.clone(),
+            leaf,
+            (sub(Ty::Int), proptest::sample::select(&["+", "-", "*", "%"][..]), sub(Ty::Int))
+                .prop_map(|((a, aa), op, (b, bb))| (format!("({a} {op} {b})"), format!("({op} {aa} {bb})"))),
+            cond,
+        ]
+        .boxed(),
+        _ => prop_oneof![
+            leaf.clone(),
+            leaf,
+            (sub(Ty::Int), proptest::sample::select(&["==", "<"][..]), sub(Ty::Int))
+                .prop_map(|((a, aa), op, (b, bb))| (format!("({a} {op} {b})"), format!("({op} {aa} {bb})"))),
+            (sub(Ty::Bool), sub(Ty::Bool))
+                .prop_map(|((a, aa), (b, bb))| (format!("({a} == {b})"), format!("(== {aa} {bb})"))),
+            (sub(Ty::Bool), proptest::sample::select(&["&&", "||"][..]), sub(Ty::Bool))
+                .prop_map(|((a, aa), op, (b, bb))| (format!("({a} {op} {b})"), format!("({op} {aa} {bb})"))),
+            sub(Ty::Bool).prop_map(|(a, aa)| (format!("(not {a})"), format!("(not {aa})"))),
+            cond,
+        ]
+        .boxed(),
+    }
+}
+
+/// The oracle's fact root for [`core_expr`]: the fields it names, from `facts`.
+pub fn core_env(facts: &crate::Facts) -> [crate::oracle::CoreVal; 3] {
+    use crate::oracle::CoreVal;
+    [CoreVal::Int(facts.user.age), CoreVal::Int(facts.limit), CoreVal::Bool(facts.user.active)]
+}
