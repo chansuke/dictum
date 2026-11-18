@@ -11,6 +11,8 @@
 //! ([`Expr::replace_with_const`]), so constant folding cannot make the IR ill-typed.
 
 use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -25,6 +27,10 @@ use crate::{FieldId, FuncId, Tag, Type};
 pub struct NodeId(u32);
 
 impl NodeId {
+    pub(crate) const fn new(id: u32) -> Self {
+        NodeId(id)
+    }
+
     /// Index into a side table of length `Program::node_count`.
     pub const fn index(self) -> usize {
         self.0 as usize
@@ -36,6 +42,10 @@ impl NodeId {
 pub struct SlotId(u16);
 
 impl SlotId {
+    pub(crate) const fn new(id: u16) -> Self {
+        SlotId(id)
+    }
+
     /// Index into `Program::lets`.
     pub const fn index(self) -> usize {
         self.0 as usize
@@ -84,6 +94,210 @@ impl Program {
     pub fn roots_mut(&mut self) -> impl Iterator<Item = &mut Expr> {
         self.lets.iter_mut().chain(core::iter::once(&mut self.body))
     }
+
+    pub(crate) fn new(lets: Vec<Expr>, body: Expr, node_count: u32, max_predicate_depth: u16) -> Self {
+        Program { lets, body, node_count, max_predicate_depth }
+    }
+
+    /// Check every invariant above against `env`, the `Env` the program was checked
+    /// against. The checker guarantees them; this is what tests and the fuzz target
+    /// call to hold it to that, and what the engine may call in debug builds.
+    pub fn validate<P>(&self, env: &crate::Env<P>) -> Result<(), String> {
+        let mut v =
+            Validator { env_root: env.root(), funcs: env.func_count(), seen: Vec::new(), node_count: self.node_count };
+        v.seen.resize(self.node_count as usize, false);
+        for (i, e) in self.lets.iter().enumerate() {
+            v.expr(e, i, 0, 1)?;
+        }
+        v.expr(&self.body, self.lets.len(), 0, 1)?;
+        let preds = max_predicates(self.roots());
+        if preds > self.max_predicate_depth {
+            return Err(format!("predicate depth {preds} exceeds max_predicate_depth {}", self.max_predicate_depth));
+        }
+        Ok(())
+    }
+
+    fn roots(&self) -> impl Iterator<Item = &Expr> {
+        self.lets.iter().chain(core::iter::once(&self.body))
+    }
+}
+
+fn max_predicates<'a>(roots: impl Iterator<Item = &'a Expr>) -> u16 {
+    /// Predicate nesting below `e`: a predicate's body is one deeper than its sequence.
+    fn go(e: &Expr) -> u16 {
+        match &e.kind {
+            ExprKind::Predicate { seq, body, .. } => {
+                go(seq).max(body.as_deref().map_or(0, |b| go(b).saturating_add(1)))
+            }
+            _ => e.children().map(go).max().unwrap_or(0),
+        }
+    }
+    roots.map(go).max().unwrap_or(0)
+}
+
+/// Walks a program for [`Program::validate`].
+struct Validator {
+    env_root: &'static crate::StructDesc,
+    funcs: usize,
+    seen: Vec<bool>,
+    node_count: u32,
+}
+
+fn is_bool(t: &Type) -> bool {
+    matches!(t, Type::Bool)
+}
+
+impl Validator {
+    /// `slots`: slots visible here; `preds`: enclosing predicates; `depth`: tree depth.
+    fn expr(&mut self, e: &Expr, slots: usize, preds: u32, depth: u32) -> Result<(), String> {
+        let at = |what: &str| format!("node {} at {:?}: {what}", e.id.0, e.span);
+        if depth > dictum_syntax::MAX_DEPTH {
+            return Err(at("deeper than MAX_DEPTH"));
+        }
+        match self.seen.get_mut(e.id.index()) {
+            Some(seen) if !*seen => *seen = true,
+            Some(_) => return Err(at("duplicate node id")),
+            None => return Err(at(&format!("id not below node_count {}", self.node_count))),
+        }
+        let bad_type = |what: &str| Err(at(&format!("{what}; node type is {}", e.ty)));
+        match &e.kind {
+            ExprKind::Const(c) => {
+                if !c.inhabits(&e.ty) {
+                    return bad_type(&format!("constant {c:?} is not of the node type"));
+                }
+            }
+            ExprKind::Root => {
+                if e.ty != Type::Struct(self.env_root) {
+                    return bad_type("root is not the schema root struct");
+                }
+            }
+            ExprKind::Slot(s) => {
+                if s.index() >= slots {
+                    return Err(at(&format!("slot {} used before it is bound", s.index())));
+                }
+            }
+            ExprKind::Pointer(_) => {
+                if preds == 0 {
+                    return Err(at("pointer outside a predicate"));
+                }
+            }
+            ExprKind::Field { base, field, optional } => {
+                let desc = match (base.ty(), optional) {
+                    (Type::Struct(d), _) => *d,
+                    (Type::Option(o), true) => match o.inner() {
+                        Type::Struct(d) => *d,
+                        _ => return Err(at("field of a non-struct")),
+                    },
+                    _ => return Err(at("field of a non-struct")),
+                };
+                let Some(f) = desc.fields().get(usize::from(field.index())) else {
+                    return Err(at("field id outside the struct"));
+                };
+                let ty = if base.ty().admits_nil() { Type::option(f.ty()) } else { f.ty() };
+                if ty != e.ty {
+                    return bad_type(&format!("field `{}` has type {ty}", f.name()));
+                }
+            }
+            ExprKind::Logic { operands, .. } => {
+                if operands.len() < 2 || !operands.iter().all(|o| is_bool(o.ty())) || !is_bool(&e.ty) {
+                    return bad_type("logic operands must be at least two bools");
+                }
+            }
+            ExprKind::Conditional { cond, then, otherwise } => {
+                if !is_bool(cond.ty()) || *then.ty() != e.ty || *otherwise.ty() != e.ty {
+                    return bad_type("conditional needs a bool and two branches of the node type");
+                }
+            }
+            ExprKind::Compare { .. } | ExprKind::In { .. } => {
+                if !is_bool(&e.ty) {
+                    return bad_type("comparison is not bool");
+                }
+            }
+            ExprKind::Binary { op, lhs, rhs } => check_binary(*op, lhs.ty(), rhs.ty(), &e.ty).map_err(|m| at(&m))?,
+            ExprKind::Unary { op, arg } => {
+                let ok = match op {
+                    UnaryOp::Not => is_bool(arg.ty()) && is_bool(&e.ty),
+                    UnaryOp::NegInt => *arg.ty() == Type::Int && e.ty == Type::Int,
+                    UnaryOp::NegFloat => *arg.ty() == Type::Float && e.ty == Type::Float,
+                    #[cfg(feature = "decimal")]
+                    UnaryOp::NegDecimal => *arg.ty() == Type::Decimal && e.ty == Type::Decimal,
+                    UnaryOp::NegDuration => *arg.ty() == Type::Duration && e.ty == Type::Duration,
+                    UnaryOp::Dyn(_) => e.ty == Type::Any,
+                };
+                if !ok {
+                    return bad_type(&format!("{op:?} on {}", arg.ty()));
+                }
+            }
+            ExprKind::Convert { op, arg } => {
+                let (from, to) = (arg.ty(), &e.ty);
+                let ok = match op {
+                    Conversion::IntToFloat => *from == Type::Int && *to == Type::Float,
+                    #[cfg(feature = "decimal")]
+                    Conversion::IntToDecimal => *from == Type::Int && *to == Type::Decimal,
+                    Conversion::Some => {
+                        matches!(to, Type::Option(o) if o.inner() == from) || (*from == Type::Nil && to.admits_nil())
+                    }
+                    Conversion::Check => *from == Type::Any && *to != Type::Any,
+                    Conversion::Erase => *from != Type::Any && *to == Type::Any,
+                };
+                if !ok {
+                    return bad_type(&format!("{op:?} from {from}"));
+                }
+            }
+            ExprKind::Call { func, .. } => {
+                if func.index() >= self.funcs {
+                    return Err(at("function id outside the schema"));
+                }
+            }
+            ExprKind::Range { from, to } => {
+                if *from.ty() != Type::Int || *to.ty() != Type::Int || e.ty != Type::array(Type::Int) {
+                    return bad_type("range needs two ints");
+                }
+            }
+            ExprKind::Coalesce { .. }
+            | ExprKind::Index { .. }
+            | ExprKind::Slice { .. }
+            | ExprKind::Array(_)
+            | ExprKind::Map(_)
+            | ExprKind::Predicate { .. }
+            | ExprKind::Intrinsic { .. } => {}
+        }
+        // A predicate's body (not its sequence) is one predicate deeper.
+        if let ExprKind::Predicate { seq, body, .. } = &e.kind {
+            self.expr(seq, slots, preds, depth.saturating_add(1))?;
+            if let Some(b) = body {
+                self.expr(b, slots, preds.saturating_add(1), depth.saturating_add(1))?;
+            }
+            return Ok(());
+        }
+        for c in e.children() {
+            self.expr(c, slots, preds, depth.saturating_add(1))?;
+        }
+        Ok(())
+    }
+}
+
+/// The operand and result types each resolved binary operation requires.
+fn check_binary(op: BinaryOp, l: &Type, r: &Type, out: &Type) -> Result<(), String> {
+    use Type as T;
+    let ok = match op {
+        BinaryOp::Int(_) => *l == T::Int && *r == T::Int && *out == T::Int,
+        BinaryOp::Float(_) => *l == T::Float && *r == T::Float && *out == T::Float,
+        #[cfg(feature = "decimal")]
+        BinaryOp::Decimal(_) => *l == T::Decimal && *r == T::Decimal && *out == T::Decimal,
+        BinaryOp::Concat => *l == T::String && *r == T::String && *out == T::String,
+        BinaryOp::ConcatBytes => *l == T::Bytes && *r == T::Bytes && *out == T::Bytes,
+        BinaryOp::ConcatArray => matches!(l, T::Array(_)) && l == r && l == out,
+        BinaryOp::TimeSubTime => *l == T::Time && *r == T::Time && *out == T::Duration,
+        BinaryOp::TimeAddDuration | BinaryOp::TimeSubDuration => *l == T::Time && *r == T::Duration && *out == T::Time,
+        BinaryOp::DurationAdd | BinaryOp::DurationSub => *l == T::Duration && *r == T::Duration && *out == T::Duration,
+        BinaryOp::Eq(_) | BinaryOp::Ne(_) => *out == T::Bool,
+        BinaryOp::Matches | BinaryOp::Contains | BinaryOp::StartsWith | BinaryOp::EndsWith => {
+            *l == T::String && *r == T::String && *out == T::Bool
+        }
+        BinaryOp::Dyn(_) => *out == T::Any || *out == T::Bool,
+    };
+    if ok { Ok(()) } else { Err(format!("{op:?} on {l} and {r} giving {out}")) }
 }
 
 /// A typed node.
@@ -116,19 +330,84 @@ impl Expr {
         &self.kind
     }
 
+    pub(crate) fn new(id: NodeId, span: Span, ty: Type, kind: ExprKind) -> Self {
+        Expr { id, span, ty, kind }
+    }
+
     /// Children in evaluation order (for traversals that do not care about kinds).
     pub fn children(&self) -> impl Iterator<Item = &Expr> {
-        // TODO: match on kind; yield boxed and Vec children in evaluation order.
-        todo!();
-        #[allow(unreachable_code)]
-        core::iter::empty()
+        let mut out: Vec<&Expr> = Vec::new();
+        match &self.kind {
+            ExprKind::Const(_) | ExprKind::Root | ExprKind::Slot(_) | ExprKind::Pointer(_) => {}
+            ExprKind::Field { base, .. } => out.push(base),
+            ExprKind::Index { base, index, .. } => out.extend([&**base, &**index]),
+            ExprKind::Slice { base, from, to, .. } => {
+                out.push(base);
+                out.extend(from.as_deref());
+                out.extend(to.as_deref());
+            }
+            ExprKind::Unary { arg, .. } | ExprKind::Convert { arg, .. } => out.push(arg),
+            ExprKind::Binary { lhs, rhs, .. } | ExprKind::Coalesce { lhs, rhs } => out.extend([&**lhs, &**rhs]),
+            ExprKind::Logic { operands, .. } | ExprKind::Array(operands) => out.extend(operands),
+            ExprKind::Compare { first, rest, .. } => {
+                out.push(first);
+                out.extend(rest.iter().map(|(_, e)| e));
+            }
+            ExprKind::In { needle, haystack, .. } => out.extend([&**needle, &**haystack]),
+            ExprKind::Conditional { cond, then, otherwise } => out.extend([&**cond, &**then, &**otherwise]),
+            ExprKind::Map(pairs) => {
+                for (k, v) in pairs {
+                    out.extend([k, v]);
+                }
+            }
+            ExprKind::Range { from, to } => out.extend([&**from, &**to]),
+            ExprKind::Predicate { seq, body, .. } => {
+                out.push(seq);
+                out.extend(body.as_deref());
+            }
+            ExprKind::Intrinsic { args, .. } | ExprKind::Call { args, .. } => out.extend(args),
+        }
+        out.into_iter()
     }
 
     /// Children, mutably, so the folder can work bottom-up.
     pub fn children_mut(&mut self) -> impl Iterator<Item = &mut Expr> {
-        todo!();
-        #[allow(unreachable_code)]
-        core::iter::empty()
+        let mut out: Vec<&mut Expr> = Vec::new();
+        match &mut self.kind {
+            ExprKind::Const(_) | ExprKind::Root | ExprKind::Slot(_) | ExprKind::Pointer(_) => {}
+            ExprKind::Field { base, .. } => out.push(base),
+            ExprKind::Index { base, index, .. } => out.extend([&mut **base, &mut **index]),
+            ExprKind::Slice { base, from, to, .. } => {
+                out.push(base);
+                out.extend(from.as_deref_mut());
+                out.extend(to.as_deref_mut());
+            }
+            ExprKind::Unary { arg, .. } | ExprKind::Convert { arg, .. } => out.push(arg),
+            ExprKind::Binary { lhs, rhs, .. } | ExprKind::Coalesce { lhs, rhs } => {
+                out.extend([&mut **lhs, &mut **rhs]);
+            }
+            ExprKind::Logic { operands, .. } | ExprKind::Array(operands) => out.extend(operands),
+            ExprKind::Compare { first, rest, .. } => {
+                out.push(first);
+                out.extend(rest.iter_mut().map(|(_, e)| e));
+            }
+            ExprKind::In { needle, haystack, .. } => out.extend([&mut **needle, &mut **haystack]),
+            ExprKind::Conditional { cond, then, otherwise } => {
+                out.extend([&mut **cond, &mut **then, &mut **otherwise]);
+            }
+            ExprKind::Map(pairs) => {
+                for (k, v) in pairs {
+                    out.extend([k, v]);
+                }
+            }
+            ExprKind::Range { from, to } => out.extend([&mut **from, &mut **to]),
+            ExprKind::Predicate { seq, body, .. } => {
+                out.push(seq);
+                out.extend(body.as_deref_mut());
+            }
+            ExprKind::Intrinsic { args, .. } | ExprKind::Call { args, .. } => out.extend(args),
+        }
+        out.into_iter()
     }
 
     /// Replace this node by a constant, keeping id, span and type.
@@ -136,9 +415,11 @@ impl Expr {
     /// Returns the constant back if it does not inhabit `self.ty()` (a folder bug);
     /// the folder then leaves the node unfolded rather than corrupting the IR.
     pub fn replace_with_const(&mut self, value: Const) -> Result<(), Const> {
-        // TODO: if !value.inhabits(&self.ty) { return Err(value) }
-        //       self.kind = ExprKind::Const(value)
-        todo!()
+        if !value.inhabits(&self.ty) {
+            return Err(value);
+        }
+        self.kind = ExprKind::Const(value);
+        Ok(())
     }
 }
 
@@ -221,7 +502,22 @@ pub enum Const {
 impl Const {
     /// Whether this constant is a value of `ty`.
     pub fn inhabits(&self, ty: &Type) -> bool {
-        todo!()
+        match (self, ty) {
+            (_, Type::Any) | (Const::Nil, Type::Nil | Type::Option(_)) => true,
+            (c, Type::Option(o)) => c.inhabits(o.inner()),
+            (Const::Bool(_), Type::Bool)
+            | (Const::Int(_), Type::Int)
+            | (Const::Float(_), Type::Float)
+            | (Const::Str(_), Type::String)
+            | (Const::Bytes(_), Type::Bytes)
+            | (Const::Time(_), Type::Time)
+            | (Const::Duration(_), Type::Duration) => true,
+            #[cfg(feature = "decimal")]
+            (Const::Decimal(_), Type::Decimal) => true,
+            (Const::Array(xs), Type::Array(t)) => xs.iter().all(|x| x.inhabits(t)),
+            (Const::Map(kvs), Type::Map(t)) => kvs.iter().all(|(_, v)| v.inhabits(t)),
+            _ => false,
+        }
     }
 }
 
