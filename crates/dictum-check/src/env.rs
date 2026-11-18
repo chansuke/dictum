@@ -54,11 +54,23 @@ impl<P> Env<P> {
     /// (`Builtin::from_name`), or is registered twice. Field names need no check here:
     /// the derive already rejected invalid ones at compile time.
     pub fn new(root: &'static StructDesc, funcs: Vec<(Box<str>, FuncSig, P)>) -> Result<Self, SchemaError> {
-        // TODO: for (i, (name, sig, payload)) in funcs:
-        //   !dictum_syntax::is_identifier(name)            -> InvalidName
-        //   dictum_syntax::Builtin::from_name(name).is_some() -> ShadowsBuiltin
-        //   by_name.insert(name, FuncId(i)) already present  -> DuplicateFunction
-        todo!()
+        let mut by_name = BTreeMap::new();
+        let mut entries = Vec::with_capacity(funcs.len());
+        for (i, (name, sig, payload)) in funcs.into_iter().enumerate() {
+            if !dictum_syntax::is_identifier(&name) {
+                return Err(SchemaError::InvalidName(name));
+            }
+            if dictum_syntax::Builtin::from_name(&name).is_some() {
+                return Err(SchemaError::ShadowsBuiltin(name));
+            }
+            // More than u32::MAX functions cannot be registered in practice.
+            let id = FuncId(u32::try_from(i).unwrap_or(u32::MAX));
+            if by_name.insert(name.clone(), id).is_some() {
+                return Err(SchemaError::DuplicateFunction(name));
+            }
+            entries.push(FuncEntry { name, sig, payload });
+        }
+        Ok(Env { root, funcs: entries, by_name })
     }
 
     /// The root struct.
@@ -68,7 +80,8 @@ impl<P> Env<P> {
 
     /// Resolve a function name.
     pub fn func(&self, name: &str) -> Option<(FuncId, &FuncSig)> {
-        todo!()
+        let id = *self.by_name.get(name)?;
+        Some((id, &self.funcs.get(id.index())?.sig))
     }
 
     /// The implementation stored for `id`.
