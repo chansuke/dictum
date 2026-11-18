@@ -33,6 +33,11 @@ insta.workspace = true
 trybuild.workspace = true
 criterion.workspace = true
 
+# Differential test against the Lean definition of evaluation (formal/lean/Dictum/Core.lean).
+[[test]]
+name = "drt_eval"
+harness = false
+
 # End-to-end: tests/conformance/*.toml through the public API, one trial per case.
 [[test]]
 name = "conformance"
