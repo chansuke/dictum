@@ -49,6 +49,9 @@ impl Expect {
     pub fn stage(&self) -> Stage {
         match self {
             Expect::Error(code) if code.starts_with("E01") => Stage::Parse,
+            // An invalid constant pattern is found when `Rule::compile` builds the
+            // regex, after type checking (`dictum-check` has no regex engine).
+            Expect::Error(code) if code == "E0211" => Stage::Eval,
             Expect::Error(code) if code.starts_with("E02") => Stage::Check,
             _ => Stage::Eval,
         }
