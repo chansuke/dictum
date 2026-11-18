@@ -505,7 +505,8 @@ pub enum Intrinsic {
     /// `type(x)`
     TypeName,
     /// `now()`: the evaluation's timestamp from `Ctx`, the same for every call within
-    /// one evaluation (and one `RuleSet::eval`).
+    /// one evaluation (and one `RuleSet::eval`). Fails with `ClockUnset` when the
+    /// `Ctx` has no time.
     Now,
     /// `duration(string)`: Go duration syntax (`1h30m`, `-1.5h`, `300ms`).
     ParseDuration,

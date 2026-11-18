@@ -52,7 +52,7 @@ Call site 2, one rule per request:
 ```rust
 let rule: Rule<bool, F> = Rule::compile(r#"user.Group in ["admin"] && user.Age >= 18"#, &schema)?;
 let facts = Facts { user: &user, order: &order };
-let ctx = Ctx::new(&facts, Timestamp::now()).with_limits(Limits::default().with_max_steps(10_000));
+let ctx = Ctx::new(&facts).with_now(Timestamp::now()).with_limits(Limits::default().with_max_steps(10_000));
 let ok: bool = rule.eval(&ctx)?;
 if !ok { println!("{}", rule.explain(&ctx)); }                       // explain never fails
 
@@ -74,7 +74,7 @@ for (name, err) in outcomes.errors() { ... }                         // one bad 
 if let Some(report) = set.explain("adult", &ctx) { ... }
 ```
 
-Compile-time rejections, checked with a probe crate. Each is a Rust compile error: a `HashMap` field (custom `on_unimplemented` message), a `u64` field, a field named `contains` (a reserved word, reported by the derive), a struct with type parameters, `rule.eval(&Ctx::new(&other_facts, ..))` with the wrong facts type (`E0271`), and `use dictum::engine::...` (`E0603`, private module).
+Compile-time rejections, checked with a probe crate. Each is a Rust compile error: a `HashMap` field (custom `on_unimplemented` message), a `u64` field, a field named `contains` (a reserved word, reported by the derive), a struct with type parameters, `rule.eval(&Ctx::new(&other_facts))` with the wrong facts type (`E0271`), and `use dictum::engine::...` (`E0603`, private module).
 
 ## Shape
 
@@ -113,7 +113,7 @@ Flow. `Rule::compile`: `parse → check(expected = T::expected()) → dependence
 | 2 | What is really borrowed: string bytes, nested structs, sequences through `&dyn SeqView` (elements read on access, so a `Vec<String>` is never converted), and maps through `&dyn MapView`. Scalars are copied. Values computed during evaluation are owned through `Arc`. `HashMap` fields are rejected (nondeterministic `keys()`). Supported containers are `BTreeMap<String, T>`, `Vec`, `Box<[T]>`, and `&[T]`. |
 | 3 | `&'static StructDesc` everywhere (`Type::Struct`, `Object::desc`, `Dictum::__desc`), emitted as a `static`. No `Arc`. Consequence: the derive rejects type parameters, because a static cannot be generic. |
 | 4 | Only `ident(args)` is a call. `(` after any other postfix is E0108. `Type::Func` is removed. Method calls are out of scope for v0.1. |
-| 5 | Purity is the method name: `func` (volatile: never folded, never shared) vs `pure_func`. There is no clock object: `Ctx::new(&facts, now)` requires the timestamp, so there is no default to get wrong, no_std needs nothing, and tests pass a constant. Because `now` is fixed per evaluation, `now()` has dependence `Input`, so CSE shares it across the rules of one `RuleSet::eval`. It is never constant-folded. |
+| 5 | Purity is the method name: `func` (volatile: never folded, never shared) vs `pure_func`. There is no clock object and no default time: the caller passes a timestamp with `Ctx::with_now`, and tests pass a constant. A rule that calls `now()` on a `Ctx` without one fails with `ClockUnset` (E0311), so a forgotten time is loud, not a silent wall clock, and rules that never call `now()` need no time (no_std callers without a clock). Because `now` is fixed per evaluation, `now()` has dependence `Input`, so CSE shares it across the rules of one `RuleSet::eval`. It is never constant-folded. |
 | 6 | Kept as the doc decided: `len` counts characters (Go-compatible), and indices, slices and `indexOf` are byte offsets. The mismatch cannot silently produce wrong text: a misuse raises `CharBoundary` (E0304) carrying `Help::ByteIndices`, which says why. |
 | 7 | The schema is built from one root `#[derive(Dictum)]` struct, and its fields are the variables. `$env` is the root. `var`/`var_type` are gone, so there is no second variable list to keep in sync with the facts type. Several sources compose by reference fields (`Facts<'a> { user: &'a User }`), and dynamic data uses `Dynamic` fields (`any`). `Frame::root` is that struct. |
 | 8 | Criteria for every milestone are below. M2 and M3 swap places, because the reference interpreter must read fields by `FieldId`, which only the checker produces. |
@@ -141,7 +141,7 @@ Where each invariant lives, strongest first:
 
 Deliberately not done: method calls, generic or enum facts, dynamic (runtime-described) roots, `HashMap` facts, serialization of compiled rules, warnings, localized message catalogs (codes and args are exposed so others can build them), and a bytecode VM.
 
-Interface depth: users write `#[derive(Dictum)]` and call `Schema::builder` → `func`/`pure_func` → `build`, `Rule::compile` → `eval`/`explain`, and `RuleSet::builder` → `insert` → `build` → `eval`/`explain`, plus `Ctx::new`. That is about 15 methods. Behind them: parsing with recovery, static typing with promotions and optional discipline, resolution of overloads, constant folding, regex and set precompilation, type-specialized closure generation, cross-rule sharing, bounded and non-panicking evaluation, and explain recording. The remaining public names are result and error shapes: `Report`, `ExplainNode`, `NodeStatus`, `Outcomes`, `CompileError`, `EvalError`, `EvalErrorKind`, `Diagnostic`, `ErrorCode`, `Arg`, `Help`, `Span`, `Dynamic`, `DynMap`, `Limits`, `SchemaError`, `Output`, `IntoFunc`. No pipeline stage, IR, `Value` variant, or wire type is public.
+Interface depth: users write `#[derive(Dictum)]` and call `Schema::builder` → `func`/`pure_func` → `build`, `Rule::compile` → `eval`/`explain`, and `RuleSet::builder` → `insert` → `build` → `eval`/`explain`, plus `Ctx::new`/`with_now`. That is about 15 methods. Behind them: parsing with recovery, static typing with promotions and optional discipline, resolution of overloads, constant folding, regex and set precompilation, type-specialized closure generation, cross-rule sharing, bounded and non-panicking evaluation, and explain recording. The remaining public names are result and error shapes: `Report`, `ExplainNode`, `NodeStatus`, `Outcomes`, `CompileError`, `EvalError`, `EvalErrorKind`, `Diagnostic`, `ErrorCode`, `Arg`, `Help`, `Span`, `Dynamic`, `DynMap`, `Limits`, `SchemaError`, `Output`, `IntoFunc`. No pipeline stage, IR, `Value` variant, or wire type is public.
 
 ### Milestones, with completion criteria
 
@@ -171,12 +171,14 @@ Defects in candidate 1 fixed during synthesis:
 Rejected from candidate 2:
 - One crate. It hides the IR completely, but loses the crate boundary that keeps IR fields private from the evaluator.
 - The hash-consed program DAG with level-scoped memo slots. It shares more (within a rule, across `let`s and chains), but in that candidate impure `let` values were recomputed and impure nodes could be hash-consed across rules. Revisit after M5 if the benchmarks show the extra sharing matters.
-- An optional clock with a runtime `ClockNotSet` error. A required `now` makes the mistake impossible.
+
+Changed after review:
+- The clock follows candidate 2 after all: `Ctx::new(&facts)` takes no time, `with_now` sets one, and `now()` without one is `ClockUnset` (E0311). The synthesis had required `now` in `Ctx::new`; the reviewer preferred the smaller constructor and rules that need no time.
 
 ## Tradeoffs accepted
 
 - We accept a `F` type parameter on `Schema`, `Rule`, `RuleSet` and `Ctx`, plus the `Facts<'static>` spelling for borrowing roots, in exchange for a wrong facts type being a compile error rather than a runtime check.
-- We accept a mandatory `now` argument in `Ctx::new`, even for rules that never call `now()`, in exchange for deterministic results with no default clock that could be forgotten, and for `now()` being shareable.
+- We accept that a forgotten `with_now` is found at evaluation time (`ClockUnset`, E0311), not at Rust compile time, in exchange for `Ctx::new(&facts)` staying small and rules that never call `now()` needing no time. Results stay deterministic because there is still no default clock.
 - We accept no generic or enum facts, no `HashMap`, and no `u64` in v0.1, in exchange for `static` descriptors (no lazy init, no `Arc`) and deterministic, overflow-free reads.
 - We accept a 128-level AST depth limit, in exchange for bounded stacks in every pass and in evaluation. Rules with 150 chained `+` are rejected.
 - We accept linear-time map-literal lookup and binary-search constant sets, in exchange for no hasher in `no_std` and no hash-seeding questions.
@@ -195,7 +197,6 @@ Rejected from candidate 2:
 ## Open questions and risks
 
 - Dynamic roots. Should a schema be buildable from a runtime description (JSON keys become `any` variables) for the CLI and for config-defined schemas? `StructDesc` needs `'static` names, so this means leaking a descriptor or adding a second descriptor kind. Which does M6 want?
-- Is a mandatory `now` acceptable, or do you prefer `Ctx::new(&facts)` plus a loud `E03xx ClockUnset` when a rule calls `now()` without one?
 - Should `RuleSet::eval` evaluate every rule after one fails (as here), or stop at the first error as the doc's `matching` did?
 - Is `MAX_DEPTH = 128` right for the smallest no_std stacks you target? Should it be a compile option?
 - Not verified against the Go source: `**` returning `float`; `?:` being exactly `a ? a : b` with a `bool` `a` (implemented as `a || b`); and how expr-lang treats `{` in predicate position (I chose "always predicate braces", so a map-literal body is written `{{a: #}}`). These should be pinned by conformance cases before M1 ends.

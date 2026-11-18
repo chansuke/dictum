@@ -133,6 +133,8 @@ pub enum EvalErrorKind {
     },
     /// A map literal with computed keys produced the same key twice.
     DuplicateKey(Box<str>),
+    /// `now()` was called on a `Ctx` built without [`Ctx::with_now`](crate::Ctx::with_now).
+    ClockUnset,
     /// A schema function returned `Err`.
     Function {
         /// The function's name.
@@ -157,6 +159,7 @@ impl EvalErrorKind {
             EvalErrorKind::TypeMismatch { .. } => ErrorCode::RuntimeType,
             EvalErrorKind::InvalidArgument { .. } => ErrorCode::InvalidArgument,
             EvalErrorKind::DuplicateKey(_) => ErrorCode::RuntimeDuplicateKey,
+            EvalErrorKind::ClockUnset => ErrorCode::ClockUnset,
             EvalErrorKind::Function { .. } => ErrorCode::FunctionFailed,
             EvalErrorKind::Internal(_) => ErrorCode::Internal,
         }

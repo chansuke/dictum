@@ -56,8 +56,9 @@ pub(crate) struct Scope<'a> {
 pub(crate) struct Frame<'a> {
     /// The root fact; top-level variables are its fields.
     pub(crate) root: &'a dyn Object,
-    /// What `now()` returns for this whole evaluation.
-    pub(crate) now: jiff::Timestamp,
+    /// What `now()` returns for this whole evaluation; `None` makes `now()` fail
+    /// with `ClockUnset`.
+    pub(crate) now: Option<jiff::Timestamp>,
     /// `let` values; filled eagerly in order before the body runs.
     pub(crate) slots: Vec<Value<'a>>,
     /// Predicate scopes, innermost last. Capacity `max_predicate_depth`.
@@ -70,7 +71,7 @@ pub(crate) struct Frame<'a> {
 }
 
 impl<'a> Frame<'a> {
-    pub(crate) fn new(root: &'a dyn Object, now: jiff::Timestamp, limits: &Limits, cache_slots: u32) -> Self {
+    pub(crate) fn new(root: &'a dyn Object, now: Option<jiff::Timestamp>, limits: &Limits, cache_slots: u32) -> Self {
         todo!()
     }
 

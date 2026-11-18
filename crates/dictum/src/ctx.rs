@@ -7,14 +7,16 @@ use crate::Dictum;
 /// Everything one evaluation reads: the facts, the time `now()` returns, and the
 /// resource limits.
 ///
-/// There is no clock object and no default time. `now` is a value the caller reads
-/// once, so the same `Ctx` always gives the same result (given `pure` functions), a
-/// test fixes time by passing a constant, and `now()` is identical across every rule
-/// of one `RuleSet::eval`, which lets common-subexpression sharing include it.
-/// A `no_std` caller without a clock passes any fixed timestamp explicitly.
+/// There is no clock object and no default time. The caller reads the time once and
+/// passes it with [`with_now`](Ctx::with_now), so the same `Ctx` always gives the same
+/// result (given `pure` functions), a test fixes time by passing a constant, and
+/// `now()` is identical across every rule of one `RuleSet::eval`, which lets
+/// common-subexpression sharing include it. A rule that calls `now()` on a `Ctx`
+/// without a time fails with `EvalErrorKind::ClockUnset`; rules that never call it
+/// need no time, which suits `no_std` callers without a clock.
 pub struct Ctx<'f, F> {
     pub(crate) facts: &'f F,
-    pub(crate) now: Timestamp,
+    pub(crate) now: Option<Timestamp>,
     pub(crate) limits: Limits,
 }
 
@@ -27,9 +29,15 @@ impl<F> Clone for Ctx<'_, F> {
 impl<F> Copy for Ctx<'_, F> {}
 
 impl<'f, F: Dictum> Ctx<'f, F> {
-    /// Evaluate against `facts` at time `now`, with default [`Limits`].
-    pub fn new(facts: &'f F, now: Timestamp) -> Self {
-        Ctx { facts, now, limits: Limits::default() }
+    /// Evaluate against `facts`, with no time and default [`Limits`].
+    pub fn new(facts: &'f F) -> Self {
+        Ctx { facts, now: None, limits: Limits::default() }
+    }
+
+    /// Set the time `now()` returns.
+    pub fn with_now(mut self, now: Timestamp) -> Self {
+        self.now = Some(now);
+        self
     }
 
     /// Replace the limits.

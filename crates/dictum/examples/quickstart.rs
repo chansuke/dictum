@@ -79,7 +79,7 @@ fn single_rule(schema: &Schema<F>, user: &User, order: &Order) -> Result<bool, B
     let rule: Rule<bool, F> = Rule::compile(r#"user.Group in ["admin"] && user.Age >= 18"#, schema)?;
 
     let facts = Facts { user, order };
-    let ctx = Ctx::new(&facts, Timestamp::now()).with_limits(Limits::default().with_max_steps(10_000));
+    let ctx = Ctx::new(&facts).with_now(Timestamp::now()).with_limits(Limits::default().with_max_steps(10_000));
     let ok = rule.eval(&ctx)?;
 
     if !ok {
@@ -109,7 +109,8 @@ fn load_rules(schema: &Schema<F>, rows: &[(String, String)]) -> (RuleSet<bool, F
 
 fn evaluate_set(set: &RuleSet<bool, F>, user: &User, order: &Order) {
     let facts = Facts { user, order };
-    let ctx = Ctx::new(&facts, Timestamp::now());
+    // No rule in this set calls `now()`, so no time is needed.
+    let ctx = Ctx::new(&facts);
     let outcomes = set.eval(&ctx);
     for name in outcomes.matched() {
         println!("matched {name}");

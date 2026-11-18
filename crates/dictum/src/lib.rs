@@ -19,7 +19,7 @@
 //!     Rule::compile(r#"user.Group in ["admin"] && user.Age >= 18"#, &schema)?;
 //!
 //! let user = User { age: 20, group: "admin".into() };
-//! let ok = rule.eval(&Ctx::new(&Facts { user: &user }, Timestamp::now()))?;
+//! let ok = rule.eval(&Ctx::new(&Facts { user: &user }).with_now(Timestamp::now()))?;
 //! ```
 //!
 //! # Public surface
@@ -63,7 +63,7 @@ pub use rule::Rule;
 pub use rule_set::{Outcomes, RuleSet, RuleSetBuilder};
 pub use schema::{Schema, SchemaBuilder};
 
-/// The time types in the public API (`Ctx::new` takes a `jiff::Timestamp`).
+/// The time types in the public API (`Ctx::with_now` takes a `jiff::Timestamp`).
 pub use jiff;
 /// The decimal type (`decimal` feature).
 #[cfg(feature = "decimal")]

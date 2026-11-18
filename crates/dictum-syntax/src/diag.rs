@@ -77,6 +77,7 @@ error_codes! {
     FunctionFailed = "E0308", "function `{0}` failed: {1}";
     InvalidArgument = "E0309", "invalid {0}: `{1}`";
     RuntimeDuplicateKey = "E0310", "duplicate map key `{0}`";
+    ClockUnset = "E0311", "`now()` needs a time; pass one with `Ctx::with_now`";
     // E09xx: a dictum bug. Never expected; reported instead of panicking.
     Internal = "E0900", "internal error: {0}";
 }
