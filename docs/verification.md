@@ -24,7 +24,7 @@ Tools come from `nix develop`. Rust comes from rustup (`rust-toolchain.toml`, pi
 | compile-fail (trybuild) | what the derive and the type system reject: `HashMap`, `u64`, reserved names, generics, enums, a wrong facts type, a non-`Output` result, the private engine | `crates/dictum/tests/ui` |
 | fuzzing (cargo-fuzz) | parser, compiler and eval/explain agreement on arbitrary input and facts | `fuzz/` |
 | Lean | proofs over a core fragment: soundness, and every optimization the engine may apply (see below) | `formal/lean` |
-| differential tests against Lean | the Rust code computes what the Lean definitions say: the parser against the reference parser, `Rule::eval` against `Dictum.eval` | `just drt`: `crates/dictum-syntax/tests/drt.rs`, `crates/dictum/tests/drt_eval.rs` |
+| differential tests against Lean | the Rust code computes what the Lean definitions say: the parser against the reference parser, the checker against `Dictum.infer`, `Rule::eval` against `Dictum.eval` | `just drt`: `crates/dictum-syntax/tests/drt.rs`, `crates/dictum-check/tests/drt.rs`, `crates/dictum/tests/drt_eval.rs` |
 | TLA+ (TLC) | exhaustive model checking of `RuleSet::eval` sharing and hot reload, one seeded bug per invariant, and validation of recorded runs | `formal/tla` |
 | builds | MSRV 1.85, `thumbv7em-none-eabihf` without std, benchmarks, fuzz targets | `just msrv nostd bench-build fuzz-build` |
 
@@ -35,6 +35,9 @@ All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`,
 | invariant | evidence |
 | --- | --- |
 | a well-typed rule never hits `Internal`, and its `int` values fit in `i64` | Lean `soundness`, `never_internal`; fuzz `compile`, `eval_differential` |
+| the checker accepts exactly the well-typed rules | Lean `infer_iff`; `drt` (checker) against `Dictum.infer`, on well-typed and ill-typed rules |
+| an accepted rule's IR satisfies the `ir::Program` invariants | `Program::validate` on every conformance case, every generated rule (`generated_rules_type_check`) and every fuzz input (`check` target) |
+| a derived field reads as a value of its declared type | proptest `derived_fields_are_values_of_their_declared_types` (`facts.rs`) |
 | the parser follows the precedence table | `#guard`s in Lean `Dictum.Syntax`; `drt` against the reference parser; `parser.rs` row tests |
 | evaluation is the Lean `eval` on the core fragment | `drt_eval` |
 | evaluation never panics | clippy no-panic lints; fuzz; proptest `compile_never_panics_*` |
@@ -74,6 +77,7 @@ The examples at the end of each file show what the analyses decide, for instance
 The theorems are about Lean definitions. `dictum-oracle` (`formal/lean/Oracle.lean`, built by `just lean`) runs those definitions, and the differential tests send it the same generated inputs as the Rust code:
 
 - `drt`: generated sources in the operator language, and token soup. Both parsers must accept the same sources and build the same tree. The reference parser (`Dictum/Syntax.lean`) follows Go expr-lang's `parseExpression`, not the Pratt parser, so both share only the table. It is checked by examples and by this agreement, not proved.
+- `drt` (checker): generated rules of the core fragment, well typed or not. The checker must accept the same rules as `Dictum.infer`, with the same type. `infer_iff` proves `infer` accepts exactly what `HasType` types, so the soundness theorem covers every rule the checker accepts in this fragment.
 - `drt_eval`: generated well-typed rules of the core fragment, evaluated by `Rule::eval` on the fixture and by `Dictum.eval` on the same field values.
 
 Each test also has a trial that runs before its milestone. It checks that the generator is useful: most sources parse, the rules are well typed, and they produce values, overflows and divisions by zero.
