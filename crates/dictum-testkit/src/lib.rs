@@ -15,6 +15,7 @@
 pub mod conformance;
 pub mod fixture;
 pub mod generate;
+pub mod syntax;
 
 pub use fixture::{Facts, sample, sample_now};
 

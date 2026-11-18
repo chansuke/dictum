@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 dictum = { path = "../dictum" }
+dictum-syntax.workspace = true
 proptest.workspace = true
 toml.workspace = true
 serde.workspace = true

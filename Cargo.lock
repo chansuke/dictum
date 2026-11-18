@@ -351,6 +351,8 @@ dependencies = [
 name = "dictum-syntax"
 version = "0.1.0"
 dependencies = [
+ "dictum-testkit",
+ "libtest-mimic",
  "proptest",
 ]
 
@@ -360,6 +362,7 @@ version = "0.1.0"
 dependencies = [
  "arbitrary",
  "dictum",
+ "dictum-syntax",
  "proptest",
  "serde",
  "toml",
