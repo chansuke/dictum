@@ -18,6 +18,8 @@ mod sealed {
     impl Sealed for alloc::string::String {}
     impl Sealed for jiff::Timestamp {}
     impl Sealed for jiff::SignedDuration {}
+    #[cfg(feature = "decimal")]
+    impl Sealed for rust_decimal::Decimal {}
     impl<T: super::Output> Sealed for Option<T> {}
     impl<T: super::Output> Sealed for alloc::vec::Vec<T> {}
     impl Sealed for crate::Dynamic {}
@@ -30,7 +32,8 @@ mod sealed {
 /// the final value cannot fail. [`Dynamic`] accepts every type.
 ///
 /// Implemented for `bool`, `i64`, `f64`, `String`, `jiff::Timestamp`,
-/// `jiff::SignedDuration`, `Option<T>`, `Vec<T>`, and `Dynamic`. Sealed: the hidden
+/// `jiff::SignedDuration`, `rust_decimal::Decimal` (`decimal` feature), `Option<T>`,
+/// `Vec<T>`, and `Dynamic`. Sealed: the hidden
 /// methods name the internal `Type` and `Value`, so an outside impl could only be
 /// wrong.
 pub trait Output: sealed::Sealed + Sized + 'static {
@@ -88,6 +91,16 @@ impl Output for jiff::Timestamp {
 impl Output for jiff::SignedDuration {
     fn expected() -> Type {
         Type::Duration
+    }
+    fn from_value(v: Value<'_>) -> Option<Self> {
+        todo!()
+    }
+}
+
+#[cfg(feature = "decimal")]
+impl Output for rust_decimal::Decimal {
+    fn expected() -> Type {
+        Type::Decimal
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
         todo!()
