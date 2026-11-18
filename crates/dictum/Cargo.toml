@@ -31,10 +31,15 @@ libtest-mimic.workspace = true
 proptest.workspace = true
 insta.workspace = true
 trybuild.workspace = true
+criterion.workspace = true
 
 # End-to-end: tests/conformance/*.toml through the public API, one trial per case.
 [[test]]
 name = "conformance"
+harness = false
+
+[[bench]]
+name = "eval"
 harness = false
 
 [lints]
