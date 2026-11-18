@@ -10,7 +10,6 @@
 //! in [`Env<P>`], which is how the schema keeps signature and implementation in one
 //! entry without this crate depending on the evaluator.
 #![no_std]
-#![allow(dead_code, unused_variables)] // skeleton: bodies are `todo!()`; remove in Phase D.
 
 extern crate alloc;
 
