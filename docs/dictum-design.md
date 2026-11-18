@@ -113,10 +113,9 @@ MSRVはRust 1.85。edition 2024 は1.85以上を要求するので、これよ�
 ```
 program     = { "let" ident "=" expr ";" } expr ;
 expr        = conditional ;
-conditional = pipe [ "?" [ expr ] ":" expr ]      (* a ?: b は a ? a : b *)
+conditional = binary [ "?" [ expr ] ":" expr ]    (* a ?: b は a ? a : b *)
             | "if" expr "{" expr "}" "else" ( "{" expr "}" | conditional ) ;
-pipe        = binary { "|" call } ;
-binary      = unary { binop unary } ;        (* 優先順位は下の表 *)
+binary      = unary { binop unary | "|" call } ;   (* 優先順位は下の表。pipeは順位2 *)
 unary       = ( "not" | "!" | "-" | "+" ) unary | postfix ;
 postfix     = primary { "." ident | "?." ident | "[" index "]" | "?.[" index "]" } ;
 index       = expr | [ expr ] ":" [ expr ] ;
@@ -156,6 +155,8 @@ key         = ident | string | "(" expr ")" ;
 - `not` は `+` より強く `*` より弱い。`not a == b` は `(not a) == b` になる（Rustの `!a == b` と同じ）。
 - `??` は他の二項演算子と括弧なしで混ぜられない。`a ?? 0 + 1` はエラーで、`(a ?? 0) + 1` と書く。
 - `-2 ** 2` は `-(2 ** 2)`。`a | f() ? x : y` は `f(a) ? x : y`。
+- 単項演算子は自分の順位で被演算子を読み、その後は外側の順位で二項演算子を読み続ける（Go版の `parseExpression` と同じ）。`not a * b` は `not (a * b)`、`a * not b + c` は `(a * (not b)) + c` になる。
+- pipeも二項演算子の並びの中で読む。右辺は `名前(引数)` の呼び出しだけで、後ろに `.` や `[` は続けられない。`1 + 2 | f()` は `f(1 + 2)`、`a | f() + 1` は `f(a) + 1`。
 - 大小比較は連鎖できる。`18 <= user.Age < 65` は `18 <= user.Age && user.Age < 65` と同じ意味で、短絡評価する。中央の `user.Age` は1回だけ評価し、explainでは比較ごとの子ノードになる。
 - `<` と `>` のように向きを混ぜてもよい（Go版と同じ）。`==` `!=` `in` などは連鎖できず、`a == b == c` は構文エラー。
 - 式の入れ子は128段（`MAX_DEPTH`）までで、超えるとE0105。後段の処理と評価はすべて再帰で書くので、この上限でスタックの使用量を抑える。`&&` と `||` の並びは1つのノードにまとめるので、長い論理式はこの上限に当たらない。
