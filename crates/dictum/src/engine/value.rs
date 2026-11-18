@@ -89,6 +89,21 @@ impl<'a> Value<'a> {
 
     /// Runtime tag, for `any` dispatch through `dictum_check::resolve`.
     pub(crate) fn tag(&self) -> dictum_check::Tag {
-        todo!()
+        use dictum_check::Tag;
+        match &self.0 {
+            Repr::Nil => Tag::Nil,
+            Repr::Bool(_) => Tag::Bool,
+            Repr::Int(_) => Tag::Int,
+            Repr::Float(_) => Tag::Float,
+            #[cfg(feature = "decimal")]
+            Repr::Decimal(_) => Tag::Decimal,
+            Repr::Str(_) => Tag::String,
+            Repr::Bytes(_) => Tag::Bytes,
+            Repr::Time(_) => Tag::Time,
+            Repr::Duration(_) => Tag::Duration,
+            Repr::Array(_) => Tag::Array,
+            Repr::Map(_) => Tag::Map,
+            Repr::Object(_) => Tag::Struct,
+        }
     }
 }

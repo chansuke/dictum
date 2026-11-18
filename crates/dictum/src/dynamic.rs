@@ -6,7 +6,7 @@ use core::ops::ControlFlow;
 
 use dictum_check::Type;
 
-use crate::engine::value::Value;
+use crate::engine::value::{Bytes, MapRef, Repr, Seq, Str, Value};
 use crate::facts::{Field, MapView, SeqView};
 
 /// An owned value whose type is known only at run time.
@@ -60,7 +60,14 @@ impl DynMap {
 
     /// Insert or replace (keeping the original position). Returns the old value.
     pub fn insert(&mut self, key: impl Into<String>, value: Dynamic) -> Option<Dynamic> {
-        todo!()
+        let key = key.into();
+        match self.entries.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, v)) => Some(core::mem::replace(v, value)),
+            None => {
+                self.entries.push((key, value));
+                None
+            }
+        }
     }
 
     /// Lookup.
@@ -89,8 +96,20 @@ impl Field for Dynamic {
         Type::Any
     }
     fn read(&self) -> Value<'_> {
-        // String -> Str::Borrowed, Array(v) -> Seq::Borrowed(v), Map(m) -> MapRef::Borrowed(m)
-        todo!()
+        Value(match self {
+            Dynamic::Nil => Repr::Nil,
+            Dynamic::Bool(b) => Repr::Bool(*b),
+            Dynamic::Int(n) => Repr::Int(*n),
+            Dynamic::Float(f) => Repr::Float(*f),
+            #[cfg(feature = "decimal")]
+            Dynamic::Decimal(d) => Repr::Decimal(*d),
+            Dynamic::String(s) => Repr::Str(Str::Borrowed(s)),
+            Dynamic::Bytes(b) => Repr::Bytes(Bytes::Borrowed(b)),
+            Dynamic::Time(t) => Repr::Time(*t),
+            Dynamic::Duration(d) => Repr::Duration(*d),
+            Dynamic::Array(v) => Repr::Array(Seq::Borrowed(v)),
+            Dynamic::Map(m) => Repr::Map(MapRef::Borrowed(m)),
+        })
     }
 }
 
