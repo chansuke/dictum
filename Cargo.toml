@@ -10,7 +10,15 @@
 #   dictum-derive  #[derive(Dictum)]                                          (syn, quote, syntax)
 [workspace]
 resolver = "3"
-members = ["crates/dictum-syntax", "crates/dictum-check", "crates/dictum", "crates/dictum-derive"]
+members = [
+    "crates/dictum-syntax",
+    "crates/dictum-check",
+    "crates/dictum",
+    "crates/dictum-derive",
+    "crates/dictum-testkit",
+]
+# The fuzz crate needs nightly and libFuzzer, so it has its own workspace.
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "0.1.0"
@@ -42,6 +50,17 @@ syn = { version = "2.0.110", default-features = false, features = [
 ] }
 quote = "1.0.44"
 proc-macro2 = "1.0.103"
+
+# Test-only crates. Never dependencies of a published crate.
+dictum-testkit = { path = "crates/dictum-testkit" }
+proptest = { version = "1.12", default-features = false, features = ["std"] }
+insta = "1.49"
+trybuild = "1.0.125"
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+libtest-mimic = "0.8.2"
+toml = "1.2"
+serde = { version = "1.0.229", features = ["derive"] }
+arbitrary = "1.5"
 
 [workspace.lints.rust]
 # Every `pub` item must be reachable from its crate root. Internals are `pub(crate)`,
