@@ -1,0 +1,31 @@
+# Short-circuit evaluation: an error on the skipped side never happens.
+
+[[case]]
+name = "&& skips its right side"
+expr = "false && 7 % 0 > 0"
+expect = false
+
+[[case]]
+name = "&& evaluates its left side first"
+expr = "7 % 0 > 0 && false"
+error = "E0302"
+
+[[case]]
+name = "|| skips its right side"
+expr = "true || 7 % 0 > 0"
+expect = true
+
+[[case]]
+name = "untaken branch is not evaluated"
+expr = "true ? 1 : 7 % 0"
+expect = 1
+
+[[case]]
+name = "chain stops at the first false comparison"
+expr = "2 < 1 < 7 % 0"
+expect = false
+
+[[case]]
+name = "not"
+expr = "not user.Active"
+expect = false

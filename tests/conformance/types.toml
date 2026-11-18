@@ -1,0 +1,67 @@
+# Compile-time type and name errors (E02xx).
+
+[[case]]
+name = "unknown variable"
+expr = "nobody.Age"
+error = "E0202"
+
+[[case]]
+name = "unknown function"
+expr = "nope(1)"
+error = "E0203"
+
+[[case]]
+name = "unknown field"
+expr = "user.Nope"
+error = "E0204"
+deviation = "Go returns nil or errors depending on options; dictum always rejects"
+
+[[case]]
+name = "argument count"
+expr = "len(nums, 2)"
+error = "E0205"
+
+[[case]]
+name = "member of an optional struct needs ?."
+expr = "user.Manager.Name"
+error = "E0206"
+
+[[case]]
+name = "?. on an optional struct"
+expr = "user.Manager?.Name"
+nil = true
+
+[[case]]
+name = "?. then ??"
+expr = 'user.Manager?.Name ?? "none"'
+expect = "none"
+
+[[case]]
+name = "ordering across types"
+expr = '1 < "a"'
+error = "E0207"
+
+[[case]]
+name = "equality across types"
+expr = '1 == "a"'
+error = "E0207"
+
+[[case]]
+name = "no operator for bool + int"
+expr = "true + 1"
+error = "E0208"
+
+[[case]]
+name = "duplicate map key"
+expr = "{a: 1, a: 2}"
+error = "E0210"
+
+[[case]]
+name = "invalid constant pattern"
+expr = 'user.Name matches "("'
+error = "E0211"
+
+[[case]]
+name = "struct field named by a computed key"
+expr = "user[user.Name]"
+error = "E0213"

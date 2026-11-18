@@ -1,0 +1,66 @@
+# Optional fields, any, conversions and time.
+
+[[case]]
+name = "nil field"
+expr = "user.Email"
+nil = true
+
+[[case]]
+name = "?? on a nil field"
+expr = 'user.Email ?? "none"'
+expect = "none"
+
+[[case]]
+name = "?? on a set field"
+expr = "order.Discount ?? 0.0"
+expect = 0.1
+
+[[case]]
+name = "any used as int"
+expr = "user.Attrs + 1"
+expect = 8
+
+[[case]]
+name = "any with the wrong runtime type"
+expr = 'user.Attrs + "x"'
+error = "E0307"
+
+[[case]]
+name = "type"
+expr = 'type(1) + type("a") + type(nil)'
+expect = "intstringnil"
+
+[[case]]
+name = "int from string"
+expr = 'int("42")'
+expect = 42
+
+[[case]]
+name = "int from a bad string"
+expr = 'int("x")'
+error = "E0309"
+
+[[case]]
+name = "float from int"
+expr = "float(1)"
+expect = 1.0
+
+[[case]]
+name = "now is the context time"
+expr = 'now() == date("2026-01-01")'
+expect = true
+
+[[case]]
+name = "time comparison"
+expr = "now() > user.Created"
+expect = true
+
+[[case]]
+name = "time difference is a duration"
+expr = 'now() - user.Created > duration("24h")'
+expect = true
+
+[[case]]
+name = "bad duration"
+expr = 'duration("1x")'
+error = "E0309"

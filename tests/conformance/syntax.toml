@@ -1,0 +1,159 @@
+# Precedence, associativity and syntax errors. Rows refer to the precedence table in
+# docs/dictum-design.md.
+
+[[case]]
+name = "* binds tighter than +"
+expr = "1 + 2 * 3"
+expect = 7
+
+[[case]]
+name = "parentheses"
+expr = "(1 + 2) * 3"
+expect = 9
+
+[[case]]
+name = "- is left-associative"
+expr = "10 - 2 - 3"
+expect = 5
+
+[[case]]
+name = "% and * share a level"
+expr = "7 % 3 * 2"
+expect = 2
+
+[[case]]
+name = "** is right-associative and returns float"
+expr = "2 ** 3 ** 2"
+expect = 512.0
+
+[[case]]
+name = "unary minus is weaker than **"
+expr = "-2 ** 2"
+expect = -4.0
+
+[[case]]
+name = "not binds tighter than =="
+expr = "not true == false"
+expect = true
+
+[[case]]
+name = "&& binds tighter than ||"
+expr = "true || false && false"
+expect = true
+
+[[case]]
+name = "comparison is weaker than arithmetic"
+expr = "1 + 2 > 2 && 3 < 4"
+expect = true
+
+[[case]]
+name = "comparison chain"
+expr = "18 <= user.Age < 65"
+expect = true
+
+[[case]]
+name = "descending chain"
+expr = "3 > 2 > 1"
+expect = true
+
+[[case]]
+name = "chain may mix directions"
+expr = "1 < 2 > 0"
+expect = true
+
+[[case]]
+name = "ternary is right-associative"
+expr = "false ? 1 : true ? 2 : 3"
+expect = 2
+
+[[case]]
+name = "if else"
+expr = 'if user.Age > 18 { "adult" } else { "minor" }'
+expect = "adult"
+
+[[case]]
+name = "elvis"
+expr = "user.Active ?: false"
+expect = true
+
+[[case]]
+name = "pipe"
+expr = "nums | len()"
+expect = 8
+
+[[case]]
+name = "pipe chain with predicate"
+expr = "nums | filter(# > 3) | len()"
+expect = 4
+
+[[case]]
+name = "pipe is weaker than +"
+expr = "1 + 2 | string()"
+expect = "3"
+
+[[case]]
+name = "let"
+expr = "let x = 1; let y = x * 2; y + x"
+expect = 3
+
+[[case]]
+name = "integer literal forms"
+expr = "0x2A + 0b11 + 0o7 + 1_000"
+expect = 1052
+
+[[case]]
+name = "float literal forms"
+expr = ".5 + 1e1"
+expect = 10.5
+
+[[case]]
+name = "comments"
+expr = "1 /* one */ + 1 // two"
+expect = 2
+
+[[case]]
+name = "== does not chain"
+expr = "1 == 1 == true"
+error = "E0106"
+deviation = "Go parses (1 == 1) == true; dictum rejects the chain"
+
+[[case]]
+name = "?? does not mix with + without parentheses"
+expr = "order.Discount ?? 0.0 + 1.0"
+error = "E0107"
+
+[[case]]
+name = "?? with parentheses"
+expr = "(order.Discount ?? 0.0) + 1.0"
+expect = 1.1
+
+[[case]]
+name = "missing operand"
+expr = "1 =="
+error = "E0101"
+
+[[case]]
+name = "unterminated string"
+expr = '"abc'
+error = "E0102"
+
+[[case]]
+name = "invalid escape"
+expr = '"\q"'
+error = "E0103"
+
+[[case]]
+name = "integer literal out of range"
+expr = "9223372036854775808"
+error = "E0104"
+
+[[case]]
+name = "only names can be called"
+expr = "user.Name()"
+error = "E0108"
+deviation = "dictum has no method calls in v0.1"
+
+[[case]]
+name = "pointer outside a predicate"
+expr = "# > 1"
+error = "E0109"

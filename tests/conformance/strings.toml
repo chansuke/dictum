@@ -1,0 +1,87 @@
+# Strings. len counts characters; indices and slices are byte offsets.
+
+[[case]]
+name = "concatenation"
+expr = 'user.Name + "!"'
+expect = "Ada!"
+
+[[case]]
+name = "len counts characters"
+expr = 'len("héllo")'
+expect = 5
+
+[[case]]
+name = "slice on character boundaries"
+expr = '"héllo"[1:3]'
+expect = "é"
+
+[[case]]
+name = "slice inside a character"
+expr = '"héllo"[2:]'
+error = "E0304"
+deviation = "Go slices inside the character; dictum reports CharBoundary"
+
+[[case]]
+name = "index"
+expr = '"abc"[1]'
+expect = "b"
+
+[[case]]
+name = "negative index counts from the end"
+expr = '"abc"[-1]'
+expect = "c"
+
+[[case]]
+name = "index out of bounds"
+expr = '"abc"[5]'
+error = "E0303"
+
+[[case]]
+name = "indexOf returns a byte offset"
+expr = 'indexOf("héllo", "l")'
+expect = 3
+
+[[case]]
+name = "indexOf composes with slicing"
+expr = 'let s = "héllo"; s[indexOf(s, "l"):]'
+expect = "llo"
+
+[[case]]
+name = "upper"
+expr = 'upper("abc")'
+expect = "ABC"
+
+[[case]]
+name = "trim"
+expr = 'trim("  x ")'
+expect = "x"
+
+[[case]]
+name = "split"
+expr = 'split("a,b", ",")'
+expect = ["a", "b"]
+
+[[case]]
+name = "replace"
+expr = 'replace("aaa", "a", "b")'
+expect = "bbb"
+
+[[case]]
+name = "hasPrefix"
+expr = 'hasPrefix("abc", "ab")'
+expect = true
+
+[[case]]
+name = "contains operator"
+expr = '"abc" contains "b"'
+expect = true
+
+[[case]]
+name = "startsWith operator"
+expr = '"abc" startsWith "a"'
+expect = true
+
+[[case]]
+name = "matches with a constant pattern"
+expr = '"abc" matches "^a.c$"'
+expect = true

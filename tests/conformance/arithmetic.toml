@@ -1,0 +1,78 @@
+# Numbers. Overflow and division by zero are runtime errors, not wrapping.
+
+[[case]]
+name = "int overflow"
+expr = "9223372036854775807 + 1"
+error = "E0301"
+deviation = "Go wraps around; dictum reports Overflow"
+
+[[case]]
+name = "int underflow"
+expr = "-9223372036854775807 - 2"
+error = "E0301"
+deviation = "Go wraps around; dictum reports Overflow"
+
+[[case]]
+name = "modulo by zero"
+expr = "7 % 0"
+error = "E0302"
+
+[[case]]
+name = "modulo takes the dividend's sign"
+expr = "-7 % 3"
+expect = -1
+
+[[case]]
+name = "MIN % -1 is 0"
+expr = "(-9223372036854775807 - 1) % -1"
+expect = 0
+
+[[case]]
+name = "int / int is float"
+expr = "7 / 2"
+expect = 3.5
+
+[[case]]
+name = "exact int / int is still float"
+expr = "4 / 2"
+expect = 2.0
+
+[[case]]
+name = "float division by zero"
+expr = "1 / 0"
+expect = inf
+
+[[case]]
+name = "int promoted to float"
+expr = "1 + 0.5"
+expect = 1.5
+
+[[case]]
+name = "abs"
+expr = "abs(-3)"
+expect = 3
+
+[[case]]
+name = "max"
+expr = "max(2, 7)"
+expect = 7
+
+[[case]]
+name = "floor"
+expr = "floor(2.7)"
+expect = 2.0
+
+[[case]]
+name = "ceil"
+expr = "ceil(2.1)"
+expect = 3.0
+
+[[case]]
+name = "round half away from zero"
+expr = "round(2.5)"
+expect = 3.0
+
+[[case]]
+name = "float field"
+expr = "order.Total * 2"
+expect = 241.0
