@@ -16,7 +16,7 @@ default:
 verify: fmt lint test
 
 # Everything CI runs.
-ci: fmt lint deny test msrv nostd bench-build fuzz-build lean tla drt
+ci: fmt lint deny conformance-go test msrv nostd bench-build fuzz-build lean tla drt
 
 # rustfmt and taplo, check only.
 fmt:
