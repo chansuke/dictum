@@ -55,7 +55,6 @@ fn compile_errors_are_collected_and_capped() {
 }
 
 #[test]
-#[ignore = "pending M5: RuleSet"]
 fn rule_set_stops_at_the_first_failing_rule() {
     let schema = schema();
     let mut b = RuleSet::<bool, Facts>::builder(&schema);
@@ -70,7 +69,6 @@ fn rule_set_stops_at_the_first_failing_rule() {
 }
 
 #[test]
-#[ignore = "pending M5: RuleSet"]
 fn rule_set_reports_matches_in_insertion_order() {
     let schema = schema();
     let mut b = RuleSet::<bool, Facts>::builder(&schema);
@@ -206,4 +204,40 @@ fn only_pure_functions_are_called_at_compile_time() {
     assert_eq!((PURE.load(Ordering::SeqCst), VOLATILE.load(Ordering::SeqCst)), (1, 0));
     assert_eq!(rule.eval(&Ctx::new(&sample())).unwrap(), 3);
     assert_eq!((PURE.load(Ordering::SeqCst), VOLATILE.load(Ordering::SeqCst)), (1, 1));
+}
+
+#[test]
+fn a_rule_set_computes_a_shared_subexpression_once_per_eval() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    let schema = Schema::<Facts>::builder()
+        .pure_func("lookup", |x: i64| {
+            CALLS.fetch_add(1, Ordering::SeqCst);
+            x
+        })
+        .build()
+        .unwrap();
+    let mut b = RuleSet::<bool, Facts>::builder(&schema);
+    // `+` is commutative for sharing, so the two calls are the same subexpression.
+    b.insert("a", "lookup(user.Age + limit) > 40").unwrap();
+    b.insert("b", "lookup(limit + user.Age) < 50").unwrap();
+    let set = b.build();
+    let facts = sample();
+    let outcomes = set.eval(&Ctx::new(&facts)).unwrap();
+    assert_eq!(outcomes.matched().collect::<Vec<_>>(), ["a", "b"]);
+    assert_eq!(CALLS.load(Ordering::SeqCst), 1);
+    set.eval(&Ctx::new(&facts)).unwrap();
+    assert_eq!(CALLS.load(Ordering::SeqCst), 2, "the cache lives for one eval");
+}
+
+#[test]
+fn rule_set_explains_one_rule_by_name() {
+    let schema = schema();
+    let mut b = RuleSet::<bool, Facts>::builder(&schema);
+    b.insert("adult", "user.Age >= 18").unwrap();
+    let set = b.build();
+    let facts = sample();
+    let report = set.explain("adult", &Ctx::new(&facts)).unwrap();
+    assert!(*report.result().as_ref().unwrap());
+    assert!(set.explain("missing", &Ctx::new(&facts)).is_none());
 }

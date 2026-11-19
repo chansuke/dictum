@@ -91,7 +91,6 @@ proptest! {
     /// shared work) and then report a runtime error it never reached alone. The
     /// TLA+ model formal/tla/RuleSetEval.tla found this case.
     #[test]
-    #[ignore = "pending M5: RuleSet"]
     fn rule_set_agrees_with_standalone_rules(srcs in proptest::collection::vec(generate::rule(Ty::Bool, 3), 1..6)) {
         let schema = schema();
         let facts = sample();
@@ -138,15 +137,16 @@ proptest! {
 
 /// CSE matches `==` with swapped operands but must not match `&&`: `false && x`
 /// succeeds where `x && false` fails. (Proved in formal/lean, Dictum/Commute.lean.)
+/// The `false` reads a fact (`user.Age < 0`), so neither rule folds to a constant
+/// and both `&&`s are candidates for sharing.
 #[test]
-#[ignore = "pending M5: RuleSet"]
 fn short_circuit_operands_are_not_shared_across_orders() {
     let schema = schema();
     let facts = sample();
     let ctx = Ctx::new(&facts).with_now(sample_now());
     let mut b = RuleSet::<bool, Facts>::builder(&schema);
-    b.insert("safe", "false && 7 % 0 > 0").unwrap();
-    b.insert("unsafe", "7 % 0 > 0 && false").unwrap();
+    b.insert("safe", "user.Age < 0 && 7 % 0 > 0").unwrap();
+    b.insert("unsafe", "7 % 0 > 0 && user.Age < 0").unwrap();
     let err = b.build().eval(&ctx).err().expect("the second rule divides by zero");
     assert_eq!(err.rule(), Some("unsafe"));
     assert_eq!(err.code().as_str(), "E0302");
