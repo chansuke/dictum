@@ -133,6 +133,6 @@ impl<'s> Outcomes<'s, bool> {
 
 const _: () = {
     const fn assert_send_sync<X: Send + Sync>() {}
-    struct NotSync(core::cell::Cell<u8>);
+    type NotSync = core::cell::Cell<u8>;
     assert_send_sync::<RuleSet<bool, NotSync>>();
 };

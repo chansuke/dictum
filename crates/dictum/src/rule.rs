@@ -71,7 +71,7 @@ impl<T, F> Rule<T, F> {
 
 const _: () = {
     const fn assert_send_sync<X: Send + Sync>() {}
-    struct NotSync(core::cell::Cell<u8>);
+    type NotSync = core::cell::Cell<u8>;
     // Holds for any `F`, even one that is neither `Send` nor `Sync`.
     assert_send_sync::<Rule<bool, NotSync>>();
 };
