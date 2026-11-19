@@ -40,8 +40,8 @@ All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`,
 | a derived field reads as a value of its declared type | proptest `derived_fields_are_values_of_their_declared_types` (`facts.rs`) |
 | the parser follows the precedence table | `#guard`s in Lean `Dictum.Syntax`; `drt` against the reference parser; `parser.rs` row tests |
 | evaluation is the Lean `eval` on the core fragment | `drt_eval` |
-| evaluation never panics | clippy no-panic lints; fuzz `eval_differential` (until M4 it runs the interpreter twice, so it checks only this); proptest `compile_never_panics_*` |
-| `eval` and `explain` charge the budget at the same points | the charge points listed in `engine/interp.rs`, which the closure tree must follow; proptest `eval_agrees_with_explain` from M4 |
+| evaluation never panics | clippy no-panic lints; fuzz `eval_differential`; proptest `compile_never_panics_*` |
+| `eval` and `explain` charge the budget at the same points, except that a folded constant costs `eval` nothing | the charge points listed in `engine/interp.rs`, which the closure tree follows by calling the same functions; proptest `eval_agrees_with_explain`; test `constant_subtrees_are_folded_at_compile_time` |
 | constant folding changes no outcome, errors included | Lean `fold_sound`; proptest `eval_agrees_with_explain` (explain runs the unfolded IR) |
 | CSE may identify `a + b` with `b + a` but not `a && b` with `b && a` | Lean `comm_ok`, `and_not_comm`, `or_not_comm`; test `short_circuit_operands_are_not_shared_across_orders` |
 | errors are never cached; a slot is written once | TLA+ `CacheHoldsOnlyValues`, `SlotWrittenOnce` |
@@ -81,7 +81,7 @@ The theorems are about Lean definitions. `dictum-oracle` (`formal/lean/Oracle.le
 - `drt` (checker): generated rules of the core fragment, well typed or not. The checker must accept the same rules as `Dictum.infer`, with the same type. `infer_iff` proves `infer` accepts exactly what `HasType` types, so the soundness theorem covers every rule the checker accepts in this fragment.
 - `drt_eval`: generated well-typed rules of the core fragment, evaluated by `Rule::eval` on the fixture and by `Dictum.eval` on the same field values.
 
-Until M4, `Rule::eval` runs the spec interpreter, so `drt_eval` compares the interpreter with `Dictum.eval`. From M4 it compares the closure tree, and `eval_agrees_with_explain` ties the two Rust evaluators together.
+`Rule::eval` runs the closure tree, so `drt_eval` compares it with `Dictum.eval`, and `eval_agrees_with_explain` ties it to the spec interpreter, which `explain` runs.
 
 Each test also has a trial that runs before its milestone. It checks that the generator is useful: most sources parse, the rules are well typed, and they produce values, overflows and divisions by zero.
 
