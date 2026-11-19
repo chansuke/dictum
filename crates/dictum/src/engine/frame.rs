@@ -72,13 +72,22 @@ pub(crate) struct Frame<'a> {
 
 impl<'a> Frame<'a> {
     pub(crate) fn new(root: &'a dyn Object, now: Option<jiff::Timestamp>, limits: &Limits, cache_slots: u32) -> Self {
-        todo!()
+        let cache = (0..cache_slots).map(|_| None).collect();
+        Frame { root, now, slots: Vec::new(), scopes: Vec::new(), budget: Budget::new(limits), cache }
     }
 
     /// Prepare for the next rule of a set: fresh budget, slots and scopes; the cache
     /// is kept.
     pub(crate) fn next_rule(&mut self, limits: &Limits, slot_count: usize) {
-        todo!()
+        self.budget = Budget::new(limits);
+        self.slots.clear();
+        self.slots.reserve(slot_count);
+        self.scopes.clear();
+    }
+
+    /// A fault at `span`.
+    pub(crate) fn fault(kind: EvalErrorKind, span: Span) -> Fault {
+        Fault { kind, span }
     }
 }
 
