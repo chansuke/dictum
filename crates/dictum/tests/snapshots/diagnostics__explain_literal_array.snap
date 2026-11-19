@@ -1,0 +1,7 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "explain(r#\"user.Name in [\"Ada\", \"Grace\"] && user.Age >= 18\"#)"
+---
+user.Name in ["Ada", "Grace"] && user.Age >= 18   → true
+├─ user.Name in ["Ada", "Grace"]                  → true  (user.Name = "Ada")
+└─ user.Age >= 18                                 → true  (user.Age = 36)
