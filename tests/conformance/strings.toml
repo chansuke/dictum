@@ -25,11 +25,13 @@ deviation = "Go slices inside the character; dictum reports CharBoundary"
 name = "index"
 expr = '"abc"[1]'
 expect = "b"
+deviation = "Go cannot index a string; dictum indexes by byte position"
 
 [[case]]
 name = "negative index counts from the end"
 expr = '"abc"[-1]'
 expect = "c"
+deviation = "Go cannot index a string; dictum indexes by byte position"
 
 [[case]]
 name = "index out of bounds"
