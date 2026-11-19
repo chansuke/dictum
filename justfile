@@ -77,6 +77,10 @@ bench:
     cargo bench -p dictum --bench eval
     cd crates/dictum/benches/go && go test -run TestRules -bench . -benchmem
 
+# The conformance cases against Go's expr (tests/conformance/README.md).
+conformance-go:
+    cd crates/dictum/benches/go && go test -run TestConformance
+
 # The host triple. cargo-fuzz otherwise builds for the triple it was itself built
 # for, which is musl for the prebuilt binary CI installs, and ASan cannot link that.
 host := `rustc -vV | sed -n 's/^host: //p'`
