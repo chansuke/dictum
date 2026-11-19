@@ -3,7 +3,7 @@
 use std::sync::OnceLock;
 
 use dictum::{Ctx, Dynamic, EvalErrorKind, Limits, Rule, Schema};
-use dictum_testkit::{Facts, sample_now};
+use dictum_testkit::{Facts, same_value, sample_now};
 use libfuzzer_sys::fuzz_target;
 
 fn schema() -> &'static Schema<Facts> {
@@ -21,7 +21,7 @@ fuzz_target!(|input: (&str, Facts)| {
     let spec = rule.explain(&ctx).into_result();
     let budget = |k: &EvalErrorKind| matches!(k, EvalErrorKind::StepLimit | EvalErrorKind::AllocLimit);
     match (&fast, &spec) {
-        (Ok(a), Ok(b)) => assert_eq!(a, b, "{src}"),
+        (Ok(a), Ok(b)) => assert!(same_value(a, b), "{src}: eval {a:?}, explain {b:?}"),
         (Err(a), Err(b)) if budget(a.kind()) || budget(b.kind()) => {}
         (Err(a), Err(b)) => assert_eq!((a.code(), a.span()), (b.code(), b.span()), "{src}"),
         (Err(e), Ok(_)) | (Ok(_), Err(e)) if budget(e.kind()) => {}

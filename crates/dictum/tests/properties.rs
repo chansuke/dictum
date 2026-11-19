@@ -53,7 +53,11 @@ proptest! {
         let fast = outcome(rule.eval(&ctx));
         let spec = outcome(rule.explain(&ctx).into_result());
         if let (Some(fast), Some(spec)) = (fast, spec) {
-            prop_assert_eq!(fast, spec, "{}", src);
+            let same = match (&fast, &spec) {
+                (Ok(a), Ok(b)) => dictum_testkit::same_value(a, b),
+                _ => fast == spec,
+            };
+            prop_assert!(same, "{}: eval {:?}, explain {:?}", src, fast, spec);
         }
     }
 

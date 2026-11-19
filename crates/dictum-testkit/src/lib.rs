@@ -37,3 +37,37 @@ pub const fn stage() -> conformance::Stage {
         _ => Stage::Eval,
     }
 }
+
+/// Whether two results are the same value, for differential tests: as `==`, except
+/// that NaN is the same as NaN (`0/0` gives NaN on both sides, and `NaN != NaN`).
+pub fn same_value(a: &dictum::Dynamic, b: &dictum::Dynamic) -> bool {
+    use dictum::Dynamic;
+    match (a, b) {
+        (Dynamic::Float(x), Dynamic::Float(y)) => x == y || (x.is_nan() && y.is_nan()),
+        (Dynamic::Array(xs), Dynamic::Array(ys)) => {
+            xs.len() == ys.len() && xs.iter().zip(ys).all(|(x, y)| same_value(x, y))
+        }
+        (Dynamic::Map(xs), Dynamic::Map(ys)) => {
+            xs.len() == ys.len() && xs.iter().zip(ys.iter()).all(|((k, x), (l, y))| k == l && same_value(x, y))
+        }
+        _ => a == b,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dictum::Dynamic;
+
+    use super::same_value;
+
+    #[test]
+    fn nan_is_the_same_value_as_nan() {
+        assert!(same_value(&Dynamic::Float(f64::NAN), &Dynamic::Float(f64::NAN)));
+        assert!(same_value(
+            &Dynamic::Array(vec![Dynamic::Float(f64::NAN)]),
+            &Dynamic::Array(vec![Dynamic::Float(f64::NAN)])
+        ));
+        assert!(!same_value(&Dynamic::Float(0.0), &Dynamic::Float(f64::NAN)));
+        assert!(!same_value(&Dynamic::Int(1), &Dynamic::Float(1.0)));
+    }
+}
