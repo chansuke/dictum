@@ -46,6 +46,7 @@ test:
     cargo nextest run --workspace --all-features --no-fail-fast
     cargo nextest run --workspace --no-default-features --no-fail-fast
     cargo test --workspace --all-features --doc
+    cargo run -p dictum --example quickstart
 
 # What is still ignored, by milestone.
 pending:

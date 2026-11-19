@@ -1,7 +1,5 @@
-//! The usage sketch from docs/architecture.md, type-checked by `cargo check --all-targets`.
-//! (Bodies in the skeleton are `todo!()`, so running it panics; compiling it is the
-//! point: it proves the derive output, the schema builder's closure inference, and
-//! the rule APIs agree with the usage.)
+//! The usage sketch from docs/architecture.md: a schema with functions, a single
+//! rule with explain, and a rule set. `just test` runs it.
 
 use std::collections::BTreeMap;
 use std::fmt;
