@@ -152,3 +152,58 @@ fn explain_elides_large_values_without_changing_the_result() {
     let range = &report.root().children()[0];
     assert!(matches!(range.status(), NodeStatus::Elided), "{:?}", range.status());
 }
+
+#[test]
+fn constant_subtrees_are_folded_at_compile_time() {
+    // `count(1..100, ...)` is constant, so `eval` does not iterate it; `explain` runs
+    // the rule as written and does.
+    let rule = Rule::<bool, Facts>::compile("count(1..100, # % 2 == 0) == 50 && user.Age > 0", &schema()).unwrap();
+    let facts = sample();
+    let tight = Ctx::new(&facts).with_limits(Limits::default().with_max_steps(10));
+    assert!(rule.eval(&tight).unwrap());
+    assert!(matches!(rule.explain(&tight).result().as_ref().unwrap_err().kind(), EvalErrorKind::StepLimit));
+}
+
+#[test]
+fn constants_too_large_to_fold_run_under_the_callers_limits() {
+    let rule = Rule::<i64, Facts>::compile("count(1..20000, # > 0)", &schema()).unwrap();
+    let facts = sample();
+    assert_eq!(rule.eval(&Ctx::new(&facts)).unwrap(), 20000);
+    let tight = Ctx::new(&facts).with_limits(Limits::default().with_max_steps(100));
+    assert!(matches!(rule.eval(&tight).unwrap_err().kind(), EvalErrorKind::StepLimit));
+}
+
+#[test]
+fn a_folded_pattern_is_compiled_once_or_fails_at_run_time() {
+    let facts = sample();
+    let ctx = Ctx::new(&facts);
+    let ok = Rule::<bool, Facts>::compile(r#"user.Name matches ("^A" + "d")"#, &schema()).unwrap();
+    assert!(ok.eval(&ctx).unwrap());
+    // Not a literal, so not rejected at compile time (E0211); invalid once folded.
+    let bad = Rule::<bool, Facts>::compile(r#"user.Name matches ("(" + "")"#, &schema()).unwrap();
+    let (fast, spec) = (bad.eval(&ctx).unwrap_err(), bad.explain(&ctx).into_result().unwrap_err());
+    assert!(matches!(fast.kind(), EvalErrorKind::InvalidArgument { .. }), "{fast}");
+    assert_eq!((fast.code(), fast.span()), (spec.code(), spec.span()));
+}
+
+#[test]
+fn only_pure_functions_are_called_at_compile_time() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static PURE: AtomicUsize = AtomicUsize::new(0);
+    static VOLATILE: AtomicUsize = AtomicUsize::new(0);
+    let schema = Schema::<Facts>::builder()
+        .pure_func("pure", |x: i64| {
+            PURE.fetch_add(1, Ordering::SeqCst);
+            x
+        })
+        .func("volatile", |x: i64| {
+            VOLATILE.fetch_add(1, Ordering::SeqCst);
+            x
+        })
+        .build()
+        .unwrap();
+    let rule = Rule::<i64, Facts>::compile("pure(1) + volatile(2)", &schema).unwrap();
+    assert_eq!((PURE.load(Ordering::SeqCst), VOLATILE.load(Ordering::SeqCst)), (1, 0));
+    assert_eq!(rule.eval(&Ctx::new(&sample())).unwrap(), 3);
+    assert_eq!((PURE.load(Ordering::SeqCst), VOLATILE.load(Ordering::SeqCst)), (1, 1));
+}
