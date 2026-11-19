@@ -3,10 +3,13 @@
 //! `core::error::Error`, so `?` into a caller's own error type works.
 
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::sync::Arc;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::fmt;
 
-use dictum_syntax::{Diagnostic, ErrorCode, Span};
+use dictum_syntax::{Arg, Diagnostic, ErrorCode, Help, Span};
 
 /// A rule failed to compile: one or more diagnostics (at most 20), by position.
 ///
@@ -90,8 +93,11 @@ impl EvalError {
 }
 
 impl fmt::Display for EvalError {
+    /// The error in caret format, as compile errors are shown.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+        let origin = self.rule.as_deref().unwrap_or("rule");
+        let (args, help) = self.kind.args();
+        dictum_syntax::render(f, &self.source, origin, self.code(), self.span, &args, help)
     }
 }
 
@@ -141,6 +147,8 @@ pub enum EvalErrorKind {
     InvalidArgument {
         /// What was being parsed (`"duration"`, `"regex"`, ...).
         what: &'static str,
+        /// The argument as given.
+        value: Box<str>,
     },
     /// A map literal with computed keys produced the same key twice.
     DuplicateKey(Box<str>),
@@ -158,6 +166,27 @@ pub enum EvalErrorKind {
 }
 
 impl EvalErrorKind {
+    /// The values the code's message template refers to, and a hint if there is one.
+    fn args(&self) -> (Vec<Arg>, Option<Help>) {
+        let text = |s: &str| Arg::Text(s.into());
+        match self {
+            EvalErrorKind::Overflow
+            | EvalErrorKind::DivisionByZero
+            | EvalErrorKind::StepLimit
+            | EvalErrorKind::AllocLimit
+            | EvalErrorKind::ClockUnset => (Vec::new(), None),
+            EvalErrorKind::IndexOutOfBounds { index, len } => {
+                (vec![Arg::Int(*index), Arg::Int(i64::try_from(*len).unwrap_or(i64::MAX))], None)
+            }
+            EvalErrorKind::CharBoundary { index } => (vec![Arg::Int(*index)], Some(Help::ByteIndices)),
+            EvalErrorKind::TypeMismatch { expected, found } => (vec![text(expected), text(found)], None),
+            EvalErrorKind::InvalidArgument { what, value } => (vec![text(what), text(value)], None),
+            EvalErrorKind::DuplicateKey(key) => (vec![text(key)], None),
+            EvalErrorKind::Function { name, error } => (vec![Arg::Name(name.clone()), text(&format!("{error}"))], None),
+            EvalErrorKind::Internal(what) => (vec![text(what)], None),
+        }
+    }
+
     /// The diagnostic code of this kind.
     pub fn code(&self) -> ErrorCode {
         match self {
