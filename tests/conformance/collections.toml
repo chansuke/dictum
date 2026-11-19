@@ -125,6 +125,7 @@ expect = 120.5
 name = "keys are in BTreeMap order"
 expr = "keys(order.Notes)"
 expect = ["gift", "note"]
+deviation = "Go iterates a map in random order; dictum keeps the container's order"
 
 [[case]]
 name = "map lookup"
@@ -135,11 +136,13 @@ expect = "yes"
 name = "missing map key is nil"
 expr = 'order.Notes["x"]'
 nil = true
+deviation = "Go returns the zero value of the map's value type; dictum types m[k] as an option"
 
 [[case]]
 name = "missing map key with default"
 expr = 'order.Notes["x"] ?? "-"'
 expect = "-"
+deviation = "Go returns the zero value \"\" for a missing key, so ?? never applies"
 
 [[case]]
 name = "step limit"

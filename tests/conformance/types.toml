@@ -55,6 +55,7 @@ error = "E0208"
 name = "duplicate map key"
 expr = "{a: 1, a: 2}"
 error = "E0210"
+deviation = "Go keeps one of the values; dictum rejects the duplicate key"
 
 [[case]]
 name = "invalid constant pattern"
