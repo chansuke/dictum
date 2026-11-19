@@ -116,7 +116,7 @@ pub(crate) struct Ice(pub(crate) &'static str);
 pub(crate) struct Compiler<'c> {
     schema: &'c Arc<SchemaCore>,
     patterns: &'c BTreeMap<NodeId, Arc<regex::Regex>>,
-    /// Shared-cache slot per node id (RuleSet fast trees only, from M5).
+    /// Shared-cache slot per node id (RuleSet only).
     slots: Option<&'c [Option<CacheSlot>]>,
 }
 
@@ -178,10 +178,31 @@ impl<'c> Compiler<'c> {
         es.iter().map(|e| self.value(e)).collect()
     }
 
+    /// Compile one node, then wrap it in its cache slot if it has one: a filled slot
+    /// is returned as it is; an empty one is computed and filled on success only, so
+    /// an error is never cached and each rule reports its own.
+    fn expr(&self, e: &ir::Expr) -> Result<Compiled, Ice> {
+        let compiled = self.uncached(e)?;
+        let Some(CacheSlot(slot)) = self.slots.and_then(|s| s.get(e.id().index()).copied().flatten()) else {
+            return Ok(compiled);
+        };
+        let (node, slot) = (compiled.into_value(), usize::try_from(slot).map_err(|_| Ice("cache slot"))?);
+        Ok(Compiled::Value(value_node(move |f| {
+            if let Some(v) = f.cache.get(slot).and_then(Option::as_ref) {
+                return Ok(v.clone());
+            }
+            let v = node(f)?;
+            if let Some(entry) = f.cache.get_mut(slot) {
+                *entry = Some(v.clone());
+            }
+            Ok(v)
+        })))
+    }
+
     /// Compile one node. The evaluation order, the faults and their spans, and the
     /// budget charges are those of `interp::Walk::compute`; anything not specialized
     /// here calls the same `interp` function on evaluated operands.
-    fn expr(&self, e: &ir::Expr) -> Result<Compiled, Ice> {
+    fn uncached(&self, e: &ir::Expr) -> Result<Compiled, Ice> {
         let span = e.span();
         Ok(match e.kind() {
             ExprKind::Const(c) => match c {

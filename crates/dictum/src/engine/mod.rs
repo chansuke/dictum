@@ -60,6 +60,12 @@ impl Checked {
     }
 }
 
+impl Prepared {
+    pub(crate) fn name(&self) -> Option<&str> {
+        self.checked.name()
+    }
+}
+
 /// Parse, check, compile constant patterns.
 ///
 /// Syntax errors stop before checking (so the checker never sees `Error` nodes);
@@ -119,27 +125,44 @@ pub(crate) fn compile_error(src: &str, name: Option<&str>, diags: dictum_syntax:
 pub(crate) struct Prepared {
     checked: Checked,
     schema: Arc<SchemaCore>,
-    tree: compile::Tree,
+    /// `Err` is an internal compiler error. `Rule::compile` reports it; a rule of a
+    /// set reports it as `Internal` when it runs, since no source is to blame.
+    tree: Result<compile::Tree, compile::Ice>,
+}
+
+/// A folded copy of `checked`'s IR, with the dependence of each folded node.
+fn folded(checked: &Checked, schema: &Arc<SchemaCore>) -> (ir::Program, Vec<analysis::Dependence>) {
+    let mut ir = checked.ir.clone();
+    let before = analysis::dependence(&ir, schema);
+    fold::fold(&mut ir, schema, &before);
+    let deps = analysis::dependence(&ir, schema);
+    (ir, deps)
 }
 
 impl Prepared {
-    /// Fold a copy of the IR and compile it. `slots` assigns shared-cache slots
-    /// (RuleSet only).
-    pub(crate) fn new(
-        checked: Checked,
-        schema: Arc<SchemaCore>,
-        slots: Option<&[Option<analysis::CacheSlot>]>,
-    ) -> Result<Prepared, CompileError> {
-        let mut ir = checked.ir.clone();
-        let deps = analysis::dependence(&ir, &schema);
-        fold::fold(&mut ir, &schema, &deps);
-        let tree = compile::Compiler::new(&schema, &checked.patterns, slots).tree(&ir).map_err(|ice| {
+    /// Fold a copy of the IR and compile it, for a single rule.
+    pub(crate) fn new(checked: Checked, schema: Arc<SchemaCore>) -> Result<Prepared, CompileError> {
+        let (ir, _) = folded(&checked, &schema);
+        let prepared = Prepared::compile(checked, schema, &ir, None);
+        if let Err(ice) = &prepared.tree {
             let args = alloc::vec![dictum_syntax::Arg::Text(ice.0.into())];
             let mut diags = dictum_syntax::Diagnostics::new();
             diags.push(dictum_syntax::Diagnostic::new(dictum_syntax::ErrorCode::Internal, ir.body().span(), args));
-            compile_error(&checked.source, checked.name(), diags)
-        })?;
-        Ok(Prepared { checked, schema, tree })
+            return Err(compile_error(&prepared.checked.source, prepared.checked.name(), diags));
+        }
+        Ok(prepared)
+    }
+
+    /// Compile the folded `ir` of `checked`. `slots` assigns shared-cache slots
+    /// (RuleSet only).
+    fn compile(
+        checked: Checked,
+        schema: Arc<SchemaCore>,
+        ir: &ir::Program,
+        slots: Option<&[Option<analysis::CacheSlot>]>,
+    ) -> Prepared {
+        let tree = compile::Compiler::new(&schema, &checked.patterns, slots).tree(ir);
+        Prepared { checked, schema, tree }
     }
 
     pub(crate) fn source(&self) -> &str {
@@ -148,7 +171,12 @@ impl Prepared {
 
     /// Evaluate for `eval`.
     pub(crate) fn run<'a>(&self, frame: &mut Frame<'a>) -> Result<Value<'a>, Fault> {
-        let v = self.tree.run(frame)?;
+        let v = match &self.tree {
+            Ok(tree) => tree.run(frame)?,
+            Err(ice) => {
+                return Err(Fault { kind: EvalErrorKind::Internal(ice.0), span: self.checked.ir.body().span() });
+            }
+        };
         self.charge_result(v, frame)
     }
 
@@ -194,12 +222,38 @@ pub(crate) struct PreparedSet {
 }
 
 impl PreparedSet {
-    /// `analysis::share` over all rules, then compile each with its slot table.
+    /// Fold every rule, `analysis::share` over all of them, then compile each with
+    /// its slot table.
     pub(crate) fn new(rules: Vec<Checked>, schema: Arc<SchemaCore>) -> PreparedSet {
-        todo!()
+        let folded: Vec<_> = rules.iter().map(|c| folded(c, &schema)).collect();
+        let inputs: Vec<_> = folded.iter().map(|(ir, deps)| (ir, deps.as_slice())).collect();
+        let sharing = analysis::share(&inputs);
+        let mut by_name = BTreeMap::new();
+        let mut prepared = Vec::with_capacity(rules.len());
+        for (i, (checked, (ir, _))) in rules.into_iter().zip(&folded).enumerate() {
+            if let Some(name) = &checked.name {
+                by_name.insert(name.clone(), i);
+            }
+            let slots = sharing.per_rule.get(i).map(Vec::as_slice);
+            prepared.push(Prepared::compile(checked, schema.clone(), ir, slots));
+        }
+        PreparedSet { rules: prepared, by_name, cache_slots: sharing.slot_count }
     }
 
     pub(crate) fn names(&self) -> impl Iterator<Item = &str> {
         self.rules.iter().filter_map(|r| r.checked.name())
+    }
+
+    /// The rules in insertion order.
+    pub(crate) fn rules(&self) -> &[Prepared] {
+        &self.rules
+    }
+
+    pub(crate) fn get(&self, name: &str) -> Option<&Prepared> {
+        self.by_name.get(name).and_then(|&i| self.rules.get(i))
+    }
+
+    pub(crate) fn cache_slots(&self) -> u32 {
+        self.cache_slots
     }
 }
