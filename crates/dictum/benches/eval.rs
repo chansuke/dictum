@@ -1,6 +1,6 @@
 //! Evaluation benchmarks on the shared fixture. CI only builds them
-//! (`cargo bench --no-run`) until M4; numbers are compared against Go's expr on the
-//! same rules (milestone 4).
+//! (`cargo bench --no-run`); `just bench` runs them and the same rules on Go's expr
+//! (`go/bench_test.go`). The results are in docs/benchmarks.md.
 #![allow(clippy::unwrap_used)]
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -24,12 +24,17 @@ fn single_rules(c: &mut Criterion) {
     let mut group = c.benchmark_group("eval");
     for (name, src) in RULES {
         let rule = Rule::<bool, Facts>::compile(src, &schema).unwrap();
+        // The Go side checks the same result.
+        assert_eq!(rule.eval(&ctx).ok(), Some(true), "{name}");
         group.bench_function(*name, |b| b.iter(|| rule.eval(&ctx)));
     }
     group.finish();
 }
 
 fn rule_set(c: &mut Criterion) {
+    if dictum_testkit::MILESTONE < 5 {
+        return; // `RuleSet` arrives in M5.
+    }
     let schema = Schema::<Facts>::builder().build().unwrap();
     let mut builder = RuleSet::<bool, Facts>::builder(&schema);
     for (name, src) in RULES {

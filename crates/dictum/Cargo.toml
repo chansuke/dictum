@@ -6,6 +6,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+# The Go side of the benchmark comparison is not part of the crate.
+exclude = ["benches/go"]
 
 [features]
 default = ["std"]
