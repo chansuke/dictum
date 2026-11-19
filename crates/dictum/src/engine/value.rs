@@ -81,6 +81,9 @@ pub(crate) enum Seq<'a> {
     Borrowed(&'a dyn SeqView),
     /// Built during evaluation.
     Owned(Arc<[Value<'a>]>),
+    /// A constant of the rule; elements are converted on access, so using one costs
+    /// no allocation.
+    Const(Arc<[Const]>),
     /// `from..to` (inclusive), never materialized; iteration is charged per element.
     Range { from: i64, to: i64 },
 }
@@ -90,6 +93,7 @@ impl<'a> Seq<'a> {
         match self {
             Seq::Borrowed(v) => v.len(),
             Seq::Owned(xs) => xs.len(),
+            Seq::Const(xs) => xs.len(),
             Seq::Range { from, to } => {
                 let n = i128::from(*to).saturating_sub(i128::from(*from)).saturating_add(1).max(0);
                 usize::try_from(n).unwrap_or(usize::MAX)
@@ -101,6 +105,7 @@ impl<'a> Seq<'a> {
         match self {
             Seq::Borrowed(v) => v.get(i),
             Seq::Owned(xs) => xs.get(i).cloned(),
+            Seq::Const(xs) => xs.get(i).map(Value::from_const),
             Seq::Range { from, to } => {
                 let n = from.checked_add(i64::try_from(i).ok()?)?;
                 (n <= *to).then_some(Value::int(n))
@@ -121,6 +126,8 @@ pub(crate) enum MapRef<'a> {
     /// A map literal: insertion order, unique keys (checked when built). Literals
     /// are small, so lookup is a linear scan; no hasher is needed in `no_std`.
     Owned(Arc<[(Arc<str>, Value<'a>)]>),
+    /// A constant of the rule, as `Seq::Const`.
+    Const(Arc<[(Arc<str>, Const)]>),
 }
 
 impl<'a> MapRef<'a> {
@@ -128,6 +135,7 @@ impl<'a> MapRef<'a> {
         match self {
             MapRef::Borrowed(m) => m.len(),
             MapRef::Owned(kvs) => kvs.len(),
+            MapRef::Const(kvs) => kvs.len(),
         }
     }
 
@@ -135,6 +143,7 @@ impl<'a> MapRef<'a> {
         match self {
             MapRef::Borrowed(m) => m.get(key),
             MapRef::Owned(kvs) => kvs.iter().find(|(k, _)| &**k == key).map(|(_, v)| v.clone()),
+            MapRef::Const(kvs) => kvs.iter().find(|(k, _)| &**k == key).map(|(_, v)| Value::from_const(v)),
         }
     }
 
@@ -145,6 +154,13 @@ impl<'a> MapRef<'a> {
             MapRef::Owned(kvs) => {
                 for (k, v) in kvs.iter() {
                     if f(k, v.clone()).is_break() {
+                        break;
+                    }
+                }
+            }
+            MapRef::Const(kvs) => {
+                for (k, v) in kvs.iter() {
+                    if f(k, Value::from_const(v)).is_break() {
                         break;
                     }
                 }
@@ -192,10 +208,36 @@ impl<'a> Value<'a> {
             Const::Bytes(b) => Repr::Bytes(Bytes::Shared(b.clone())),
             Const::Time(t) => Repr::Time(*t),
             Const::Duration(d) => Repr::Duration(*d),
-            Const::Array(xs) => Repr::Array(Seq::Owned(xs.iter().map(Value::from_const).collect())),
-            Const::Map(kvs) => {
-                Repr::Map(MapRef::Owned(kvs.iter().map(|(k, v)| (k.clone(), Value::from_const(v))).collect()))
+            Const::Array(xs) => Repr::Array(Seq::Const(xs.clone())),
+            Const::Map(kvs) => Repr::Map(MapRef::Const(kvs.clone())),
+        })
+    }
+
+    /// The value as a constant, for the folder. `None` for what a constant cannot
+    /// hold: a struct, a range (kept lazy), or anything borrowed from facts.
+    pub(crate) fn to_const(&self) -> Option<Const> {
+        Some(match &self.0 {
+            Repr::Nil => Const::Nil,
+            Repr::Bool(b) => Const::Bool(*b),
+            Repr::Int(n) => Const::Int(*n),
+            Repr::Float(x) => Const::Float(*x),
+            #[cfg(feature = "decimal")]
+            Repr::Decimal(d) => Const::Decimal(*d),
+            Repr::Str(Str::Shared(s)) => Const::Str(s.clone()),
+            Repr::Bytes(Bytes::Shared(b)) => Const::Bytes(b.clone()),
+            Repr::Time(t) => Const::Time(*t),
+            Repr::Duration(d) => Const::Duration(*d),
+            Repr::Array(Seq::Const(xs)) => Const::Array(xs.clone()),
+            Repr::Array(Seq::Owned(xs)) => Const::Array(xs.iter().map(Value::to_const).collect::<Option<_>>()?),
+            Repr::Map(MapRef::Const(kvs)) => Const::Map(kvs.clone()),
+            Repr::Map(MapRef::Owned(kvs)) => {
+                Const::Map(kvs.iter().map(|(k, v)| Some((k.clone(), v.to_const()?))).collect::<Option<_>>()?)
             }
+            Repr::Str(Str::Borrowed(_))
+            | Repr::Bytes(Bytes::Borrowed(_))
+            | Repr::Array(Seq::Borrowed(_) | Seq::Range { .. })
+            | Repr::Map(MapRef::Borrowed(_))
+            | Repr::Object(_) => return None,
         })
     }
 
