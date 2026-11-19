@@ -4,9 +4,10 @@
 
 use alloc::vec::Vec;
 
-use dictum_check::ir;
+use dictum_check::ir::{self, ExprKind, Intrinsic};
 
 use crate::engine::SchemaCore;
+use crate::func::Purity;
 
 /// What a node's value depends on. Ordered: the dependence of a node is the max of
 /// its own and its children's.
@@ -28,16 +29,48 @@ pub(crate) enum Dependence {
 
 /// Dependence per node id (`len == program.node_count()`).
 pub(crate) fn dependence(program: &ir::Program, schema: &SchemaCore) -> Vec<Dependence> {
-    // TODO: post-order walk. Own dependence by kind:
-    //   Const → Const; Root, Intrinsic::Now → Input; Slot, Pointer → Local;
-    //   Call → Const if FuncImpl::purity == Pure else Volatile (a pure call is as
-    //   dependent as its arguments, so `isHoliday(date("2026-01-01"))` folds);
-    //   everything else Const.
-    // node = max(own, children...). A Predicate's body is Local (it reads `#`), but the
-    // Predicate node itself is max(seq, body without the pointer contribution) — i.e.
-    // `all(user.Tags, # != "x")` is Input as a whole: compute body dependence with
-    // Pointer counted as Const for the enclosing predicate.
-    todo!()
+    let len = usize::try_from(program.node_count()).unwrap_or(0);
+    let mut out = alloc::vec![Dependence::Const; len];
+    for root in program.lets().iter().chain(core::iter::once(program.body())) {
+        visit(root, schema, &mut out);
+    }
+    out
+}
+
+/// Record `e`'s dependence and return it as its parent sees it: without the
+/// pointers of the enclosing predicate, and whether it reads them. A node that reads
+/// them is `Local`, but the predicate that binds them is not: `all([1, 2], # > 0)`
+/// is `Const`.
+fn visit(e: &ir::Expr, schema: &SchemaCore, out: &mut [Dependence]) -> (Dependence, bool) {
+    let mut dep = match e.kind() {
+        ExprKind::Root | ExprKind::Intrinsic { op: Intrinsic::Now, .. } => Dependence::Input,
+        ExprKind::Slot(_) => Dependence::Local,
+        // A pure call is as dependent as its arguments, so `isHoliday(date("2026-01-01"))` folds.
+        ExprKind::Call { func, .. } => match schema.payload(*func) {
+            Some(imp) if imp.purity == Purity::Pure => Dependence::Const,
+            _ => Dependence::Volatile,
+        },
+        _ => Dependence::Const,
+    };
+    let mut reads_pointer = matches!(e.kind(), ExprKind::Pointer(_));
+    if let ExprKind::Predicate { seq, body, .. } = e.kind() {
+        let (d, p) = visit(seq, schema, out);
+        dep = dep.max(d);
+        reads_pointer = p;
+        if let Some(b) = body {
+            dep = dep.max(visit(b, schema, out).0);
+        }
+    } else {
+        for c in e.children() {
+            let (d, p) = visit(c, schema, out);
+            dep = dep.max(d);
+            reads_pointer |= p;
+        }
+    }
+    if let Some(slot) = out.get_mut(e.id().index()) {
+        *slot = if reads_pointer { dep.max(Dependence::Local) } else { dep };
+    }
+    (dep, reads_pointer)
 }
 
 /// Index into `Frame::cache`.
