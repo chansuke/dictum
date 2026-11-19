@@ -28,7 +28,6 @@
 //! private to this crate; `__private` exists only for code `#[derive(Dictum)]`
 //! generates and carries no stability promise.
 #![no_std]
-#![allow(dead_code, unused_variables)] // skeleton: bodies are `todo!()`; remove in Phase D.
 
 extern crate alloc;
 #[cfg(feature = "std")]
