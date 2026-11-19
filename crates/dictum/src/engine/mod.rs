@@ -3,14 +3,16 @@
 //! Pipeline (one place, no stage is called from anywhere else):
 //!
 //! ```text
-//! src ──parse──▶ ast ──check──▶ ir ──fold──▶ ir' ──patterns──▶ Checked
-//!                                                     │
-//!                       Rule::compile ── compile(None) ┤
-//!                       RuleSetBuilder::build ── share() then compile(Some(slots)) per rule
-//!                                                     ▼
-//!                                         Prepared { checked, fast tree }
+//! src ──parse──▶ ast ──check──▶ ir ──patterns──▶ Checked
+//!                                                  │
+//!                      Rule::compile ── fold, compile(None) ┤
+//!                      RuleSetBuilder::build ── fold, share(), compile(Some(slots)) per rule
+//!                                                  ▼
+//!                                      Prepared { checked, fast tree }
 //!
-//! `explain` does not compile anything: it runs `interp` over `Checked::ir`.
+//! `explain` does not compile anything: it runs `interp` over `Checked::ir`, which
+//! is not folded, so a report shows the rule as written and the differential test
+//! checks the folder too.
 //! ```
 
 pub(crate) mod analysis;
@@ -42,7 +44,7 @@ use crate::{CompileError, EvalError, EvalErrorKind};
 /// implementations in one table.
 pub(crate) type SchemaCore = dictum_check::Env<FuncImpl>;
 
-/// A rule after parse, check and fold: valid, not yet compiled to closures.
+/// A rule after parse and check: valid, not yet folded or compiled to closures.
 pub(crate) struct Checked {
     source: Arc<str>,
     name: Option<Arc<str>>,
@@ -58,7 +60,7 @@ impl Checked {
     }
 }
 
-/// Parse, check, fold, compile constant patterns.
+/// Parse, check, compile constant patterns.
 ///
 /// Syntax errors stop before checking (so the checker never sees `Error` nodes);
 /// otherwise all type errors are reported together.
@@ -70,8 +72,6 @@ pub(crate) fn check(
 ) -> Result<Checked, CompileError> {
     let ast = dictum_syntax::parse(src).map_err(|d| compile_error(src, name, d))?;
     let ir = dictum_check::check(&ast, schema, expected).map_err(|d| compile_error(src, name, d))?;
-    // TODO(M4): let deps = analysis::dependence(&ir, schema); fold::fold(&mut ir, schema, &deps);
-    // Folding runs the closure compiler on constant subtrees, so it arrives with it.
     let patterns = patterns(&ir).map_err(|d| compile_error(src, name, d))?;
     Ok(Checked { source: src.into(), name: name.map(Into::into), ir, patterns })
 }
@@ -115,24 +115,31 @@ pub(crate) fn compile_error(src: &str, name: Option<&str>, diags: dictum_syntax:
     CompileError { source: src.into(), rule: name.map(Into::into), diagnostics: diagnostics.into(), dropped }
 }
 
-/// A rule ready to run.
-///
-/// TODO(M4): hold the closure tree (`compile::Tree`) and run it in `run`. Until the
-/// closure compiler lands, `run` is the spec interpreter, so `eval` and `explain`
-/// take the same path.
+/// A rule ready to run: the closure tree for `eval`, the checked IR for `explain`.
 pub(crate) struct Prepared {
     checked: Checked,
     schema: Arc<SchemaCore>,
+    tree: compile::Tree,
 }
 
 impl Prepared {
-    /// Compile the fast tree. `slots` assigns shared-cache slots (RuleSet only).
+    /// Fold a copy of the IR and compile it. `slots` assigns shared-cache slots
+    /// (RuleSet only).
     pub(crate) fn new(
         checked: Checked,
         schema: Arc<SchemaCore>,
         slots: Option<&[Option<analysis::CacheSlot>]>,
     ) -> Result<Prepared, CompileError> {
-        Ok(Prepared { checked, schema })
+        let mut ir = checked.ir.clone();
+        let deps = analysis::dependence(&ir, &schema);
+        fold::fold(&mut ir, &schema, &deps);
+        let tree = compile::Compiler::new(&schema, &checked.patterns, slots).tree(&ir).map_err(|ice| {
+            let args = alloc::vec![dictum_syntax::Arg::Text(ice.0.into())];
+            let mut diags = dictum_syntax::Diagnostics::new();
+            diags.push(dictum_syntax::Diagnostic::new(dictum_syntax::ErrorCode::Internal, ir.body().span(), args));
+            compile_error(&checked.source, checked.name(), diags)
+        })?;
+        Ok(Prepared { checked, schema, tree })
     }
 
     pub(crate) fn source(&self) -> &str {
@@ -141,7 +148,7 @@ impl Prepared {
 
     /// Evaluate for `eval`.
     pub(crate) fn run<'a>(&self, frame: &mut Frame<'a>) -> Result<Value<'a>, Fault> {
-        let v = interp::eval(&self.checked.ir, &self.schema, &self.checked.patterns, frame, None)?;
+        let v = self.tree.run(frame)?;
         self.charge_result(v, frame)
     }
 
