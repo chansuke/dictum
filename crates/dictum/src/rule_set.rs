@@ -6,6 +6,7 @@ use core::marker::PhantomData;
 
 use dictum_syntax::{Arg, ErrorCode};
 
+use crate::engine::frame::Frame;
 use crate::engine::{self, Checked, PreparedSet};
 use crate::rule::TypeMarker;
 use crate::{CompileError, Ctx, Dictum, EvalError, Output, Report, Schema};
@@ -42,18 +43,25 @@ impl<T: Output, F: Dictum<Static = F>> RuleSet<T, F> {
     /// is the same for all rules. Each rule has its own budget (`ctx`'s limits);
     /// shared work is charged to the rule that computes it first.
     pub fn eval<G: Dictum<Static = F>>(&self, ctx: &Ctx<'_, G>) -> Result<Outcomes<'_, T>, EvalError> {
-        // TODO: one Frame for the whole call with cache = vec![None; inner.cache_slots()];
-        // for each rule in order: reset budget, slots and scopes; run; on Ok the cache
-        // keeps the values it filled; on Err return it. Errors are never cached: each
-        // rule computes a shared node with its own closure tree when the slot is empty,
-        // so an error carries the failing rule's own spans.
-        todo!()
+        let rules = self.inner.rules();
+        let mut frame = Frame::new(ctx.facts, ctx.now, &ctx.limits, self.inner.cache_slots());
+        let (mut names, mut values) = (Vec::with_capacity(rules.len()), Vec::with_capacity(rules.len()));
+        for (i, rule) in rules.iter().enumerate() {
+            if i > 0 {
+                // A fresh budget; the cache keeps what earlier rules computed.
+                frame.next_rule(&ctx.limits, 0);
+            }
+            let value = rule.run(&mut frame).map_err(|f| rule.error(f))?;
+            values.push(T::from_value(value).ok_or_else(|| rule.internal("output conversion"))?);
+            names.push(rule.name().unwrap_or_default());
+        }
+        Ok(Outcomes { names, values })
     }
 
     /// Explain one rule by name, as [`Rule::explain`](crate::Rule::explain) would
     /// (without sharing). `None` if no rule has that name.
     pub fn explain<G: Dictum<Static = F>>(&self, name: &str, ctx: &Ctx<'_, G>) -> Option<Report<T>> {
-        todo!()
+        self.inner.get(name).map(|rule| crate::rule::explain(rule, ctx))
     }
 
     /// Rule names in insertion order.

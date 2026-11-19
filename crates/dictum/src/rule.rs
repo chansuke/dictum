@@ -33,7 +33,7 @@ impl<T: Output, F: Dictum<Static = F>> Rule<T, F> {
     /// All syntax errors, or else all type errors, are reported together (up to 20).
     pub fn compile(src: &str, schema: &Schema<F>) -> Result<Self, CompileError> {
         let checked = engine::check(src, None, &schema.core, &T::expected())?;
-        let prepared = Prepared::new(checked, schema.core.clone(), None)?;
+        let prepared = Prepared::new(checked, schema.core.clone())?;
         Ok(Rule { prepared: Arc::new(prepared), _types: PhantomData })
     }
 
@@ -48,13 +48,18 @@ impl<T: Output, F: Dictum<Static = F>> Rule<T, F> {
     /// explanation. Never fails; see [`Report`]. Slower than `eval`, and `eval` pays
     /// nothing for it.
     pub fn explain<G: Dictum<Static = F>>(&self, ctx: &Ctx<'_, G>) -> Report<T> {
-        let mut frame = Frame::new(ctx.facts, ctx.now, &ctx.limits, 0);
-        let (result, root) = self.prepared.explain(&mut frame);
-        let result = result
-            .map_err(|f| self.prepared.error(f))
-            .and_then(|v| T::from_value(v).ok_or_else(|| self.prepared.internal("output conversion")));
-        Report { result, root, source: self.prepared.source().into() }
+        explain(&self.prepared, ctx)
     }
+}
+
+/// `prepared`'s explanation on `ctx`, for `Rule::explain` and `RuleSet::explain`.
+pub(crate) fn explain<T: Output, G: Dictum>(prepared: &Prepared, ctx: &Ctx<'_, G>) -> Report<T> {
+    let mut frame = Frame::new(ctx.facts, ctx.now, &ctx.limits, 0);
+    let (result, root) = prepared.explain(&mut frame);
+    let result = result
+        .map_err(|f| prepared.error(f))
+        .and_then(|v| T::from_value(v).ok_or_else(|| prepared.internal("output conversion")));
+    Report { result, root, source: prepared.source().into() }
 }
 
 impl<T, F> Rule<T, F> {
