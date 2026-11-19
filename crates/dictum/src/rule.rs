@@ -3,6 +3,7 @@
 use alloc::sync::Arc;
 use core::marker::PhantomData;
 
+use crate::engine::frame::Frame;
 use crate::engine::{self, Prepared};
 use crate::{CompileError, Ctx, Dictum, EvalError, Output, Report, Schema};
 
@@ -38,17 +39,21 @@ impl<T: Output, F: Dictum<Static = F>> Rule<T, F> {
 
     /// Evaluate. Stops at the first error. Never panics; bounded by `ctx`'s limits.
     pub fn eval<G: Dictum<Static = F>>(&self, ctx: &Ctx<'_, G>) -> Result<T, EvalError> {
-        // TODO: frame = Frame::new(ctx.facts, ctx.now, &ctx.limits, prepared.slot_count(), 0)
-        //       value = prepared.run(&mut frame).map_err(|f| prepared.error(f))?
-        //       T::from_value(value).ok_or_else(|| prepared.internal("output conversion"))
-        todo!()
+        let mut frame = Frame::new(ctx.facts, ctx.now, &ctx.limits, 0);
+        let value = self.prepared.run(&mut frame).map_err(|f| self.prepared.error(f))?;
+        T::from_value(value).ok_or_else(|| self.prepared.internal("output conversion"))
     }
 
     /// Evaluate with the spec interpreter, recording every node, and return the
     /// explanation. Never fails; see [`Report`]. Slower than `eval`, and `eval` pays
     /// nothing for it.
     pub fn explain<G: Dictum<Static = F>>(&self, ctx: &Ctx<'_, G>) -> Report<T> {
-        todo!()
+        let mut frame = Frame::new(ctx.facts, ctx.now, &ctx.limits, 0);
+        let (result, root) = self.prepared.explain(&mut frame);
+        let result = result
+            .map_err(|f| self.prepared.error(f))
+            .and_then(|v| T::from_value(v).ok_or_else(|| self.prepared.internal("output conversion")));
+        Report { result, root, source: self.prepared.source().into() }
     }
 }
 

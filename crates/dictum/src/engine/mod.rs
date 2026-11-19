@@ -31,11 +31,12 @@ use alloc::vec::Vec;
 use dictum_check::Type;
 use dictum_check::ir::{self, NodeId};
 
-use crate::CompileError;
 use crate::engine::frame::{Fault, Frame};
 use crate::engine::trace::Trace;
 use crate::engine::value::Value;
+use crate::explain::ExplainNode;
 use crate::func::FuncImpl;
+use crate::{CompileError, EvalError, EvalErrorKind};
 
 /// The schema as the engine sees it: root struct, function signatures and their
 /// implementations in one table.
@@ -115,10 +116,13 @@ pub(crate) fn compile_error(src: &str, name: Option<&str>, diags: dictum_syntax:
 }
 
 /// A rule ready to run.
+///
+/// TODO(M4): hold the closure tree (`compile::Tree`) and run it in `run`. Until the
+/// closure compiler lands, `run` is the spec interpreter, so `eval` and `explain`
+/// take the same path.
 pub(crate) struct Prepared {
     checked: Checked,
     schema: Arc<SchemaCore>,
-    fast: compile::Tree,
 }
 
 impl Prepared {
@@ -128,19 +132,49 @@ impl Prepared {
         schema: Arc<SchemaCore>,
         slots: Option<&[Option<analysis::CacheSlot>]>,
     ) -> Result<Prepared, CompileError> {
-        todo!()
+        Ok(Prepared { checked, schema })
     }
 
     pub(crate) fn source(&self) -> &str {
         &self.checked.source
     }
 
+    /// Evaluate for `eval`.
+    pub(crate) fn run<'a>(&self, frame: &mut Frame<'a>) -> Result<Value<'a>, Fault> {
+        let v = interp::eval(&self.checked.ir, &self.schema, &self.checked.patterns, frame, None)?;
+        self.charge_result(v, frame)
+    }
+
     /// Run `interp` with a trace for `explain`.
-    pub(crate) fn explain<'a>(&self, frame: &mut Frame<'a>) -> (Result<Value<'a>, Fault>, Trace<'a>) {
-        // TODO: trace = Trace::new(self.checked.ir.node_count());
-        //       result = interp::eval(&self.checked.ir, &self.schema, &self.checked.patterns,
-        //                             frame, Some(&mut trace));
-        todo!()
+    pub(crate) fn explain<'a>(&self, frame: &mut Frame<'a>) -> (Result<Value<'a>, Fault>, ExplainNode) {
+        let mut trace = Trace::new(self.checked.ir.node_count());
+        let r = interp::eval(&self.checked.ir, &self.schema, &self.checked.patterns, frame, Some(&mut trace));
+        let r = r.and_then(|v| self.charge_result(v, frame));
+        (r, trace.into_report_tree(&self.checked.ir))
+    }
+
+    /// A range in the result is materialized when it is copied out, so it is charged
+    /// to the allocation budget here, before the copy.
+    fn charge_result<'a>(&self, v: Value<'a>, frame: &mut Frame<'a>) -> Result<Value<'a>, Fault> {
+        let span = self.checked.ir.body().span();
+        frame.budget.alloc(v.range_elements()).map_err(|kind| Fault { kind, span })?;
+        Ok(v)
+    }
+
+    /// The public error for a fault in this rule.
+    pub(crate) fn error(&self, fault: Fault) -> EvalError {
+        EvalError {
+            kind: fault.kind,
+            span: fault.span,
+            source: self.checked.source.clone(),
+            rule: self.checked.name.clone(),
+        }
+    }
+
+    /// The public error for a result that did not convert to the output type.
+    pub(crate) fn internal(&self, what: &'static str) -> EvalError {
+        let span = self.checked.ir.body().span();
+        self.error(Fault { kind: EvalErrorKind::Internal(what), span })
     }
 }
 

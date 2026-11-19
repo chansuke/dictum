@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 use dictum_check::Type;
 
 use crate::Dynamic;
+#[cfg(feature = "decimal")]
+use crate::engine::value::Repr;
 use crate::engine::value::Value;
 
 mod sealed {
@@ -48,7 +50,7 @@ impl Output for bool {
         Type::Bool
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        v.as_bool()
     }
 }
 
@@ -57,7 +59,7 @@ impl Output for i64 {
         Type::Int
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        v.as_int()
     }
 }
 
@@ -66,7 +68,7 @@ impl Output for f64 {
         Type::Float
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        v.as_float()
     }
 }
 
@@ -75,7 +77,7 @@ impl Output for String {
         Type::String
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        v.as_str().map(Into::into)
     }
 }
 
@@ -84,7 +86,7 @@ impl Output for jiff::Timestamp {
         Type::Time
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        v.as_time()
     }
 }
 
@@ -93,7 +95,7 @@ impl Output for jiff::SignedDuration {
         Type::Duration
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        v.as_duration()
     }
 }
 
@@ -103,7 +105,10 @@ impl Output for rust_decimal::Decimal {
         Type::Decimal
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        match v.0 {
+            Repr::Decimal(d) => Some(d),
+            _ => None,
+        }
     }
 }
 
@@ -112,7 +117,7 @@ impl<T: Output> Output for Option<T> {
         Type::option(T::expected())
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        if v.is_nil() { Some(None) } else { T::from_value(v).map(Some) }
     }
 }
 
@@ -121,7 +126,7 @@ impl<T: Output> Output for Vec<T> {
         Type::array(T::expected())
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
-        todo!()
+        v.as_seq()?.iter().map(T::from_value).collect()
     }
 }
 
@@ -131,6 +136,6 @@ impl Output for Dynamic {
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
         // Deep copy; structs become `Dynamic::Map` keyed by field name.
-        todo!()
+        Some(v.to_dynamic())
     }
 }
