@@ -6,3 +6,6 @@ format is documented in `crates/dictum-testkit/src/conformance.rs`.
 
 Cases ported from [expr-lang/expr](https://github.com/expr-lang/expr) keep Go's
 result; where dictum differs on purpose, the case says why in `deviation`.
+
+`just conformance-go` runs the cases through Go's expr v1.17.8 and fails when a case
+without `deviation` gets a different result from Go.
