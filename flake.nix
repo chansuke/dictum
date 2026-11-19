@@ -23,6 +23,7 @@
             actionlint
             elan
             tlaplus
+            go
           ];
         };
       });

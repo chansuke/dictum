@@ -67,9 +67,14 @@ nostd:
     cargo build -p dictum --no-default-features --target thumbv7em-none-eabihf
     cargo build -p dictum --no-default-features --features decimal --target thumbv7em-none-eabihf
 
-# Benchmarks compile (they run against Go from M4 on).
+# Benchmarks compile.
 bench-build:
     cargo bench -p dictum --no-run
+
+# dictum and Go's expr on the same rules and facts (docs/benchmarks.md).
+bench:
+    cargo bench -p dictum --bench eval
+    cd crates/dictum/benches/go && go test -run TestRules -bench . -benchmem
 
 # The host triple. cargo-fuzz otherwise builds for the triple it was itself built
 # for, which is musl for the prebuilt binary CI installs, and ASan cannot link that.
