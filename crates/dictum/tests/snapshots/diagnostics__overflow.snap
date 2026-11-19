@@ -1,0 +1,9 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "eval_error(\"user.Age + 9223372036854775807\")"
+---
+error[E0301]: integer overflow
+ --> rule:1:1
+  |
+1 | user.Age + 9223372036854775807
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
