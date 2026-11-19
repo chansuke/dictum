@@ -64,3 +64,25 @@ expect = true
 name = "bad duration"
 expr = 'duration("1x")'
 error = "E0309"
+
+[[case]]
+name = "any compared with a value of another type"
+expr = 'user.Attrs == "x"'
+error = "E0307"
+deviation = "Go compares values of different types as unequal; dictum reports a runtime type error, as the checker rejects the same comparison statically"
+
+[[case]]
+name = "int of an out-of-range float"
+expr = "int(1e19)"
+error = "E0301"
+deviation = "Go's conversion gives an implementation-defined value; dictum reports Overflow"
+
+[[case]]
+name = "string of a float prints as Go"
+expr = "string(1e6) + \" \" + string(0.5)"
+expect = "1e+06 0.5"
+
+[[case]]
+name = "string of a duration prints as Go"
+expr = 'string(duration("90m"))'
+expect = "1h30m0s"
