@@ -47,6 +47,19 @@ jobs:
           tool: just,cargo-deny
       - run: just deny
 
+  conformance-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: crates/dictum/benches/go/go.mod
+          cache-dependency-path: crates/dictum/benches/go/go.sum
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: just
+      - run: just conformance-go
+
   test:
     needs: lint
     runs-on: ubuntu-latest
