@@ -61,4 +61,5 @@ fn explain_tree() {
     insta::assert_snapshot!("explain_short_circuit", explain("user.Age < 18 && 7 % 0 > 0"));
     insta::assert_snapshot!("explain_failure", explain("user.Age > 18 && 7 % 0 > 0"));
     insta::assert_snapshot!("explain_predicate", explain("any(nums, # > 4)"));
+    insta::assert_snapshot!("explain_literal_array", explain(r#"user.Name in ["Ada", "Grace"] && user.Age >= 18"#));
 }

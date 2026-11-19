@@ -79,9 +79,21 @@ impl<'a> Trace<'a> {
                     _ => alloc::vec![self.node(start)],
                 }
             }
+            // A literal of constants (`["admin"]`) is a leaf, as a constant is.
+            ExprKind::Array(_) | ExprKind::Map(_) if literal(shown) => Vec::new(),
             _ => shown.children().map(|c| self.node(c)).collect(),
         };
         ExplainNode { span: shown.span(), status, element, children }
+    }
+}
+
+/// Whether `e` is a constant or a literal built only of constants.
+fn literal(e: &ir::Expr) -> bool {
+    match e.kind() {
+        ExprKind::Const(_) => true,
+        ExprKind::Convert { arg, .. } => literal(arg),
+        ExprKind::Array(_) | ExprKind::Map(_) => e.children().all(literal),
+        _ => false,
     }
 }
 
