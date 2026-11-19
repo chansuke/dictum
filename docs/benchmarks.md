@@ -18,3 +18,14 @@ Each dictum iteration is one `Rule::eval`, which builds a new `Frame`. Each Go i
 | compile | 5.59 µs | 45.9 µs | 8.2 |
 
 The closure tree has not been profiled yet. The overflow-check elision, algebraic simplification and `&&`/`||` reordering of the design are not implemented, so these numbers do not include them.
+
+## M5 (RuleSet)
+
+Same machine and toolchains, 2026-11-19. `rule_set` evaluates the five rules above as one `RuleSet`. Go's expr has no rule set, so the comparison is the five Go rules run one after another (the sum of the M4 Go numbers).
+
+| benchmark | dictum | Go expr |
+| --- | --- | --- |
+| rule_set | 1.64 µs | 4.19 µs (sum) |
+| the five single rules, summed | 1.62 µs | 4.19 µs |
+
+These rules have no subexpression in common, so the set shares nothing and costs about what the single rules cost together.

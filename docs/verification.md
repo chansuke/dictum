@@ -47,7 +47,7 @@ All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`,
 | errors are never cached; a slot is written once | TLA+ `CacheHoldsOnlyValues`, `SlotWrittenOnce` |
 | budgets aside, a `RuleSet` gives what its rules give alone | TLA+ `OkMeansEveryRuleMeansAValue`, `ErrorIsFirstMeaningfulError`; proptest `rule_set_agrees_with_standalone_rules` |
 | sharing never makes a rule pay more | TLA+ `NeverChargedMore`, `LimitMeansStandaloneLimit` |
-| the implemented `RuleSet::eval` follows the model | TLA+ trace validation (`RuleSetTrace.tla`); the Rust side records traces from M5 |
+| the implemented `RuleSet::eval` follows the model | TLA+ trace validation (`RuleSetTrace.tla`) of hand-written traces; the Rust side does not record traces yet (see below) |
 | hot reload: readers see only complete sets, one per evaluation, never freed under them | TLA+ `HotReload`: `OnlyCompleteSetsArePublished`, `OneSetPerEvaluation`, `NoUseAfterFree`, `EvaluationsFinish` |
 | schema and facts agree | derive generates both from one field list; trybuild |
 | a rule runs only with its own facts type and result type | trybuild `wrong_facts_type`, `result_type_not_output` |
@@ -91,7 +91,7 @@ The TLA+ models treat a rule as the sequence of node evaluations its closure tre
 
 Each model has a `Bug` constant. Each `<Spec>_<bug>_mutant.cfg` turns one seeded bug on and names, on its `\* expect:` line, the invariant that must catch it. `check.sh` fails if TLC reports no violation or a different invariant. Every invariant has a mutant: `budget_per_set`, `cache_errors` and `ignore_cache` for `RuleSetEval`; `publish_early`, `forget_readers` and `reload_per_rule` for `HotReload`.
 
-`RuleSetTrace.tla` checks one recorded run against `RuleSetEval`: the configuration, the events (hit, compute, fail, next rule) and the returned result. An event the model does not allow is a deadlock. A wrong result violates `SameResult`. `Trace_accept_*` must pass and `Trace_reject_*` must fail. From M5, a Rust test records traces of generated rule sets in this format.
+`RuleSetTrace.tla` checks one recorded run against `RuleSetEval`: the configuration, the events (hit, compute, fail, next rule) and the returned result. An event the model does not allow is a deadlock. A wrong result violates `SameResult`. `Trace_accept_*` must pass and `Trace_reject_*` must fail. The Rust side does not record traces yet. The model's rule is a flat sequence of nodes, but a shared node can contain another shared node, and when the outer one is a cache hit the inner one is not visited. Recording real runs needs a model in which a hit skips the nodes inside it.
 
 Update the models in the same change when you change what they describe:
 
