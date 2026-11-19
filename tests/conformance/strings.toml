@@ -87,3 +87,424 @@ expect = true
 name = "matches with a constant pattern"
 expr = '"abc" matches "^a.c$"'
 expect = true
+
+[[case]]
+name = "trim with a cutset"
+expr = 'trim("__foo___", "_")'
+expect = "foo"
+
+[[case]]
+name = "trim with a cutset of several characters"
+expr = 'trim("xyhixy", "yx")'
+expect = "hi"
+
+[[case]]
+name = "trim with an empty cutset"
+expr = 'trim("  x  ", "")'
+expect = "  x  "
+
+[[case]]
+name = "trim with a non-ASCII cutset"
+expr = 'trim("ééaé", "é")'
+expect = "a"
+
+[[case]]
+name = "trim of a fact with a cutset"
+expr = 'trim(user.Name, "A")'
+expect = "da"
+
+[[case]]
+name = "trim of an any"
+expr = 'trim(user.Attrs, "7")'
+error = "E0307"
+
+[[case]]
+name = "trim with a cutset that is not a string"
+expr = 'trim("a", 1)'
+error = "E0201"
+
+[[case]]
+name = "trimPrefix"
+expr = 'trimPrefix("prefix_foo", "prefix_")'
+expect = "foo"
+
+[[case]]
+name = "trimPrefix defaults to one space"
+expr = 'trimPrefix("  x ")'
+expect = " x "
+
+[[case]]
+name = "trimPrefix removes the prefix once"
+expr = 'trimPrefix("aaa", "a")'
+expect = "aa"
+
+[[case]]
+name = "trimPrefix without the prefix"
+expr = 'trimPrefix("abc", "b")'
+expect = "abc"
+
+[[case]]
+name = "trimPrefix with an empty prefix"
+expr = 'trimPrefix("abc", "")'
+expect = "abc"
+
+[[case]]
+name = "trimPrefix of an empty string"
+expr = 'trimPrefix("", "a")'
+expect = ""
+
+[[case]]
+name = "trimPrefix with a non-ASCII prefix"
+expr = 'trimPrefix("héllo", "hé")'
+expect = "llo"
+
+[[case]]
+name = "trimPrefix of a fact"
+expr = 'trimPrefix(user.Name, "A")'
+expect = "da"
+
+[[case]]
+name = "trimPrefix piped"
+expr = '"--x" | trimPrefix("-")'
+expect = "-x"
+
+[[case]]
+name = "trimPrefix of an any"
+expr = 'trimPrefix(user.Attrs)'
+error = "E0307"
+
+[[case]]
+name = "trimPrefix of a number"
+expr = 'trimPrefix(1)'
+error = "E0201"
+
+[[case]]
+name = "trimPrefix with three arguments"
+expr = 'trimPrefix("a", "b", "c")'
+error = "E0205"
+
+[[case]]
+name = "trimSuffix"
+expr = 'trimSuffix("foo_suffix", "_suffix")'
+expect = "foo"
+
+[[case]]
+name = "trimSuffix defaults to one space"
+expr = 'trimSuffix(" x  ")'
+expect = " x "
+
+[[case]]
+name = "trimSuffix removes the suffix once"
+expr = 'trimSuffix("aaa", "a")'
+expect = "aa"
+
+[[case]]
+name = "trimSuffix without the suffix"
+expr = 'trimSuffix("abc", "b")'
+expect = "abc"
+
+[[case]]
+name = "trimSuffix with an empty suffix"
+expr = 'trimSuffix("abc", "")'
+expect = "abc"
+
+[[case]]
+name = "trimSuffix with a non-ASCII suffix"
+expr = 'trimSuffix("aéé", "é")'
+expect = "aé"
+
+[[case]]
+name = "trimSuffix of a fact"
+expr = 'trimSuffix(user.Name, "a")'
+expect = "Ad"
+
+[[case]]
+name = "trimSuffix of an any"
+expr = 'trimSuffix(user.Attrs, "7")'
+error = "E0307"
+
+[[case]]
+name = "trimSuffix with a suffix that is not a string"
+expr = 'trimSuffix("a", 1)'
+error = "E0201"
+
+[[case]]
+name = "trimSuffix with no arguments"
+expr = 'trimSuffix()'
+error = "E0205"
+
+[[case]]
+name = "split with a limit"
+expr = 'split("foo,bar,baz", ",", 2)'
+expect = ["foo", "bar,baz"]
+
+[[case]]
+name = "split with a limit of one"
+expr = 'split("a,b,c", ",", 1)'
+expect = ["a,b,c"]
+
+[[case]]
+name = "split with a limit of zero"
+expr = 'split("a,b,c", ",", 0)'
+expect = []
+
+[[case]]
+name = "split with a negative limit"
+expr = 'split("a,b,c", ",", -1)'
+expect = ["a", "b", "c"]
+
+[[case]]
+name = "split with a limit above the part count"
+expr = 'split("a,b,c", ",", 10)'
+expect = ["a", "b", "c"]
+
+[[case]]
+name = "split with an empty separator"
+expr = 'split("héllo", "")'
+expect = ["h", "é", "l", "l", "o"]
+
+[[case]]
+name = "split with an empty separator and a limit"
+expr = 'split("héllo", "", 3)'
+expect = ["h", "é", "llo"]
+
+[[case]]
+name = "split with an empty separator and a large limit"
+expr = 'split("ab", "", 5)'
+expect = ["a", "b"]
+
+[[case]]
+name = "split of an empty string"
+expr = 'split("", ",")'
+expect = [""]
+
+[[case]]
+name = "split of an empty string with an empty separator"
+expr = 'split("", "")'
+expect = []
+
+[[case]]
+name = "split keeps empty parts"
+expr = 'split(",a,,b,", ",")'
+expect = ["", "a", "", "b", ""]
+
+[[case]]
+name = "split with a multi-character separator"
+expr = 'split("a::b::c", "::", 2)'
+expect = ["a", "b::c"]
+
+[[case]]
+name = "split of a fact"
+expr = 'split(user.Name, "d")'
+expect = ["A", "a"]
+
+[[case]]
+name = "split piped with a limit"
+expr = '"a b c" | split(" ", 2)'
+expect = ["a", "b c"]
+
+[[case]]
+name = "split with an any limit"
+expr = 'split("a,b,c,d,e,f,g,h,i", ",", user.Attrs)'
+expect = ["a", "b", "c", "d", "e", "f", "g,h,i"]
+
+[[case]]
+name = "split of an any"
+expr = 'split(user.Attrs, ",")'
+error = "E0307"
+
+[[case]]
+name = "split with a string limit"
+expr = 'split("a,b", ",", "1")'
+error = "E0201"
+
+[[case]]
+name = "split with four arguments"
+expr = 'split("a,b", ",", 1, 2)'
+error = "E0205"
+
+[[case]]
+name = "splitAfter"
+expr = 'splitAfter("foo,bar,baz", ",")'
+expect = ["foo,", "bar,", "baz"]
+
+[[case]]
+name = "splitAfter with a limit"
+expr = 'splitAfter("foo,bar,baz", ",", 2)'
+expect = ["foo,", "bar,baz"]
+
+[[case]]
+name = "splitAfter with a limit of zero"
+expr = 'splitAfter("a,b", ",", 0)'
+expect = []
+
+[[case]]
+name = "splitAfter with a negative limit"
+expr = 'splitAfter("a,b", ",", -1)'
+expect = ["a,", "b"]
+
+[[case]]
+name = "splitAfter with a trailing separator"
+expr = 'splitAfter("a,b,", ",")'
+expect = ["a,", "b,", ""]
+
+[[case]]
+name = "splitAfter with an empty separator"
+expr = 'splitAfter("héllo", "")'
+expect = ["h", "é", "l", "l", "o"]
+
+[[case]]
+name = "splitAfter with an empty separator and a limit"
+expr = 'splitAfter("héllo", "", 2)'
+expect = ["h", "éllo"]
+
+[[case]]
+name = "splitAfter of an empty string"
+expr = 'splitAfter("", ",")'
+expect = [""]
+
+[[case]]
+name = "splitAfter of an empty string with an empty separator"
+expr = 'splitAfter("", "")'
+expect = []
+
+[[case]]
+name = "splitAfter of a fact"
+expr = 'splitAfter(user.Name, "d")'
+expect = ["Ad", "a"]
+
+[[case]]
+name = "splitAfter with an any limit"
+expr = 'splitAfter("a,b,c,d,e,f,g,h,i", ",", user.Attrs)'
+expect = ["a,", "b,", "c,", "d,", "e,", "f,", "g,h,i"]
+
+[[case]]
+name = "splitAfter of an any"
+expr = 'splitAfter(user.Attrs, ",")'
+error = "E0307"
+
+[[case]]
+name = "splitAfter with a separator that is not a string"
+expr = 'splitAfter("a", 1)'
+error = "E0201"
+
+[[case]]
+name = "splitAfter with one argument"
+expr = 'splitAfter("a")'
+error = "E0205"
+
+[[case]]
+name = "repeat"
+expr = 'repeat("foo", 3)'
+expect = "foofoofoo"
+
+[[case]]
+name = "repeat zero times"
+expr = 'repeat("foo", 0)'
+expect = ""
+
+[[case]]
+name = "repeat of an empty string"
+expr = 'repeat("", 5)'
+expect = ""
+
+[[case]]
+name = "repeat of a non-ASCII string"
+expr = 'repeat("é", 2)'
+expect = "éé"
+
+[[case]]
+name = "repeat of a fact"
+expr = 'repeat(user.Name, 2)'
+expect = "AdaAda"
+
+[[case]]
+name = "repeat piped"
+expr = '"ab" | repeat(2)'
+expect = "abab"
+
+[[case]]
+name = "repeat with an any count"
+expr = 'repeat("x", user.Attrs)'
+expect = "xxxxxxx"
+
+[[case]]
+name = "repeat with a negative count"
+expr = 'repeat("x", -1)'
+error = "E0309"
+
+[[case]]
+name = "repeat beyond the allocation limit"
+expr = 'repeat("ab", 9223372036854775807)'
+error = "E0306"
+
+[[case]]
+name = "repeat of an any"
+expr = 'repeat(user.Attrs, 2)'
+error = "E0307"
+
+[[case]]
+name = "repeat with a string count"
+expr = 'repeat("x", "2")'
+error = "E0201"
+
+[[case]]
+name = "repeat with one argument"
+expr = 'repeat("x")'
+error = "E0205"
+
+[[case]]
+name = "lastIndexOf"
+expr = 'lastIndexOf("foo,bar,baz", ",")'
+expect = 7
+
+[[case]]
+name = "lastIndexOf returns a byte offset"
+expr = 'lastIndexOf("héllo héllo", "é")'
+expect = 8
+
+[[case]]
+name = "lastIndexOf without a match"
+expr = 'lastIndexOf("abc", "x")'
+expect = -1
+
+[[case]]
+name = "lastIndexOf of an empty substring"
+expr = 'lastIndexOf("abc", "")'
+expect = 3
+
+[[case]]
+name = "lastIndexOf in an empty string"
+expr = 'lastIndexOf("", "")'
+expect = 0
+
+[[case]]
+name = "lastIndexOf of a fact"
+expr = 'lastIndexOf(user.Name, "a")'
+expect = 2
+
+[[case]]
+name = "lastIndexOf composes with slicing"
+expr = 'let s = "a/b/c"; s[lastIndexOf(s, "/") + 1:]'
+expect = "c"
+
+[[case]]
+name = "lastIndexOf of an any"
+expr = 'lastIndexOf(user.Attrs, "7")'
+error = "E0307"
+
+[[case]]
+name = "lastIndexOf with a substring that is not a string"
+expr = 'lastIndexOf("a", 1)'
+error = "E0201"
+
+[[case]]
+name = "lastIndexOf with one argument"
+expr = 'lastIndexOf("a")'
+error = "E0205"
+
+[[case]]
+name = "repeat counts its bytes against the allocation limit"
+expr = 'len(repeat("x", 2000000))'
+expect = 2000000
+deviation = "Go rejects a count above 1e6 and more than 1e6 bytes in total; dictum charges the bytes to Limits::max_alloc"

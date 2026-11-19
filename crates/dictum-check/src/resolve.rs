@@ -217,8 +217,7 @@ pub fn membership(needle: Tag, haystack: Tag) -> Option<InOp> {
 pub const fn arity(b: Builtin) -> (usize, usize) {
     match b {
         Builtin::Now => (0, 0),
-        Builtin::Trim
-        | Builtin::Upper
+        Builtin::Upper
         | Builtin::Lower
         | Builtin::Abs
         | Builtin::Ceil
@@ -237,10 +236,11 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::Decimal
         | Builtin::Duration
         | Builtin::Date => (1, 1),
-        Builtin::Split
+        Builtin::Repeat
         | Builtin::HasPrefix
         | Builtin::HasSuffix
         | Builtin::IndexOf
+        | Builtin::LastIndexOf
         | Builtin::Get
         | Builtin::All
         | Builtin::Any
@@ -250,7 +250,8 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::Map
         | Builtin::Find
         | Builtin::FindIndex => (2, 2),
-        Builtin::Count | Builtin::Join => (1, 2),
+        Builtin::Trim | Builtin::TrimPrefix | Builtin::TrimSuffix | Builtin::Count | Builtin::Join => (1, 2),
+        Builtin::Split | Builtin::SplitAfter => (2, 3),
         Builtin::Replace => (3, 3),
         Builtin::Max | Builtin::Min => (1, usize::MAX),
     }
@@ -267,13 +268,20 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
     let ok = |i, t| Some((i, t));
     match (b, args) {
         (Builtin::Trim, [T::String]) => ok(Intrinsic::Trim, T::String),
+        (Builtin::Trim, [T::String, T::String]) => ok(Intrinsic::TrimCutset, T::String),
+        (Builtin::TrimPrefix, [T::String] | [T::String, T::String]) => ok(Intrinsic::TrimPrefix, T::String),
+        (Builtin::TrimSuffix, [T::String] | [T::String, T::String]) => ok(Intrinsic::TrimSuffix, T::String),
         (Builtin::Upper, [T::String]) => ok(Intrinsic::Upper, T::String),
         (Builtin::Lower, [T::String]) => ok(Intrinsic::Lower, T::String),
-        (Builtin::Split, [T::String, T::String]) => ok(Intrinsic::Split, T::Array),
+        (Builtin::Split | Builtin::SplitAfter, [T::String, T::String] | [T::String, T::String, T::Int]) => {
+            ok(Intrinsic::Split { after: b == Builtin::SplitAfter }, T::Array)
+        }
+        (Builtin::Repeat, [T::String, T::Int]) => ok(Intrinsic::Repeat, T::String),
         (Builtin::Replace, [T::String, T::String, T::String]) => ok(Intrinsic::Replace, T::String),
         (Builtin::HasPrefix, [T::String, T::String]) => ok(Intrinsic::HasPrefix, T::Bool),
         (Builtin::HasSuffix, [T::String, T::String]) => ok(Intrinsic::HasSuffix, T::Bool),
         (Builtin::IndexOf, [T::String, T::String]) => ok(Intrinsic::IndexOf, T::Int),
+        (Builtin::LastIndexOf, [T::String, T::String]) => ok(Intrinsic::LastIndexOf, T::Int),
         (Builtin::Abs, [T::Int]) => ok(Intrinsic::AbsInt, T::Int),
         (Builtin::Abs, [T::Float]) => ok(Intrinsic::AbsFloat, T::Float),
         (Builtin::Ceil, [T::Float]) => ok(Intrinsic::Ceil, T::Float),
@@ -324,13 +332,18 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
             | Builtin::Find
             | Builtin::FindIndex
             | Builtin::Trim
+            | Builtin::TrimPrefix
+            | Builtin::TrimSuffix
             | Builtin::Upper
             | Builtin::Lower
             | Builtin::Split
+            | Builtin::SplitAfter
             | Builtin::Replace
+            | Builtin::Repeat
             | Builtin::HasPrefix
             | Builtin::HasSuffix
             | Builtin::IndexOf
+            | Builtin::LastIndexOf
             | Builtin::Max
             | Builtin::Min
             | Builtin::Abs

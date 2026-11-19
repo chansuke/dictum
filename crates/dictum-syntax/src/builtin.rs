@@ -53,13 +53,18 @@ macro_rules! builtins {
 builtins! {
     // strings
     Trim = "trim";
+    TrimPrefix = "trimPrefix";
+    TrimSuffix = "trimSuffix";
     Upper = "upper";
     Lower = "lower";
     Split = "split";
+    SplitAfter = "splitAfter";
     Replace = "replace";
+    Repeat = "repeat";
     HasPrefix = "hasPrefix";
     HasSuffix = "hasSuffix";
     IndexOf = "indexOf";
+    LastIndexOf = "lastIndexOf";
     // numbers
     Max = "max";
     Min = "min";
@@ -98,6 +103,6 @@ builtins! {
     Date = "date";
     // misc
     Get = "get";
-    // Post-MVP builtins (trimPrefix, reduce, sortBy, toJSON, timezone, ...) are added
+    // Post-MVP builtins (reduce, sortBy, toJSON, timezone, ...) are added
     // here when implemented; until then they are unknown functions (E0203).
 }
