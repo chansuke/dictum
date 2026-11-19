@@ -603,7 +603,7 @@ pub struct Diagnostic {
 2. 型チェック（`dictum-check`）：`Type`、`Schema`、型付きIR、`dictum-derive` の最小版。完了条件は、適合テストの各式が期待した型になるか、期待したE02xxのコードとSpanで失敗すること、全ケースで型付きIRの不変条件を検証すること、Checkerのファジングを10 CPU分回してpanicしないこと、deriveが対応する全フィールド型を受け付け、enum・型引数・予約語・重複名・`HashMap`・`u64` を拒否すること
 3. 参照評価：仕様インタプリタとMVPの組み込み関数。完了条件は、適合テストを通し、Go版との意図的な差分をすべて `deviation` に書くこと
 4. 高速評価：定数の畳み込み、クロージャコンパイル、実行上限。完了条件は、差分テストが10万ケース通ること、Go版とのベンチマークを記録すること
-5. ルールエンジン（`dictum`）：`Rule`、共通部分式を共有する `RuleSet`、`explain`、`Ctx`。完了条件は、`RuleSet` の差分テストが通ること、使用例（`examples/quickstart.rs`）が動くこと。crates.ioに0.1を公開する
+5. ルールエンジン（`dictum`）：`Rule`、共通部分式を共有する `RuleSet`、`explain`、`Ctx`。完了条件は、`RuleSet` の差分テストが通ること、使用例（`examples/quickstart.rs`）が動くこと
 6. 拡張：残りの組み込み関数、CLIとREPL、WASM対応。それぞれ別に完了させる。組み込み関数は、一覧への追加、型付け、実装、移植した適合テストがそろったら完了とする。CLIは `dictum eval --facts f.json '<expr>'` が適合テストの全式で結果を表示したら完了とする（実行時に記述したスキーマを扱う方式を先に決める必要がある）。WASMは、CIで適合テストのランナーが `wasm32-wasip1` 上のwasmtimeで通ったら完了とする
 
 ## 決定事項
