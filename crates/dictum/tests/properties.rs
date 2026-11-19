@@ -39,11 +39,11 @@ fn outcome(r: Result<Dynamic, EvalError>) -> Option<Result<Dynamic, (&'static st
 }
 
 proptest! {
-    /// M4 completion criterion: 100k cases, run by the scheduled workflow
+    /// The closure tree (with folding) against the spec interpreter. M4 completion
+    /// criterion: 100k cases, run by the scheduled workflow
     /// (`PROPTEST_CASES=100000` in .github/workflows/deep.yml). PRs run the
     /// default 256.
     #[test]
-    #[ignore = "pending M4: closure compiler"]
     fn eval_agrees_with_explain((ty, src) in generate::any_rule(4)) {
         let schema = schema();
         let rule = Rule::<Dynamic, Facts>::compile(&src, &schema)
@@ -126,13 +126,11 @@ proptest! {
     }
 
     #[test]
-    #[ignore = "pending M4: closure compiler (compiling a valid rule folds and builds closures)"]
     fn compile_never_panics_on_token_soup(src in generate::token_soup()) {
         let _ = Rule::<Dynamic, Facts>::compile(&src, &schema());
     }
 
     #[test]
-    #[ignore = "pending M4: closure compiler (compiling a valid rule folds and builds closures)"]
     fn compile_never_panics_on_arbitrary_text(src in "\\PC{0,64}") {
         let _ = Rule::<Dynamic, Facts>::compile(&src, &schema());
     }
