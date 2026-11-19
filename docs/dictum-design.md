@@ -476,7 +476,7 @@ let ctx = Ctx::new(&facts)                                   // 時刻なし、�
 
 ### explain
 
-評価したノードごとに、Span・値・子ノードを持つ木を返す。短絡評価で飛ばしたノードは `Skipped`、エラーが起きたノードは `Failed` になる。
+評価したノードごとに、Span・値・子ノードを持つ木を返す。短絡評価で飛ばしたノードは `Skipped`、エラーが起きたノードは `Failed` になる。要素が1万を超える値（長い範囲など）はレポートに写さず `Elided` にする。結果には影響しない。
 
 ```
 user.Group in ["admin"] && user.Age >= 18   → false
@@ -533,7 +533,7 @@ pub enum EvalErrorKind {
     CharBoundary { index: i64 },
     StepLimit, AllocLimit,
     TypeMismatch { expected: &'static str, found: &'static str },   // Any 型の実行時チェック
-    InvalidArgument { what: &'static str },   // duration("1x") など
+    InvalidArgument { what: &'static str, value: Box<str> },   // duration("1x") など
     DuplicateKey(Box<str>),                   // 計算したキーが重複したマップリテラル
     ClockUnset,                               // 時刻なしの Ctx で now()
     Function { name: Box<str>, error: Box<dyn core::error::Error + Send + Sync> },
