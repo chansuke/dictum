@@ -52,7 +52,7 @@ test:
 pending:
     @echo "MILESTONE = $(just milestone)"
     @cargo nextest list --workspace --all-features --run-ignored only 2>/dev/null | wc -l | xargs echo "ignored tests:"
-    @grep -rhoE 'ignore = "pending M[0-9]+[^"]*"' crates | sort | uniq -c
+    @grep -rhoE 'ignore = "pending M[0-9]+[^"]*"' crates | sort | uniq -c || echo "no pending milestones"
 
 # The last completed milestone (dictum_testkit::MILESTONE).
 milestone:
