@@ -106,7 +106,7 @@ impl FromArg for i64 {
         Type::Int
     }
     fn from_value(v: &Value<'_>) -> Option<i64> {
-        todo!()
+        v.as_int()
     }
 }
 
@@ -116,7 +116,7 @@ impl FromArg for f64 {
         Type::Float
     }
     fn from_value(v: &Value<'_>) -> Option<f64> {
-        todo!()
+        v.as_float()
     }
 }
 
@@ -126,7 +126,7 @@ impl FromArg for bool {
         Type::Bool
     }
     fn from_value(v: &Value<'_>) -> Option<bool> {
-        todo!()
+        v.as_bool()
     }
 }
 
@@ -137,7 +137,7 @@ impl FromArg for &str {
         Type::String
     }
     fn from_value<'s>(v: &'s Value<'_>) -> Option<&'s str> {
-        todo!()
+        v.as_str()
     }
 }
 
@@ -147,7 +147,7 @@ impl FromArg for jiff::Timestamp {
         Type::Time
     }
     fn from_value(v: &Value<'_>) -> Option<jiff::Timestamp> {
-        todo!()
+        v.as_time()
     }
 }
 
@@ -156,7 +156,7 @@ impl RetValue for bool {
         Type::Bool
     }
     fn into_value(self) -> Value<'static> {
-        todo!()
+        Value::bool(self)
     }
 }
 
@@ -165,7 +165,7 @@ impl RetValue for i64 {
         Type::Int
     }
     fn into_value(self) -> Value<'static> {
-        todo!()
+        Value::int(self)
     }
 }
 
@@ -174,7 +174,7 @@ impl RetValue for f64 {
         Type::Float
     }
     fn into_value(self) -> Value<'static> {
-        todo!()
+        Value::float(self)
     }
 }
 
@@ -183,8 +183,14 @@ impl RetValue for String {
         Type::String
     }
     fn into_value(self) -> Value<'static> {
-        todo!()
+        Value::string(self)
     }
+}
+
+/// Fix a closure's signature to the higher-ranked `Call`, which closure inference
+/// does not do on its own.
+fn erase(f: impl for<'a> Fn(&[Value<'a>]) -> Result<Value<'a>, CallError> + Send + Sync + 'static) -> Arc<Call> {
+    Arc::new(f)
 }
 
 // Arity impls. The double bound is what lets `|code: &str| ...` infer: `Fn(A1) -> R`
@@ -200,15 +206,14 @@ macro_rules! into_func {
             $($a: FromArg,)*
         {
             fn into_func(self) -> ErasedFunc {
-                // TODO:
-                // sig = FuncSig { params: [$($a::ty()),*], ret: R::ty() }
-                // call = Arc::new(move |args| {
-                //     let [$($a),*] = args else { return Err(CallError::BadArgument) };
-                //     $( let $a = $a::from_value($a).ok_or(CallError::BadArgument)?; )*
-                //     self($($a),*).into_result().map_err(CallError::Function)
-                // });
-                // ErasedFunc { sig, call }
-                todo!()
+                let sig = FuncSig { params: alloc::vec![$($a::ty()),*].into(), ret: R::ty() };
+                let call = erase(move |args| {
+                    #[allow(non_snake_case)]
+                    let [$($a),*] = args else { return Err(CallError::BadArgument) };
+                    $( #[allow(non_snake_case)] let $a = $a::from_value($a).ok_or(CallError::BadArgument)?; )*
+                    self($($a),*).into_result().map_err(CallError::Function)
+                });
+                ErasedFunc { sig, call }
             }
         }
     };
