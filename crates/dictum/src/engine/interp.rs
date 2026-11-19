@@ -811,6 +811,14 @@ pub(super) fn check<'a>(v: Value<'a>, ty: &Type, f: &mut Frame<'a>, span: Span) 
     }
 }
 
+/// A part of the string `v`, borrowed from the facts when `v` is, else copied and charged.
+fn narrowed<'a>(v: &Value<'a>, f: &mut Frame<'a>, span: Span, part: impl for<'x> Fn(&'x str) -> &'x str) -> Res<'a> {
+    match &v.0 {
+        Repr::Str(Str::Borrowed(b)) => Ok(Value(Repr::Str(Str::Borrowed(part(b))))),
+        _ => built(f, part(string(v, span)?).into(), span),
+    }
+}
+
 /// A builtin applied to evaluated arguments.
 pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>, span: Span) -> Res<'a> {
     let arg = |i: usize| args.get(i).ok_or_else(|| internal("missing builtin argument", span));
@@ -825,23 +833,25 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         Intrinsic::LenBytes => Ok(count(arg(0)?.as_bytes().ok_or_else(|| internal("expected bytes", span))?.len())),
         Intrinsic::LenArray => Ok(count(seq(arg(0)?, span)?.len())),
         Intrinsic::LenMap => Ok(count(map(arg(0)?, span)?.len())),
-        Intrinsic::Trim => {
-            let (v, t) = (arg(0)?, s(0)?.trim());
-            match &v.0 {
-                Repr::Str(Str::Borrowed(b)) => Ok(Value(Repr::Str(Str::Borrowed(b.trim())))),
-                _ => built(f, t.into(), span),
-            }
+        Intrinsic::Trim => narrowed(arg(0)?, f, span, str::trim),
+        Intrinsic::TrimCutset => {
+            let cutset = s(1)?;
+            narrowed(arg(0)?, f, span, |t| t.trim_matches(|c| cutset.contains(c)))
+        }
+        Intrinsic::TrimPrefix | Intrinsic::TrimSuffix => {
+            let affix = if args.len() > 1 { s(1)? } else { " " };
+            let prefix = op == Intrinsic::TrimPrefix;
+            narrowed(arg(0)?, f, span, |t| {
+                let stripped = if prefix { t.strip_prefix(affix) } else { t.strip_suffix(affix) };
+                stripped.unwrap_or(t)
+            })
         }
         Intrinsic::Upper => built(f, simple_case(s(0)?, true), span),
         Intrinsic::Lower => built(f, simple_case(s(0)?, false), span),
-        Intrinsic::Split => {
+        Intrinsic::Split { after } => {
             let (text, sep) = (s(0)?, s(1)?);
-            // As Go's strings.Split: an empty separator splits into characters.
-            let parts: Vec<&str> = if sep.is_empty() {
-                text.char_indices().map(|(i, c)| text.get(i..i.saturating_add(c.len_utf8())).unwrap_or("")).collect()
-            } else {
-                text.split(sep).collect()
-            };
+            let n = if args.len() > 2 { int(arg(2)?, span)? } else { -1 };
+            let parts = builtins::go_split(text, sep, after, n);
             alloc(f, parts.len().saturating_add(text.len()), span)?;
             Ok(Value::array(parts.into_iter().map(|p| Value(Repr::Str(Str::Shared(p.into())))).collect()))
         }
@@ -853,9 +863,21 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             alloc(f, len, span)?;
             Ok(Value::string(text.replace(from, to)))
         }
+        Intrinsic::Repeat => {
+            let (text, n) = (s(0)?, int(arg(1)?, span)?);
+            if n < 0 {
+                return Err(invalid("repeat count", &alloc::format!("{n}")));
+            }
+            let too_large = || Frame::fault(EvalErrorKind::AllocLimit, span);
+            let n = usize::try_from(n).map_err(|_| too_large())?;
+            let len = text.len().checked_mul(n).ok_or_else(too_large)?;
+            alloc(f, len, span)?;
+            Ok(Value::string(text.repeat(n)))
+        }
         Intrinsic::HasPrefix => Ok(Value::bool(s(0)?.starts_with(s(1)?))),
         Intrinsic::HasSuffix => Ok(Value::bool(s(0)?.ends_with(s(1)?))),
         Intrinsic::IndexOf => Ok(s(0)?.find(s(1)?).map_or(Value::int(-1), count)),
+        Intrinsic::LastIndexOf => Ok(s(0)?.rfind(s(1)?).map_or(Value::int(-1), count)),
         Intrinsic::AbsInt => Ok(Value::int(int(arg(0)?, span)?.checked_abs().ok_or_else(overflow)?)),
         Intrinsic::AbsFloat => Ok(Value::float(libm::fabs(float(arg(0)?, span)?))),
         Intrinsic::Ceil => Ok(Value::float(libm::ceil(float(arg(0)?, span)?))),

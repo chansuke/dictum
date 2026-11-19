@@ -2,12 +2,46 @@
 //! of values (`string(x)`).
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt::Write;
 
 use crate::EvalErrorKind;
 
 fn invalid(what: &'static str, value: &str) -> EvalErrorKind {
     EvalErrorKind::InvalidArgument { what, value: value.into() }
+}
+
+/// Go's `strings.SplitN` (or `SplitAfterN` when `after`, which keeps each separator
+/// on the part before it). `n < 0` splits at every separator, `n == 0` gives no
+/// parts, and otherwise the last of at most `n` parts is the unsplit rest. An empty
+/// separator splits between characters.
+pub(crate) fn go_split<'s>(s: &'s str, sep: &str, after: bool, n: i64) -> Vec<&'s str> {
+    let limit = match usize::try_from(n) {
+        Ok(0) => return Vec::new(),
+        Ok(n) => n,
+        Err(_) => usize::MAX,
+    };
+    let mut parts = Vec::new();
+    let mut rest = s;
+    while parts.len().saturating_add(1) < limit {
+        let (cut, skip) = if sep.is_empty() {
+            match rest.chars().next() {
+                Some(c) => (c.len_utf8(), c.len_utf8()),
+                None => return parts,
+            }
+        } else {
+            match rest.find(sep) {
+                Some(m) => (if after { m.saturating_add(sep.len()) } else { m }, m.saturating_add(sep.len())),
+                None => break,
+            }
+        };
+        parts.push(rest.get(..cut).unwrap_or(""));
+        rest = rest.get(skip..).unwrap_or("");
+    }
+    if !(sep.is_empty() && rest.is_empty()) {
+        parts.push(rest);
+    }
+    parts
 }
 
 /// `duration(s)` with Go's `time.ParseDuration` grammar: an optional sign, then one

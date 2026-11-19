@@ -784,7 +784,7 @@ impl<'e, P> Checker<'e, P> {
             _ => Type::Any,
         };
         let (op, ty, args) = match op {
-            Intrinsic::Split => (op, Type::array(Type::String), args),
+            Intrinsic::Split { .. } => (op, Type::array(Type::String), args),
             Intrinsic::First | Intrinsic::Last | Intrinsic::GetArray | Intrinsic::GetMap => {
                 let t = args.first().map(elem).unwrap_or(Type::Any);
                 (op, Type::option(t), args)

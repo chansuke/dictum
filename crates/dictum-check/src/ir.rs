@@ -747,22 +747,33 @@ pub enum Intrinsic {
     LenArray,
     /// `len(map)`
     LenMap,
-    /// `trim`
+    /// `trim(s)`: Unicode white space, as Go's `strings.TrimSpace`.
     Trim,
+    /// `trim(s, cutset)`: any character in the cutset, as Go's `strings.Trim`.
+    TrimCutset,
+    /// `trimPrefix(s[, prefix])`: the prefix defaults to one space, as Go.
+    TrimPrefix,
+    /// `trimSuffix(s[, suffix])`: the suffix defaults to one space, as Go.
+    TrimSuffix,
     /// `upper`
     Upper,
     /// `lower`
     Lower,
-    /// `split`
-    Split,
+    /// `split(s, sep[, n])`, or `splitAfter` (keeping each separator) when `after`.
+    /// `n` as Go's `strings.SplitN`: below zero all parts, zero none, else at most `n`.
+    Split { after: bool },
     /// `replace`
     Replace,
+    /// `repeat(s, n)`: a negative `n` is an invalid argument.
+    Repeat,
     /// `hasPrefix`
     HasPrefix,
     /// `hasSuffix`
     HasSuffix,
     /// `indexOf`: byte offset or `-1`, so `s[indexOf(s, "x"):]` is valid.
     IndexOf,
+    /// `lastIndexOf`: byte offset or `-1`, as `indexOf`.
+    LastIndexOf,
     /// `abs(int)`
     AbsInt,
     /// `abs(float)`
