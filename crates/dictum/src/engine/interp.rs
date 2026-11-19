@@ -10,7 +10,8 @@
 //! tree: no panics (IR invariant failures become `Internal`) and the same budget
 //! charges at the same points.
 //!
-//! Budget charges (the closure tree must make the same ones):
+//! Budget charges (the closure tree makes the same ones by calling these functions;
+//! only a constant it folded at compile time costs it nothing):
 //! - one step per element a predicate visits, before its body runs;
 //! - `len` steps for `x in array`, before scanning (so a sorted constant set costs
 //!   what a scan does), and one per entry for `keys`, `values`, `sum`, `join`,
@@ -18,21 +19,6 @@
 //! - one alloc per element of a built array or map (literals, `filter`, `map`,
 //!   `split`, `keys`, `values`, `+` of arrays) and one per byte of a built string,
 //!   before building it. Constants are part of the rule and cost nothing.
-//!
-//! TODO differential test (proptest, dev-dependency):
-//! ```text
-//! strategy: random well-typed source over a fixed test root struct
-//!           (generated from a typed grammar, then compiled, so the parser and
-//!            checker are exercised too)
-//! property: for random facts and `now`,
-//!           rule.eval(ctx) == rule.explain(ctx).into_result()          // compiler, folder
-//!           RuleSet of N variants: Ok(values) == every standalone Rule value,
-//!           Err(e) == the first rule (insertion order) whose standalone eval fails
-//!                                                                    // sharing
-//! equality: values equal, or both errors with the same ErrorCode and span
-//!           (cases that hit a budget limit are skipped: the RuleSet charges shared
-//!            work to the first rule that computes it)
-//! ```
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -88,32 +74,32 @@ struct Walk<'p, 't, 'a> {
     trace: Option<&'t mut Trace<'a>>,
 }
 
-type Res<'a> = Result<Value<'a>, Fault>;
+pub(super) type Res<'a> = Result<Value<'a>, Fault>;
 
-fn internal(what: &'static str, span: Span) -> Fault {
+pub(super) fn internal(what: &'static str, span: Span) -> Fault {
     Frame::fault(EvalErrorKind::Internal(what), span)
 }
 
-fn mismatch(expected: &'static str, found: &Value<'_>, span: Span) -> Fault {
+pub(super) fn mismatch(expected: &'static str, found: &Value<'_>, span: Span) -> Fault {
     Frame::fault(EvalErrorKind::TypeMismatch { expected, found: found.tag().name() }, span)
 }
 
 /// Attach `span` to an `ops` error.
-fn at(span: Span) -> impl Fn(EvalErrorKind) -> Fault {
+pub(super) fn at(span: Span) -> impl Fn(EvalErrorKind) -> Fault {
     move |kind| Frame::fault(kind, span)
 }
 
 // Typed reads. The checker proved the types, so a mismatch is a dictum bug.
-fn int(v: &Value<'_>, span: Span) -> Result<i64, Fault> {
+pub(super) fn int(v: &Value<'_>, span: Span) -> Result<i64, Fault> {
     v.as_int().ok_or_else(|| internal("expected an int", span))
 }
-fn float(v: &Value<'_>, span: Span) -> Result<f64, Fault> {
+pub(super) fn float(v: &Value<'_>, span: Span) -> Result<f64, Fault> {
     v.as_float().ok_or_else(|| internal("expected a float", span))
 }
-fn boolean(v: &Value<'_>, span: Span) -> Result<bool, Fault> {
+pub(super) fn boolean(v: &Value<'_>, span: Span) -> Result<bool, Fault> {
     v.as_bool().ok_or_else(|| internal("expected a bool", span))
 }
-fn string<'v>(v: &'v Value<'_>, span: Span) -> Result<&'v str, Fault> {
+pub(super) fn string<'v>(v: &'v Value<'_>, span: Span) -> Result<&'v str, Fault> {
     v.as_str().ok_or_else(|| internal("expected a string", span))
 }
 fn time(v: &Value<'_>, span: Span) -> Result<jiff::Timestamp, Fault> {
@@ -136,11 +122,11 @@ fn decimal(v: &Value<'_>, span: Span) -> Result<rust_decimal::Decimal, Fault> {
     }
 }
 
-fn steps(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
+pub(super) fn steps(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
     f.budget.step(u64::try_from(n).unwrap_or(u64::MAX)).map_err(at(span))
 }
 
-fn alloc(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
+pub(super) fn alloc(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
     f.budget.alloc(u64::try_from(n).unwrap_or(u64::MAX)).map_err(at(span))
 }
 
@@ -150,7 +136,7 @@ fn built(f: &mut Frame<'_>, s: String, span: Span) -> Res<'static> {
     Ok(Value::string(s))
 }
 
-fn promote<'a>(v: Value<'a>, p: Promote, span: Span) -> Res<'a> {
+pub(super) fn promote<'a>(v: Value<'a>, p: Promote, span: Span) -> Res<'a> {
     match p {
         Promote::None => Ok(v),
         #[allow(clippy::cast_precision_loss)]
@@ -223,7 +209,7 @@ impl<'a> Walk<'_, '_, 'a> {
             ExprKind::Binary { op, lhs, rhs } => {
                 let l = self.expr(lhs, f)?;
                 let r = self.expr(rhs, f)?;
-                self.binary(*op, l, r, e.id(), f, span)
+                binary(*op, l, r, self.patterns.get(&e.id()).map(|re| &**re), f, span)
             }
             ExprKind::Logic { op, operands } => {
                 // `&&` stops at the first `false`, `||` at the first `true`.
@@ -240,15 +226,7 @@ impl<'a> Walk<'_, '_, 'a> {
                 let mut prev = self.expr(first, f)?;
                 for (op, x) in rest {
                     let cur = self.expr(x, f)?;
-                    let ord = order(*kind, &prev, &cur, span)?;
-                    let holds = match (op, ord) {
-                        (_, None) => false,
-                        (CompareOp::Lt, Some(o)) => o == Ordering::Less,
-                        (CompareOp::Le, Some(o)) => o != Ordering::Greater,
-                        (CompareOp::Gt, Some(o)) => o == Ordering::Greater,
-                        (CompareOp::Ge, Some(o)) => o != Ordering::Less,
-                    };
-                    if !holds {
+                    if !holds(*op, order(*kind, &prev, &cur, span)?) {
                         return Ok(Value::bool(false));
                     }
                     prev = cur;
@@ -298,7 +276,10 @@ impl<'a> Walk<'_, '_, 'a> {
             ExprKind::Predicate { op, seq, body } => {
                 let s = self.expr(seq, f)?;
                 let s = s.as_seq().cloned().ok_or_else(|| mismatch("an array", &s, seq.span()))?;
-                self.predicate(*op, &s, body.as_deref(), f, span)
+                match body.as_deref() {
+                    Some(b) => predicate(*op, &s, Some(&mut |f: &mut Frame<'a>| self.expr(b, f)), f, span),
+                    None => predicate(*op, &s, None, f, span),
+                }
             }
             ExprKind::Intrinsic { op, args } => {
                 let mut vals = Vec::with_capacity(args.len());
@@ -313,13 +294,7 @@ impl<'a> Walk<'_, '_, 'a> {
                     vals.push(self.expr(x, f)?);
                 }
                 let imp = self.schema.payload(*func).ok_or_else(|| internal("unknown function", span))?;
-                (imp.call)(&vals).map_err(|err| match err {
-                    CallError::Function(error) => {
-                        let name = self.schema.func_name(*func).unwrap_or("?").into();
-                        Frame::fault(EvalErrorKind::Function { name, error }, span)
-                    }
-                    CallError::BadArgument => internal("function argument did not convert", span),
-                })
+                (imp.call)(&vals).map_err(|err| call_fault(err, self.schema.func_name(*func).unwrap_or("?"), span))
             }
             ExprKind::Convert { op, arg } => {
                 let v = self.expr(arg, f)?;
@@ -333,182 +308,202 @@ impl<'a> Walk<'_, '_, 'a> {
             }
         }
     }
+}
 
-    fn binary(
-        &mut self,
-        op: BinaryOp,
-        l: Value<'a>,
-        r: Value<'a>,
-        id: NodeId,
-        f: &mut Frame<'a>,
-        span: Span,
-    ) -> Res<'a> {
-        match op {
-            BinaryOp::Dyn(op) => {
-                let Some(b) = resolve::binary(op, l.tag(), r.tag()) else {
-                    return Err(Frame::fault(
-                        EvalErrorKind::TypeMismatch { expected: l.tag().name(), found: r.tag().name() },
-                        span,
-                    ));
-                };
-                let (l, r) = (promote(l, b.lhs, span)?, promote(r, b.rhs, span)?);
-                self.binary(b.op, l, r, id, f, span)
-            }
-            BinaryOp::Int(op) => {
-                let (a, b) = (int(&l, span)?, int(&r, span)?);
-                let n = match op {
-                    IntOp::Add => ops::add_int(a, b),
-                    IntOp::Sub => a.checked_sub(b).ok_or(EvalErrorKind::Overflow),
-                    IntOp::Mul => a.checked_mul(b).ok_or(EvalErrorKind::Overflow),
-                    IntOp::Mod => ops::mod_int(a, b),
-                };
-                Ok(Value::int(n.map_err(at(span))?))
-            }
-            BinaryOp::Float(op) => {
-                let (a, b) = (float(&l, span)?, float(&r, span)?);
-                Ok(Value::float(match op {
-                    FloatOp::Add => a + b,
-                    FloatOp::Sub => a - b,
-                    FloatOp::Mul => a * b,
-                    FloatOp::Div => a / b,
-                    FloatOp::Pow => ops::pow_float(a, b),
-                }))
-            }
-            #[cfg(feature = "decimal")]
-            BinaryOp::Decimal(op) => {
-                use dictum_check::ir::DecimalOp;
-                let (a, b) = (decimal(&l, span)?, decimal(&r, span)?);
-                let zero = matches!(op, DecimalOp::Div | DecimalOp::Mod) && b.is_zero();
-                if zero {
-                    return Err(Frame::fault(EvalErrorKind::DivisionByZero, span));
-                }
-                let d = match op {
-                    DecimalOp::Add => a.checked_add(b),
-                    DecimalOp::Sub => a.checked_sub(b),
-                    DecimalOp::Mul => a.checked_mul(b),
-                    DecimalOp::Div => a.checked_div(b),
-                    DecimalOp::Mod => a.checked_rem(b),
-                };
-                Ok(Value(Repr::Decimal(d.ok_or_else(|| Frame::fault(EvalErrorKind::Overflow, span))?)))
-            }
-            BinaryOp::Concat => {
-                let (a, b) = (string(&l, span)?, string(&r, span)?);
-                alloc(f, a.len().saturating_add(b.len()), span)?;
-                let mut s = String::with_capacity(a.len().saturating_add(b.len()));
-                s.push_str(a);
-                s.push_str(b);
-                Ok(Value::string(s))
-            }
-            BinaryOp::ConcatBytes => {
-                let a = l.as_bytes().ok_or_else(|| internal("expected bytes", span))?;
-                let b = r.as_bytes().ok_or_else(|| internal("expected bytes", span))?;
-                alloc(f, a.len().saturating_add(b.len()), span)?;
-                let joined: Arc<[u8]> = a.iter().chain(b).copied().collect();
-                Ok(Value(Repr::Bytes(Bytes::Shared(joined))))
-            }
-            BinaryOp::ConcatArray => {
-                let (a, b) = (seq(&l, span)?, seq(&r, span)?);
-                alloc(f, a.len().saturating_add(b.len()), span)?;
-                Ok(Value::array(a.iter().chain(b.iter()).collect()))
-            }
-            BinaryOp::TimeSubTime => Ok(Value(Repr::Duration(time(&l, span)?.duration_since(time(&r, span)?)))),
-            BinaryOp::TimeAddDuration | BinaryOp::TimeSubDuration => {
-                let (t, d) = (time(&l, span)?, duration(&r, span)?);
-                let d = if op == BinaryOp::TimeSubDuration { d.checked_neg() } else { Some(d) };
-                let t =
-                    d.and_then(|d| t.checked_add(d).ok()).ok_or_else(|| Frame::fault(EvalErrorKind::Overflow, span))?;
-                Ok(Value(Repr::Time(t)))
-            }
-            BinaryOp::DurationAdd | BinaryOp::DurationSub => {
-                let (a, b) = (duration(&l, span)?, duration(&r, span)?);
-                let d = if op == BinaryOp::DurationAdd { a.checked_add(b) } else { a.checked_sub(b) };
-                Ok(Value(Repr::Duration(d.ok_or_else(|| Frame::fault(EvalErrorKind::Overflow, span))?)))
-            }
-            BinaryOp::Eq(kind) => Ok(Value::bool(equal(kind, &l, &r, f, span)?)),
-            BinaryOp::Ne(kind) => Ok(Value::bool(!equal(kind, &l, &r, f, span)?)),
-            BinaryOp::Matches => {
-                let s = string(&l, span)?;
-                if let Some(re) = self.patterns.get(&id) {
-                    return Ok(Value::bool(re.is_match(s)));
-                }
-                let pattern = string(&r, span)?;
-                let re = regex::Regex::new(pattern).map_err(|_| {
-                    Frame::fault(EvalErrorKind::InvalidArgument { what: "regex", value: pattern.into() }, span)
-                })?;
-                Ok(Value::bool(re.is_match(s)))
-            }
-            BinaryOp::Contains => Ok(Value::bool(string(&l, span)?.contains(string(&r, span)?))),
-            BinaryOp::StartsWith => Ok(Value::bool(string(&l, span)?.starts_with(string(&r, span)?))),
-            BinaryOp::EndsWith => Ok(Value::bool(string(&l, span)?.ends_with(string(&r, span)?))),
-        }
-    }
-
-    fn predicate(
-        &mut self,
-        op: PredicateOp,
-        s: &Seq<'a>,
-        body: Option<&ir::Expr>,
-        f: &mut Frame<'a>,
-        span: Span,
-    ) -> Res<'a> {
-        let mut kept: Vec<Value<'a>> = Vec::new();
-        let mut hits: i64 = 0;
-        for i in 0..s.len() {
-            steps(f, 1, span)?;
-            let elem = s.get(i).ok_or_else(|| internal("sequence shorter than its length", span))?;
-            let index = i64::try_from(i).map_err(|_| internal("index past i64", span))?;
-            let out = match body {
-                Some(b) => {
-                    f.scopes.push(Scope { current: elem.clone(), index, acc: None });
-                    let r = self.expr(b, f);
-                    f.scopes.pop();
-                    r?
-                }
-                None => elem.clone(),
-            };
-            if op == PredicateOp::Map {
-                alloc(f, 1, span)?;
-                kept.push(out);
-                continue;
-            }
-            let holds = match out.as_bool() {
-                Some(b) => b,
-                None if body.is_none() => return Err(mismatch("bool", &out, span)),
-                None => return Err(internal("predicate body is not a bool", span)),
-            };
-            if !holds {
-                if op == PredicateOp::All {
-                    return Ok(Value::bool(false));
-                }
-                continue;
-            }
-            match op {
-                PredicateOp::Any => return Ok(Value::bool(true)),
-                PredicateOp::None => return Ok(Value::bool(false)),
-                PredicateOp::Find => return Ok(elem),
-                PredicateOp::FindIndex => return Ok(Value::int(index)),
-                PredicateOp::Filter => {
-                    alloc(f, 1, span)?;
-                    kept.push(elem);
-                }
-                PredicateOp::One if hits == 1 => return Ok(Value::bool(false)),
-                PredicateOp::All | PredicateOp::One | PredicateOp::Count | PredicateOp::Map => {}
-            }
-            hits = hits.saturating_add(1);
-        }
-        Ok(match op {
-            PredicateOp::All | PredicateOp::None => Value::bool(true),
-            PredicateOp::Any => Value::bool(false),
-            PredicateOp::One => Value::bool(hits == 1),
-            PredicateOp::Filter | PredicateOp::Map => Value::array(kept),
-            PredicateOp::Count => Value::int(hits),
-            PredicateOp::Find => Value::NIL,
-            PredicateOp::FindIndex => Value::int(-1),
-        })
+/// Whether `op` holds for operands ordered `ord`; unordered (a NaN) never holds.
+pub(super) fn holds(op: CompareOp, ord: Option<Ordering>) -> bool {
+    match (op, ord) {
+        (_, None) => false,
+        (CompareOp::Lt, Some(o)) => o == Ordering::Less,
+        (CompareOp::Le, Some(o)) => o != Ordering::Greater,
+        (CompareOp::Gt, Some(o)) => o == Ordering::Greater,
+        (CompareOp::Ge, Some(o)) => o != Ordering::Less,
     }
 }
 
-fn unary<'a>(op: UnaryOp, v: Value<'a>, span: Span) -> Res<'a> {
+/// The fault for a failed call of the schema function `name`.
+pub(super) fn call_fault(err: CallError, name: &str, span: Span) -> Fault {
+    match err {
+        CallError::Function(error) => Frame::fault(EvalErrorKind::Function { name: name.into(), error }, span),
+        CallError::BadArgument => internal("function argument did not convert", span),
+    }
+}
+
+/// A strict binary operation on evaluated operands. `pattern` is the compiled
+/// constant pattern of a `matches`, if any.
+pub(super) fn binary<'a>(
+    op: BinaryOp,
+    l: Value<'a>,
+    r: Value<'a>,
+    pattern: Option<&regex::Regex>,
+    f: &mut Frame<'a>,
+    span: Span,
+) -> Res<'a> {
+    match op {
+        BinaryOp::Dyn(op) => {
+            let Some(b) = resolve::binary(op, l.tag(), r.tag()) else {
+                return Err(Frame::fault(
+                    EvalErrorKind::TypeMismatch { expected: l.tag().name(), found: r.tag().name() },
+                    span,
+                ));
+            };
+            let (l, r) = (promote(l, b.lhs, span)?, promote(r, b.rhs, span)?);
+            binary(b.op, l, r, pattern, f, span)
+        }
+        BinaryOp::Int(op) => {
+            let (a, b) = (int(&l, span)?, int(&r, span)?);
+            let n = match op {
+                IntOp::Add => ops::add_int(a, b),
+                IntOp::Sub => a.checked_sub(b).ok_or(EvalErrorKind::Overflow),
+                IntOp::Mul => a.checked_mul(b).ok_or(EvalErrorKind::Overflow),
+                IntOp::Mod => ops::mod_int(a, b),
+            };
+            Ok(Value::int(n.map_err(at(span))?))
+        }
+        BinaryOp::Float(op) => {
+            let (a, b) = (float(&l, span)?, float(&r, span)?);
+            Ok(Value::float(match op {
+                FloatOp::Add => a + b,
+                FloatOp::Sub => a - b,
+                FloatOp::Mul => a * b,
+                FloatOp::Div => a / b,
+                FloatOp::Pow => ops::pow_float(a, b),
+            }))
+        }
+        #[cfg(feature = "decimal")]
+        BinaryOp::Decimal(op) => {
+            use dictum_check::ir::DecimalOp;
+            let (a, b) = (decimal(&l, span)?, decimal(&r, span)?);
+            let zero = matches!(op, DecimalOp::Div | DecimalOp::Mod) && b.is_zero();
+            if zero {
+                return Err(Frame::fault(EvalErrorKind::DivisionByZero, span));
+            }
+            let d = match op {
+                DecimalOp::Add => a.checked_add(b),
+                DecimalOp::Sub => a.checked_sub(b),
+                DecimalOp::Mul => a.checked_mul(b),
+                DecimalOp::Div => a.checked_div(b),
+                DecimalOp::Mod => a.checked_rem(b),
+            };
+            Ok(Value(Repr::Decimal(d.ok_or_else(|| Frame::fault(EvalErrorKind::Overflow, span))?)))
+        }
+        BinaryOp::Concat => {
+            let (a, b) = (string(&l, span)?, string(&r, span)?);
+            alloc(f, a.len().saturating_add(b.len()), span)?;
+            let mut s = String::with_capacity(a.len().saturating_add(b.len()));
+            s.push_str(a);
+            s.push_str(b);
+            Ok(Value::string(s))
+        }
+        BinaryOp::ConcatBytes => {
+            let a = l.as_bytes().ok_or_else(|| internal("expected bytes", span))?;
+            let b = r.as_bytes().ok_or_else(|| internal("expected bytes", span))?;
+            alloc(f, a.len().saturating_add(b.len()), span)?;
+            let joined: Arc<[u8]> = a.iter().chain(b).copied().collect();
+            Ok(Value(Repr::Bytes(Bytes::Shared(joined))))
+        }
+        BinaryOp::ConcatArray => {
+            let (a, b) = (seq(&l, span)?, seq(&r, span)?);
+            alloc(f, a.len().saturating_add(b.len()), span)?;
+            Ok(Value::array(a.iter().chain(b.iter()).collect()))
+        }
+        BinaryOp::TimeSubTime => Ok(Value(Repr::Duration(time(&l, span)?.duration_since(time(&r, span)?)))),
+        BinaryOp::TimeAddDuration | BinaryOp::TimeSubDuration => {
+            let (t, d) = (time(&l, span)?, duration(&r, span)?);
+            let d = if op == BinaryOp::TimeSubDuration { d.checked_neg() } else { Some(d) };
+            let t = d.and_then(|d| t.checked_add(d).ok()).ok_or_else(|| Frame::fault(EvalErrorKind::Overflow, span))?;
+            Ok(Value(Repr::Time(t)))
+        }
+        BinaryOp::DurationAdd | BinaryOp::DurationSub => {
+            let (a, b) = (duration(&l, span)?, duration(&r, span)?);
+            let d = if op == BinaryOp::DurationAdd { a.checked_add(b) } else { a.checked_sub(b) };
+            Ok(Value(Repr::Duration(d.ok_or_else(|| Frame::fault(EvalErrorKind::Overflow, span))?)))
+        }
+        BinaryOp::Eq(kind) => Ok(Value::bool(equal(kind, &l, &r, f, span)?)),
+        BinaryOp::Ne(kind) => Ok(Value::bool(!equal(kind, &l, &r, f, span)?)),
+        BinaryOp::Matches => {
+            let s = string(&l, span)?;
+            if let Some(re) = pattern {
+                return Ok(Value::bool(re.is_match(s)));
+            }
+            let pattern = string(&r, span)?;
+            let re = regex::Regex::new(pattern).map_err(|_| {
+                Frame::fault(EvalErrorKind::InvalidArgument { what: "regex", value: pattern.into() }, span)
+            })?;
+            Ok(Value::bool(re.is_match(s)))
+        }
+        BinaryOp::Contains => Ok(Value::bool(string(&l, span)?.contains(string(&r, span)?))),
+        BinaryOp::StartsWith => Ok(Value::bool(string(&l, span)?.starts_with(string(&r, span)?))),
+        BinaryOp::EndsWith => Ok(Value::bool(string(&l, span)?.ends_with(string(&r, span)?))),
+    }
+}
+
+/// A predicate over `s`. `body` runs once per visited element with that element's
+/// scope pushed; without one (`all(bools)`) the element itself is the outcome.
+pub(super) fn predicate<'a>(
+    op: PredicateOp,
+    s: &Seq<'a>,
+    mut body: Option<&mut dyn FnMut(&mut Frame<'a>) -> Res<'a>>,
+    f: &mut Frame<'a>,
+    span: Span,
+) -> Res<'a> {
+    let mut kept: Vec<Value<'a>> = Vec::new();
+    let mut hits: i64 = 0;
+    for i in 0..s.len() {
+        steps(f, 1, span)?;
+        let elem = s.get(i).ok_or_else(|| internal("sequence shorter than its length", span))?;
+        let index = i64::try_from(i).map_err(|_| internal("index past i64", span))?;
+        let out = match body.as_deref_mut() {
+            Some(b) => {
+                f.scopes.push(Scope { current: elem.clone(), index, acc: None });
+                let r = b(f);
+                f.scopes.pop();
+                r?
+            }
+            None => elem.clone(),
+        };
+        if op == PredicateOp::Map {
+            alloc(f, 1, span)?;
+            kept.push(out);
+            continue;
+        }
+        let holds = match out.as_bool() {
+            Some(b) => b,
+            None if body.is_none() => return Err(mismatch("bool", &out, span)),
+            None => return Err(internal("predicate body is not a bool", span)),
+        };
+        if !holds {
+            if op == PredicateOp::All {
+                return Ok(Value::bool(false));
+            }
+            continue;
+        }
+        match op {
+            PredicateOp::Any => return Ok(Value::bool(true)),
+            PredicateOp::None => return Ok(Value::bool(false)),
+            PredicateOp::Find => return Ok(elem),
+            PredicateOp::FindIndex => return Ok(Value::int(index)),
+            PredicateOp::Filter => {
+                alloc(f, 1, span)?;
+                kept.push(elem);
+            }
+            PredicateOp::One if hits == 1 => return Ok(Value::bool(false)),
+            PredicateOp::All | PredicateOp::One | PredicateOp::Count | PredicateOp::Map => {}
+        }
+        hits = hits.saturating_add(1);
+    }
+    Ok(match op {
+        PredicateOp::All | PredicateOp::None => Value::bool(true),
+        PredicateOp::Any => Value::bool(false),
+        PredicateOp::One => Value::bool(hits == 1),
+        PredicateOp::Filter | PredicateOp::Map => Value::array(kept),
+        PredicateOp::Count => Value::int(hits),
+        PredicateOp::Find => Value::NIL,
+        PredicateOp::FindIndex => Value::int(-1),
+    })
+}
+
+pub(super) fn unary<'a>(op: UnaryOp, v: Value<'a>, span: Span) -> Res<'a> {
     let overflow = || Frame::fault(EvalErrorKind::Overflow, span);
     match op {
         UnaryOp::Not => Ok(Value::bool(!boolean(&v, span)?)),
@@ -533,7 +528,7 @@ fn unary<'a>(op: UnaryOp, v: Value<'a>, span: Span) -> Res<'a> {
 }
 
 /// `l == r` by `kind`.
-fn equal(kind: EqKind, l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<bool, Fault> {
+pub(super) fn equal(kind: EqKind, l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<bool, Fault> {
     Ok(match kind {
         EqKind::Bool => boolean(l, span)? == boolean(r, span)?,
         EqKind::Int => int(l, span)? == int(r, span)?,
@@ -562,7 +557,7 @@ fn equal(kind: EqKind, l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: Sp
 /// Structural equality: `nil` equals only `nil`, arrays element-wise, maps by key
 /// regardless of order. Values that cannot be compared are unequal (as Go's `==` on
 /// interfaces of different types). One step per element compared.
-fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<bool, Fault> {
+pub(super) fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<bool, Fault> {
     let Some((kind, pl, pr)) = resolve::equality(l.tag(), r.tag()) else { return Ok(false) };
     if kind != EqKind::Structural {
         let (l, r) = (promote(l.clone(), pl, span)?, promote(r.clone(), pr, span)?);
@@ -605,7 +600,7 @@ fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Re
 }
 
 /// The ordering of `l` and `r` by `kind`; `None` when unordered (a NaN).
-fn order(kind: CompareKind, l: &Value<'_>, r: &Value<'_>, span: Span) -> Result<Option<Ordering>, Fault> {
+pub(super) fn order(kind: CompareKind, l: &Value<'_>, r: &Value<'_>, span: Span) -> Result<Option<Ordering>, Fault> {
     Ok(match kind {
         CompareKind::Int => Some(int(l, span)?.cmp(&int(r, span)?)),
         CompareKind::Float => float(l, span)?.partial_cmp(&float(r, span)?),
@@ -627,7 +622,7 @@ fn order(kind: CompareKind, l: &Value<'_>, r: &Value<'_>, span: Span) -> Result<
     })
 }
 
-fn membership(op: InOp, n: &Value<'_>, h: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<bool, Fault> {
+pub(super) fn membership(op: InOp, n: &Value<'_>, h: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<bool, Fault> {
     match op {
         InOp::Array(kind) => {
             let s = seq(h, span)?;
@@ -660,7 +655,7 @@ fn membership(op: InOp, n: &Value<'_>, h: &Value<'_>, f: &mut Frame<'_>, span: S
     }
 }
 
-fn index_value<'a>(op: IndexOp, b: &Value<'a>, i: &Value<'a>, span: Span) -> Res<'a> {
+pub(super) fn index_value<'a>(op: IndexOp, b: &Value<'a>, i: &Value<'a>, span: Span) -> Res<'a> {
     match op {
         IndexOp::Array => {
             let s = seq(b, span)?;
@@ -693,7 +688,7 @@ fn index_value<'a>(op: IndexOp, b: &Value<'a>, i: &Value<'a>, span: Span) -> Res
     }
 }
 
-fn slice_value<'a>(
+pub(super) fn slice_value<'a>(
     op: SliceOp,
     b: &Value<'a>,
     (from, to): (Option<i64>, Option<i64>),
@@ -753,7 +748,7 @@ fn slice_value<'a>(
 /// `Conversion::Check`: `v` (of type `any`) as a value of `ty`, all the way down,
 /// one step per container element. An `int` where a `float` is expected is
 /// promoted, as the checker does statically.
-fn check<'a>(v: Value<'a>, ty: &Type, f: &mut Frame<'a>, span: Span) -> Res<'a> {
+pub(super) fn check<'a>(v: Value<'a>, ty: &Type, f: &mut Frame<'a>, span: Span) -> Res<'a> {
     let expected = || ty.non_optional().tag().map_or("a value", Tag::name);
     match ty {
         Type::Any => Ok(v),
@@ -817,7 +812,7 @@ fn check<'a>(v: Value<'a>, ty: &Type, f: &mut Frame<'a>, span: Span) -> Res<'a> 
 }
 
 /// A builtin applied to evaluated arguments.
-fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>, span: Span) -> Res<'a> {
+pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>, span: Span) -> Res<'a> {
     let arg = |i: usize| args.get(i).ok_or_else(|| internal("missing builtin argument", span));
     let s = |i: usize| arg(i).and_then(|v| string(v, span));
     let overflow = || Frame::fault(EvalErrorKind::Overflow, span);
