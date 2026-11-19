@@ -19,7 +19,6 @@ fn schema() -> Schema<Facts> {
 }
 
 #[test]
-#[ignore = "pending M3: evaluation"]
 fn now_without_a_time_is_clock_unset() {
     let rule = Rule::<bool, Facts>::compile("now() > user.Created", &schema()).unwrap();
     let facts = sample();
@@ -30,7 +29,6 @@ fn now_without_a_time_is_clock_unset() {
 }
 
 #[test]
-#[ignore = "pending M3: evaluation"]
 fn rules_that_do_not_call_now_need_no_time() {
     let rule = Rule::<bool, Facts>::compile("user.Age > 18", &schema()).unwrap();
     assert!(rule.eval(&Ctx::new(&sample())).unwrap());
@@ -43,7 +41,6 @@ fn result_type_is_checked_at_compile_time() {
 }
 
 #[test]
-#[ignore = "pending M4: closure compiler (compiling a valid rule builds closures)"]
 fn int_result_is_promoted_to_float() {
     assert!(Rule::<f64, Facts>::compile("user.Age", &schema()).is_ok());
 }
@@ -98,7 +95,6 @@ fn duplicate_rule_names_are_rejected() {
 }
 
 #[test]
-#[ignore = "pending M3: evaluation"]
 fn explain_marks_skipped_and_failed_nodes() {
     let rule = Rule::<bool, Facts>::compile("user.Age < 18 && 7 % 0 > 0", &schema()).unwrap();
     let report = rule.explain(&Ctx::new(&sample()));
@@ -114,7 +110,6 @@ fn explain_marks_skipped_and_failed_nodes() {
 }
 
 #[test]
-#[ignore = "pending M3: evaluation"]
 fn step_limit_is_enforced() {
     let rule = Rule::<i64, Facts>::compile("count(nums, # > 0)", &schema()).unwrap();
     let facts = sample();
@@ -124,7 +119,6 @@ fn step_limit_is_enforced() {
 }
 
 #[test]
-#[ignore = "pending M3: evaluation"]
 fn compiled_rules_are_shared_across_threads() {
     let rule = Arc::new(Rule::<bool, Facts>::compile("user.Age >= 18", &schema()).unwrap());
     let handles: Vec<_> = (0..4)
@@ -137,7 +131,6 @@ fn compiled_rules_are_shared_across_threads() {
 }
 
 #[test]
-#[ignore = "pending M3: evaluation"]
 fn schema_functions_pure_and_volatile() {
     let schema = Schema::<Facts>::builder()
         .pure_func("double", |x: i64| x * 2)
@@ -149,4 +142,13 @@ fn schema_functions_pure_and_volatile() {
     let err = Rule::<i64, Facts>::compile("fail(1)", &schema).unwrap().eval(&Ctx::new(&sample())).unwrap_err();
     assert!(matches!(err.kind(), EvalErrorKind::Function { .. }));
     assert_eq!(err.code().as_str(), "E0308");
+}
+
+#[test]
+fn explain_elides_large_values_without_changing_the_result() {
+    let rule = Rule::<i64, Facts>::compile("count(1..20000, # > 0)", &schema()).unwrap();
+    let report = rule.explain(&Ctx::new(&sample()));
+    assert_eq!(*report.result().as_ref().unwrap(), 20000);
+    let range = &report.root().children()[0];
+    assert!(matches!(range.status(), NodeStatus::Elided), "{:?}", range.status());
 }

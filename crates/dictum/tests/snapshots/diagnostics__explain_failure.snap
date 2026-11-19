@@ -1,0 +1,9 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "explain(\"user.Age > 18 && 7 % 0 > 0\")"
+---
+user.Age > 18 && 7 % 0 > 0   failed E0302
+├─ user.Age > 18             → true  (user.Age = 36)
+└─ 7 % 0 > 0                 failed E0302
+   ├─ 7 % 0                  failed E0302
+   └─ 0                      skipped

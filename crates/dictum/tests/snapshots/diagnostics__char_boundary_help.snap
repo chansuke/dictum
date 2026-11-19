@@ -1,0 +1,10 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "eval_error(r#\"\"héllo\"[2:]\"#)"
+---
+error[E0304]: byte index 2 is not a character boundary
+ --> rule:1:9
+  |
+1 | "héllo"[2:]
+  |         ^
+  = help: string indices are byte offsets; `len` counts characters, so `len(s)` is not a valid index into non-ASCII text; use `indexOf` for byte positions

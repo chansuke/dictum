@@ -1,0 +1,9 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "eval_error(\"now()\")"
+---
+error[E0311]: `now()` needs a time; pass one with `Ctx::with_now`
+ --> rule:1:1
+  |
+1 | now()
+  | ^^^^^

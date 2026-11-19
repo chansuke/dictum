@@ -1,0 +1,6 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "explain(\"any(nums, # > 4)\")"
+---
+any(nums, # > 4)   → true  (nums = [3, 1, 4, 1, 5, 9, 2, 6])
+└─ # > 4           → true  [element 4]  (# = 5)

@@ -1,0 +1,7 @@
+---
+source: crates/dictum/tests/diagnostics.rs
+expression: "explain(r#\"\"admin\" in user.Tags && user.Age >= 18\"#)"
+---
+"admin" in user.Tags && user.Age >= 18   → true
+├─ "admin" in user.Tags                  → true  (user.Tags = ["admin", "beta"])
+└─ user.Age >= 18                        → true  (user.Age = 36)

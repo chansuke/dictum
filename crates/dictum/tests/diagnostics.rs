@@ -37,7 +37,6 @@ fn type_errors() {
 }
 
 #[test]
-#[ignore = "pending M3: evaluation"]
 fn runtime_errors() {
     let schema = Schema::<Facts>::builder().build().unwrap();
     let facts = sample();
@@ -48,4 +47,18 @@ fn runtime_errors() {
     insta::assert_snapshot!("char_boundary_help", eval_error(r#""héllo"[2:]"#));
     insta::assert_snapshot!("clock_unset", eval_error("now()"));
     insta::assert_snapshot!("overflow", eval_error("user.Age + 9223372036854775807"));
+}
+
+#[test]
+fn explain_tree() {
+    let schema = Schema::<Facts>::builder().build().unwrap();
+    let facts = sample();
+    let explain = |src: &str| {
+        let rule = Rule::<Dynamic, Facts>::compile(src, &schema).unwrap();
+        rule.explain(&Ctx::new(&facts)).to_string()
+    };
+    insta::assert_snapshot!("explain_and", explain(r#""admin" in user.Tags && user.Age >= 18"#));
+    insta::assert_snapshot!("explain_short_circuit", explain("user.Age < 18 && 7 % 0 > 0"));
+    insta::assert_snapshot!("explain_failure", explain("user.Age > 18 && 7 % 0 > 0"));
+    insta::assert_snapshot!("explain_predicate", explain("any(nums, # > 4)"));
 }
