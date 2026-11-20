@@ -83,7 +83,7 @@ MSRVはRust 1.85。edition 2024 は1.85以上を要求するので、これよ�
 | 依存 | `no_std` での使い方 |
 | --- | --- |
 | `regex` | `default-features = false` で `alloc` のみ（1.13.1のソースで確認）。`std` がないと内部でスピンロックを使う |
-| `jiff` | `alloc` のみ。タイムゾーンDBは使えないので、`timezone()` は `std` が必要 |
+| `jiff` | `alloc` のみ。タイムゾーンDBは使わない（`timezone()` を提供しない理由の1つ） |
 | `libm` | `floor` `ceil` `round` `pow` は `core` にないので、`std` の有無にかかわらず常に `libm` を使う。ターゲット間で結果がビット単位で一致する |
 | `rust_decimal` | `default-features = false` |
 
@@ -391,18 +391,23 @@ pub struct Limits {
 
 ## 組み込み関数
 
-expr-langの組み込み関数をすべて提供し、ルールでよく使うものをMVPに入れる。各関数はシグネチャを持ち、Checkerが引数の型を検査する。組み込み関数の名前は `dictum-syntax` の一覧1つで管理し、Checkerと評価エンジンはその一覧を網羅的に照合する。関数を一覧に足すと、型付けと実装の両方を書くまでビルドが通らない。
+expr-langの組み込み関数を `timezone` を除いてすべて提供する。各関数はシグネチャを持ち、Checkerが引数の型を検査する。組み込み関数の名前は `dictum-syntax` の一覧1つで管理し、Checkerと評価エンジンはその一覧を網羅的に照合する。関数を一覧に足すと、型付けと実装の両方を書くまでビルドが通らない。
 
-| カテゴリ | MVP | その後 |
-| --- | --- | --- |
-| 文字列 | `trim` `upper` `lower` `split` `replace` `hasPrefix` `hasSuffix` `indexOf` | `trimPrefix` `trimSuffix` `splitAfter` `repeat` `lastIndexOf` |
-| 数値 | `max` `min` `abs` `ceil` `floor` `round` | |
-| 配列の述語 | `all` `any` `none` `one` `filter` `map` `count` `find` `findIndex` | `findLast` `findLastIndex` `groupBy` `reduce` |
-| 配列の操作 | `first` `last` `sum` `len` `join` | `concat` `flatten` `uniq` `mean` `median` `take` `reverse` `sort` `sortBy` |
-| マップ | `keys` `values` | |
-| 型変換 | `int` `float` `string` `type` `decimal` | `toJSON` `fromJSON` `toBase64` `fromBase64` `toPairs` `fromPairs` |
-| 日時 | `now` `duration` `date` | `timezone` |
-| その他 | `get` | ビット演算 `bitand` `bitor` など |
+| カテゴリ | 関数 |
+| --- | --- |
+| 文字列 | `trim` `trimPrefix` `trimSuffix` `upper` `lower` `split` `splitAfter` `replace` `repeat` `hasPrefix` `hasSuffix` `indexOf` `lastIndexOf` |
+| 数値 | `max` `min` `abs` `ceil` `floor` `round` `mean` `median` |
+| 配列の述語 | `all` `any` `none` `one` `filter` `map` `count` `find` `findIndex` `findLast` `findLastIndex` `groupBy` `sortBy` `reduce` |
+| 配列の操作 | `first` `last` `sum` `len` `join` `concat` `flatten` `uniq` `take` `reverse` `sort` |
+| マップ | `keys` `values` |
+| 型変換 | `int` `float` `string` `type` `decimal` `toJSON` `fromJSON` `toBase64` `fromBase64` `toPairs` `fromPairs` |
+| 日時 | `now` `duration` `date` |
+| ビット演算 | `bitand` `bitor` `bitxor` `bitnand` `bitnot` `bitshl` `bitshr` `bitushr` |
+| その他 | `get` |
+
+`timezone` は提供しない。タイムゾーンを表す値の型と、`no_std` では使えないタイムゾーンDBが要るうえ、`date(s, layout, tz)` やメソッド呼び出しと組み合わせないと使い道がないためである。`date` もGo版の書式を指定する形（`date(s, layout)`、`date(s, layout, tz)`）はまだ提供せず、`date(s)` だけを受け付ける。
+
+型の付く言語にしたため、Go版と結果が変わる関数がある。`groupBy` のキーと `fromPairs` のキーは文字列に限る（マップのキーが常に文字列なので）。`reduce` の `#acc` は初期値の型、初期値がなければ要素の型を持ち、本体はその型でなければならない。`findIndex` と `findLastIndex` は見つからないときGo版のnilではなく `-1` を返す。`sort` は順序のある要素の配列なら何でも並べ、等しい要素の順を保つ。差分はそれぞれ適合テストの `deviation` に書き、`just conformance-go` が残りのケースをGo版で実行して結果が一致することを確かめる。
 
 `indexOf` は添字と同じくバイト位置を返すので、`s[indexOf(s, "x"):]` がそのまま使える。一方、`len` は文字数を返すので、ASCII以外を含む文字列では `len` の値を添字の計算に使えない。誤って文字の途中を指した場合は `CharBoundary`（E0304）になり、エラーには添字がバイト位置であることを説明するヘルプが付く。
 

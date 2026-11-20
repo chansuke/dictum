@@ -131,6 +131,5 @@ builtins! {
     Date = "date";
     // misc
     Get = "get";
-    // Post-MVP builtins (timezone, ...) are added
-    // here when implemented; until then they are unknown functions (E0203).
+    // `timezone` is not provided (see the design doc); it is an unknown function (E0203).
 }
