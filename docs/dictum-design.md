@@ -84,7 +84,7 @@ MSRVはRust 1.85。edition 2024 は1.85以上を要求するので、これよ�
 | 依存 | `no_std` での使い方 |
 | --- | --- |
 | `regex` | `default-features = false` で `alloc` のみ（1.13.1のソースで確認）。`std` がないと内部でスピンロックを使う |
-| `jiff` | `alloc` のみ。`tzdb` feature（既定で有効）では `tzdb-bundle-always` でIANAのタイムゾーンDB（約200 KB）をバイナリに埋め込む。DBの埋め込みも `alloc` だけで動くので、`no_std` でも `timezone("Asia/Tokyo")` が使え、どのマシンでも同じタイムゾーンになる |
+| `jiff` | `alloc` のみ。`tzdb` feature（既定で有効）では `tzdb-bundle-always` でIANAのタイムゾーンDB（約200 KB）をバイナリに埋め込む。DBの埋め込みも `alloc` だけで動くので、`no_std` でも `timezone("Asia/Tokyo")` が使え、どのマシンでも同じタイムゾーンになる。利用側が jiff の `tz-system` を有効にしても、`timezone()` は埋め込んだDBだけを引く |
 | `libm` | `floor` `ceil` `round` `pow` は `core` にないので、`std` の有無にかかわらず常に `libm` を使う。ターゲット間で結果がビット単位で一致する |
 | `rust_decimal` | `default-features = false` |
 
@@ -410,7 +410,7 @@ expr-langの組み込み関数をすべて提供する。各関数はシグネ�
 
 `timezone(name)` はIANAの名前（`"Asia/Tokyo"`）からタイムゾーンを返す。名前は大文字と小文字を区別する（Linux上のGoと同じ）。`""` と `"UTC"` は `tzdb` featureがなくても使える。`"Local"` は、ルールの結果が実行するマシンで変わらないようにエラーにする。
 
-型の付く言語にしたため、Go版と結果が変わる関数がある。`groupBy` のキーと `fromPairs` のキーは文字列に限る（マップのキーが常に文字列なので）。`reduce` の `#acc` は初期値の型、初期値がなければ要素の型を持ち、本体はその型でなければならない。`findIndex` と `findLastIndex` は見つからないときGo版のnilではなく `-1` を返す。`sort` は順序のある要素の配列なら何でも並べ、等しい要素の順を保つ。差分はそれぞれ適合テストの `deviation` に書き、`just conformance-go` が残りのケースをGo版で実行して結果が一致することを確かめる。
+型の付く言語にしたため、Go版と結果が変わる関数がある。`groupBy` のキーと `fromPairs` のキーは文字列に限る（マップのキーが常に文字列なので）。`reduce` の `#acc` は初期値の型、初期値がなければ要素の型を持ち、本体はその型でなければならない。`reduce` は値を際限なく入れ子にできる唯一の関数なので、入れ子が256段を超えるとE0312で止める（値をたどる再帰がスタックを使い切らないように）。`findIndex` と `findLastIndex` は見つからないときGo版のnilではなく `-1` を返す。`sort` は順序のある要素の配列なら何でも並べ、等しい要素の順を保つ。差分はそれぞれ適合テストの `deviation` に書き、`just conformance-go` が残りのケースをGo版で実行して結果が一致することを確かめる。
 
 `indexOf` は添字と同じくバイト位置を返すので、`s[indexOf(s, "x"):]` がそのまま使える。一方、`len` は文字数を返すので、ASCII以外を含む文字列では `len` の値を添字の計算に使えない。誤って文字の途中を指した場合は `CharBoundary`（E0304）になり、エラーには添字がバイト位置であることを説明するヘルプが付く。
 
