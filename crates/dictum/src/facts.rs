@@ -63,6 +63,10 @@ pub trait Object {
     note = "use #[dictum(skip)] to keep the field out of rules"
 )]
 pub trait Field {
+    /// For an integer type, the values it can hold: the interval analysis that skips
+    /// overflow checks starts from these. `None` for every other type.
+    #[doc(hidden)]
+    const RANGE: Option<(i64, i64)> = None;
     /// The dictum type of values of `Self`.
     fn ty() -> Type;
     /// Borrow `self` as a value.
@@ -114,11 +118,27 @@ macro_rules! scalar_fields {
 
 scalar_fields! {
     bool => Bool(Bool),
-    i8 => Int(Int), i16 => Int(Int), i32 => Int(Int), i64 => Int(Int),
-    u8 => Int(Int), u16 => Int(Int), u32 => Int(Int),
     f32 => Float(Float), f64 => Float(Float),
     jiff::SignedDuration => Duration(Duration),
 }
+
+/// Integer fields: an `int` whose `RANGE` is the Rust type's bounds.
+macro_rules! int_fields {
+    ($($rust:ty),* $(,)?) => {$(
+        impl Field for $rust {
+            #[allow(clippy::cast_lossless)]
+            const RANGE: Option<(i64, i64)> = Some((<$rust>::MIN as i64, <$rust>::MAX as i64));
+            fn ty() -> Type {
+                Type::Int
+            }
+            fn read(&self) -> Value<'_> {
+                Value(Repr::Int(From::from(*self)))
+            }
+        }
+    )*};
+}
+
+int_fields!(i8, i16, i32, i64, u8, u16, u32);
 
 /// A `Timestamp` is a time shown in UTC; a `Zoned` keeps its zone.
 impl Field for jiff::Timestamp {
@@ -213,6 +233,7 @@ impl<T: Field> Field for Box<[T]> {
 
 /// `&T` for sized `T`: the root borrowing its parts (`Facts<'a> { user: &'a User }`).
 impl<T: Field> Field for &T {
+    const RANGE: Option<(i64, i64)> = T::RANGE;
     fn ty() -> Type {
         T::ty()
     }
@@ -222,6 +243,7 @@ impl<T: Field> Field for &T {
 }
 
 impl<T: Field> Field for Box<T> {
+    const RANGE: Option<(i64, i64)> = T::RANGE;
     fn ty() -> Type {
         T::ty()
     }
