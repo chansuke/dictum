@@ -5,7 +5,7 @@ What "done" means for a change, and which check gives the evidence. Every check 
 | when | command | time |
 | --- | --- | --- |
 | before every commit | `just verify` (formatting, clippy, rustdoc, typos, actionlint, all tests) | ~1 min |
-| every PR | `just ci` (adds cargo-deny, MSRV, no_std, bench and fuzz builds, Lean, the differential tests against Lean, TLA+) | ~1 min locally, parallel jobs in CI |
+| every PR | `just ci` (adds cargo-deny, the conformance cases against Go, the tests on WASM, MSRV, no_std, bench and fuzz builds, Lean, the differential tests against Lean, TLA+) | ~1 min locally, parallel jobs in CI |
 | nightly | `.github/workflows/deep.yml`: 10 min of fuzzing per target, property and differential tests with 100k cases | |
 
 Tools come from `nix develop`. Rust comes from rustup (`rust-toolchain.toml`, pinned).
@@ -19,6 +19,8 @@ Tools come from `nix develop`. Rust comes from rustup (`rust-toolchain.toml`, pi
 | unit tests | primitives (`engine/ops.rs`, `Budget`) and the single lists (`ErrorCode`, `Builtin`, reserved words) | `#[cfg(test)]`, `crates/*/tests` |
 | property tests (proptest) | invariants over generated input: `Type::option` normalization, `Span`, Go `%` semantics; `eval == explain` (equivalence); `RuleSet` vs standalone rules (sharing) | `crates/dictum/tests/properties.rs` |
 | conformance (e2e) | `tests/conformance/*.toml` through the public API; each case at every reached stage (parse, check, eval) | `crates/dictum/tests/conformance.rs` |
+| conformance against Go | every case without a `deviation` gives Go expr's result, and every `deviation` still differs from Go | `just conformance-go`: `crates/dictum/benches/go/conformance_test.go` |
+| tests on WASM | the workspace's tests pass on `wasm32-wasip1` (a 32-bit target) under wasmtime, with all features and with none; those that need a thread or a process (the thread test, trybuild, the differential tests against Lean) are ignored there | `just wasm` |
 | API e2e | contexts, `ClockUnset`, rule sets, explain reports, limits, threads | `crates/dictum/tests/api.rs` |
 | snapshots (insta) | rendered diagnostics | `crates/dictum/tests/diagnostics.rs` |
 | compile-fail (trybuild) | what the derive and the type system reject: `HashMap`, `u64`, reserved names, generics, enums, a wrong facts type, a non-`Output` result, the private engine | `crates/dictum/tests/ui` |
