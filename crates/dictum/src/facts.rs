@@ -57,7 +57,7 @@ pub trait Object {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be used in a dictum fact",
     note = "supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, \
-            jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], \
+            jiff::Timestamp, jiff::Zoned, jiff::SignedDuration, jiff::tz::TimeZone, Option<T>, Vec<T>, Box<[T]>, &[T], \
             Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs",
     note = "HashMap is rejected because its order is not deterministic; use BTreeMap",
     note = "use #[dictum(skip)] to keep the field out of rules"
@@ -117,8 +117,35 @@ scalar_fields! {
     i8 => Int(Int), i16 => Int(Int), i32 => Int(Int), i64 => Int(Int),
     u8 => Int(Int), u16 => Int(Int), u32 => Int(Int),
     f32 => Float(Float), f64 => Float(Float),
-    jiff::Timestamp => Time(Time),
     jiff::SignedDuration => Duration(Duration),
+}
+
+/// A `Timestamp` is a time shown in UTC; a `Zoned` keeps its zone.
+impl Field for jiff::Timestamp {
+    fn ty() -> Type {
+        Type::Time
+    }
+    fn read(&self) -> Value<'_> {
+        Value(Repr::Time(*self, jiff::tz::TimeZone::UTC))
+    }
+}
+
+impl Field for jiff::Zoned {
+    fn ty() -> Type {
+        Type::Time
+    }
+    fn read(&self) -> Value<'_> {
+        Value(Repr::Time(self.timestamp(), self.time_zone().clone()))
+    }
+}
+
+impl Field for jiff::tz::TimeZone {
+    fn ty() -> Type {
+        Type::Location
+    }
+    fn read(&self) -> Value<'_> {
+        Value(Repr::Location(self.clone()))
+    }
 }
 
 impl Field for String {

@@ -4,7 +4,7 @@ error[E0277]: `HashMap<std::string::String, std::string::String>` cannot be used
 5 |     pub notes: HashMap<String, String>,
   |                ^^^^^^^^^^^^^^^^^^^^^^^ the trait `dictum::__private::Field` is not implemented for `HashMap<std::string::String, std::string::String>`
   |
-  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
+  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::Zoned, jiff::SignedDuration, jiff::tz::TimeZone, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
   = note: HashMap is rejected because its order is not deterministic; use BTreeMap
   = note: use #[dictum(skip)] to keep the field out of rules
   = help: the following other types implement trait `dictum::__private::Field`:
@@ -24,7 +24,7 @@ error[E0277]: `HashMap<std::string::String, std::string::String>` cannot be used
 3 | #[derive(dictum::Dictum)]
   |          ^^^^^^^^^^^^^^ the trait `dictum::__private::Field` is not implemented for `HashMap<std::string::String, std::string::String>`
   |
-  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
+  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::Zoned, jiff::SignedDuration, jiff::tz::TimeZone, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
   = note: HashMap is rejected because its order is not deterministic; use BTreeMap
   = note: use #[dictum(skip)] to keep the field out of rules
   = help: the following other types implement trait `dictum::__private::Field`:

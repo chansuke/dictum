@@ -28,7 +28,12 @@ var sampleNow = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 func runGo(src string) (any, error) {
 	p, err := expr.Compile(src,
 		expr.Env(Facts{}),
-		expr.Function("now", func(...any) (any, error) { return sampleNow, nil }, new(func() time.Time)),
+		expr.Function("now", func(args ...any) (any, error) {
+			if len(args) == 1 {
+				return sampleNow.In(args[0].(*time.Location)), nil
+			}
+			return sampleNow, nil
+		}, new(func() time.Time), new(func(*time.Location) time.Time)),
 		// dictum has no local timezone; without this date() parses in time.Local.
 		expr.Timezone("UTC"),
 	)

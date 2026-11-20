@@ -114,6 +114,12 @@ pub(super) fn string<'v>(v: &'v Value<'_>, span: Span) -> Result<&'v str, Fault>
 fn time(v: &Value<'_>, span: Span) -> Result<jiff::Timestamp, Fault> {
     v.as_time().ok_or_else(|| internal("expected a time", span))
 }
+fn zoned<'v>(v: &'v Value<'_>, span: Span) -> Result<(jiff::Timestamp, &'v jiff::tz::TimeZone), Fault> {
+    v.as_zoned().ok_or_else(|| internal("expected a time", span))
+}
+fn location<'v>(v: &'v Value<'_>, span: Span) -> Result<&'v jiff::tz::TimeZone, Fault> {
+    v.as_location().ok_or_else(|| internal("expected a location", span))
+}
 fn duration(v: &Value<'_>, span: Span) -> Result<jiff::SignedDuration, Fault> {
     v.as_duration().ok_or_else(|| internal("expected a duration", span))
 }
@@ -419,10 +425,10 @@ pub(super) fn binary<'a>(
         }
         BinaryOp::TimeSubTime => Ok(Value(Repr::Duration(time(&l, span)?.duration_since(time(&r, span)?)))),
         BinaryOp::TimeAddDuration | BinaryOp::TimeSubDuration => {
-            let (t, d) = (time(&l, span)?, duration(&r, span)?);
+            let ((t, z), d) = (zoned(&l, span)?, duration(&r, span)?);
             let d = if op == BinaryOp::TimeSubDuration { d.checked_neg() } else { Some(d) };
             let t = d.and_then(|d| t.checked_add(d).ok()).ok_or_else(|| Frame::fault(EvalErrorKind::Overflow, span))?;
-            Ok(Value(Repr::Time(t)))
+            Ok(Value(Repr::Time(t, z.clone())))
         }
         BinaryOp::DurationAdd | BinaryOp::DurationSub => {
             let (a, b) = (duration(&l, span)?, duration(&r, span)?);
@@ -1237,12 +1243,25 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             let decoded = String::from_utf8(bytes).map_err(|_| invalid("base64, not UTF-8 text", text))?;
             built(f, decoded, span)
         }
-        Intrinsic::TypeName => Ok(Value(Repr::Str(Str::Shared(arg(0)?.tag().name().into())))),
-        Intrinsic::Now => {
-            f.now.map(|t| Value(Repr::Time(t))).ok_or_else(|| Frame::fault(EvalErrorKind::ClockUnset, span))
+        Intrinsic::TypeName => {
+            // Go names a time and a duration by their package path, as its docs show
+            // with `type(now()) == "time.Time"`.
+            let name = match arg(0)?.tag() {
+                Tag::Time => "time.Time",
+                Tag::Duration => "time.Duration",
+                t => t.name(),
+            };
+            Ok(Value(Repr::Str(Str::Shared(name.into()))))
         }
+        Intrinsic::Now => {
+            let zone = if args.is_empty() { jiff::tz::TimeZone::UTC } else { location(arg(0)?, span)?.clone() };
+            f.now.map(|t| Value(Repr::Time(t, zone))).ok_or_else(|| Frame::fault(EvalErrorKind::ClockUnset, span))
+        }
+        Intrinsic::LoadLocation => Ok(Value(Repr::Location(builtins::load_location(s(0)?).map_err(at(span))?))),
         Intrinsic::ParseDuration => Ok(Value(Repr::Duration(builtins::parse_go_duration(s(0)?).map_err(at(span))?))),
-        Intrinsic::ParseDate => Ok(Value(Repr::Time(builtins::parse_date(s(0)?).map_err(at(span))?))),
+        Intrinsic::ParseDate => {
+            Ok(Value(Repr::Time(builtins::parse_date(s(0)?).map_err(at(span))?, jiff::tz::TimeZone::UTC)))
+        }
         Intrinsic::GetArray => {
             let xs = seq(arg(0)?, span)?;
             Ok(ops::index(int(arg(1)?, span)?, xs.len()).ok().and_then(|i| xs.get(i)).unwrap_or(Value::NIL))
@@ -1411,7 +1430,8 @@ fn go_string(v: &Value<'_>, out: &mut String, f: &mut Frame<'_>, span: Span) -> 
         }
         Repr::Str(s) => out.push_str(s.as_str()),
         Repr::Bytes(b) => out.push_str(&String::from_utf8_lossy(b.as_slice())),
-        Repr::Time(t) => builtins::go_time(*t, out),
+        Repr::Time(t, z) => builtins::go_time(*t, z, out),
+        Repr::Location(z) => out.push_str(builtins::location_name(z)),
         Repr::Duration(d) => builtins::go_duration(*d, out),
         Repr::Array(s) => {
             steps(f, s.len(), span)?;

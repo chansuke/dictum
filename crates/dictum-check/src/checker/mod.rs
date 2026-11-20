@@ -62,6 +62,7 @@ fn scalar(tag: Tag) -> Option<Type> {
         Tag::Bytes => Type::Bytes,
         Tag::Time => Type::Time,
         Tag::Duration => Type::Duration,
+        Tag::Location => Type::Location,
         Tag::Array | Tag::Map | Tag::Struct => return None,
     })
 }

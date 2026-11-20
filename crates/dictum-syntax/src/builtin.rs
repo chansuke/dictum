@@ -129,7 +129,7 @@ builtins! {
     Now = "now";
     Duration = "duration";
     Date = "date";
+    Timezone = "timezone";
     // misc
     Get = "get";
-    // `timezone` is not provided (see the design doc); it is an unknown function (E0203).
 }

@@ -33,10 +33,12 @@ pub enum Dynamic {
     String(String),
     /// `bytes`
     Bytes(Vec<u8>),
-    /// `time`
-    Time(jiff::Timestamp),
+    /// `time`, in the zone it is shown in
+    Time(jiff::Zoned),
     /// `duration`
     Duration(jiff::SignedDuration),
+    /// `location`
+    Location(jiff::tz::TimeZone),
     /// `array`
     Array(Vec<Dynamic>),
     /// `map` (and structs, keyed by field name)
@@ -105,8 +107,9 @@ impl Field for Dynamic {
             Dynamic::Decimal(d) => Repr::Decimal(*d),
             Dynamic::String(s) => Repr::Str(Str::Borrowed(s)),
             Dynamic::Bytes(b) => Repr::Bytes(Bytes::Borrowed(b)),
-            Dynamic::Time(t) => Repr::Time(*t),
+            Dynamic::Time(t) => Repr::Time(t.timestamp(), t.time_zone().clone()),
             Dynamic::Duration(d) => Repr::Duration(*d),
+            Dynamic::Location(z) => Repr::Location(z.clone()),
             Dynamic::Array(v) => Repr::Array(Seq::Borrowed(v)),
             Dynamic::Map(m) => Repr::Map(MapRef::Borrowed(m)),
         })

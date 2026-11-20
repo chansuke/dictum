@@ -367,10 +367,27 @@ pub(crate) fn go_duration(d: jiff::SignedDuration, out: &mut String) {
     }
 }
 
-/// A time as Go's `time.Time.String` prints a UTC time:
-/// `2026-01-01 00:00:00 +0000 UTC`, with a fraction only when nonzero.
-pub(crate) fn go_time(t: jiff::Timestamp, out: &mut String) {
-    let dt = jiff::tz::Offset::UTC.to_datetime(t);
+/// What Go shows of `t` in zone `z`: the civil time, the UTC offset in seconds, and
+/// the zone's abbreviation. A fixed offset that is not UTC has no abbreviation, as
+/// Go's `FixedZone("", offset)`, and is shown as the offset.
+pub(crate) fn zoned(t: jiff::Timestamp, z: &jiff::tz::TimeZone) -> (jiff::civil::DateTime, i32, Option<String>) {
+    let info = z.to_offset_info(t);
+    let offset = info.offset();
+    let name = z.iana_name().map(|_| String::from(info.abbreviation()));
+    (offset.to_datetime(t), offset.seconds(), name)
+}
+
+/// `-0700`, as Go writes an offset without a zone name.
+pub(crate) fn go_offset(seconds: i32, colon: bool, out: &mut String) {
+    let minutes = seconds.unsigned_abs() / 60;
+    out.push(if seconds < 0 { '-' } else { '+' });
+    let _ = write!(out, "{:02}{}{:02}", minutes / 60, if colon { ":" } else { "" }, minutes % 60);
+}
+
+/// Go's `time.Time.String`: `2026-01-01 09:00:00 +0900 JST`, with a fraction only
+/// when nonzero.
+pub(crate) fn go_time(t: jiff::Timestamp, z: &jiff::tz::TimeZone, out: &mut String) {
+    let (dt, offset, name) = zoned(t, z);
     let _ = write!(
         out,
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
@@ -390,7 +407,34 @@ pub(crate) fn go_time(t: jiff::Timestamp, out: &mut String) {
         out.push('.');
         out.push_str(&f);
     }
-    out.push_str(" +0000 UTC");
+    out.push(' ');
+    go_offset(offset, false, out);
+    out.push(' ');
+    match name {
+        Some(name) => out.push_str(&name),
+        None => go_offset(offset, false, out),
+    }
+}
+
+/// A location as Go's `Location.String` names it.
+pub(crate) fn location_name(z: &jiff::tz::TimeZone) -> &str {
+    z.iana_name().unwrap_or("")
+}
+
+/// `timezone(name)`: Go's `time.LoadLocation`, from the bundled database. Names
+/// match exactly, as Go's do on Linux (the database itself ignores case). `Local`
+/// is refused so that a rule gives the same result on every machine.
+pub(crate) fn load_location(name: &str) -> Result<jiff::tz::TimeZone, EvalErrorKind> {
+    if name.is_empty() || name == "UTC" {
+        return Ok(jiff::tz::TimeZone::UTC);
+    }
+    #[cfg(feature = "tzdb")]
+    if let Ok(z) = jiff::tz::db().get(name) {
+        if z.iana_name() == Some(name) {
+            return Ok(z);
+        }
+    }
+    Err(invalid("time zone", name))
 }
 
 #[cfg(test)]
@@ -474,7 +518,7 @@ mod tests {
     #[test]
     fn times_print_as_go_utc() {
         let mut s = String::new();
-        go_time(jiff::Timestamp::from_second(1_767_225_600).unwrap(), &mut s);
+        go_time(jiff::Timestamp::from_second(1_767_225_600).unwrap(), &jiff::tz::TimeZone::UTC, &mut s);
         assert_eq!(s, "2026-01-01 00:00:00 +0000 UTC");
     }
 
