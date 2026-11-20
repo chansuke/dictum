@@ -149,7 +149,7 @@ Interface depth: users write `#[derive(Dictum)]` and call `Schema::builder` → 
 3. Reference evaluation (was M2). The spec interpreter (`engine/interp.rs`) over the typed IR plus the MVP builtins passes the conformance suite. Every intentional deviation from Go is recorded as `deviation = "..."`.
 4. Fast evaluation. Folding, closure compiler, budget. The proptest differential suite (`rule.eval(ctx) == rule.explain(ctx).into_result()`, and a `RuleSet` result equal to the standalone `Rule` results: every value on success, the first failing rule's error otherwise) passes 100k cases. Criterion benchmarks against Go are recorded.
 5. Rule engine. `Rule`, `RuleSet` with sharing, explain, `Ctx`. A differential test shows each `RuleSet` result equals the standalone `Rule` results. The quickstart example runs.
-6. Extensions, each done separately. Each remaining builtin has its `Builtin` entry, typing, implementation, and ported conformance cases. CLI/REPL: `dictum eval --facts f.json '<expr>'` prints the result for the whole conformance corpus, which requires the dynamic-root decision below. WASM: the conformance runner passes on `wasm32-wasip1` under wasmtime in CI.
+6. Extensions, each done separately. Each remaining builtin has its `Builtin` entry, typing, implementation, and ported conformance cases. CLI/REPL: `dictum eval --schema s.toml --facts f.json '<expr>'` prints the expected result for the whole conformance corpus. WASM: the conformance runner passes on `wasm32-wasip1` under wasmtime in CI.
 
 ## Synthesis decision
 
@@ -197,7 +197,7 @@ Changed after review:
 
 ## Open questions and risks
 
-- Dynamic roots. Should a schema be buildable from a runtime description (JSON keys become `any` variables) for the CLI and for config-defined schemas? `StructDesc` needs `'static` names, so this means leaking a descriptor or adding a second descriptor kind. Which does M6 want?
+- Dynamic roots (decided for M6). The CLI takes a TOML schema that names every type, so rules over JSON facts type-check as derived ones do. `dictum::runtime` (feature `runtime-schema`) builds the descriptors and leaks them, which suits one schema per process; a second, `Arc`-held descriptor kind is left until hot reload of runtime schemas is needed.
 - Is `MAX_DEPTH = 128` right for the smallest no_std stacks you target? Should it be a compile option?
 - Not verified against the Go source: `**` returning `float`; `?:` being exactly `a ? a : b` with a `bool` `a` (implemented as `a || b`); and how expr-lang treats `{` in predicate position (I chose "always predicate braces", so a map-literal body is written `{{a: #}}`). These should be pinned by conformance cases before M1 ends.
 - Newtype fields (`UserId(i64)`). Add `#[dictum(transparent)]`, or let users implement `Field` by delegating (possible because `Value` is opaque)?
