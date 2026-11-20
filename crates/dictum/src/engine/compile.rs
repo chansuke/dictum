@@ -10,7 +10,7 @@
 //! E0900. There is no other failure mode.
 
 use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -118,6 +118,8 @@ pub(crate) struct Compiler<'c> {
     patterns: &'c BTreeMap<NodeId, Arc<regex::Regex>>,
     /// Shared-cache slot per node id (RuleSet only).
     slots: Option<&'c [Option<CacheSlot>]>,
+    /// Integer operations proved not to overflow (`optimize::optimize`).
+    unchecked: &'c BTreeSet<NodeId>,
 }
 
 impl<'c> Compiler<'c> {
@@ -125,8 +127,9 @@ impl<'c> Compiler<'c> {
         schema: &'c Arc<SchemaCore>,
         patterns: &'c BTreeMap<NodeId, Arc<regex::Regex>>,
         slots: Option<&'c [Option<CacheSlot>]>,
+        unchecked: &'c BTreeSet<NodeId>,
     ) -> Self {
-        Compiler { schema, patterns, slots }
+        Compiler { schema, patterns, slots, unchecked }
     }
 
     pub(crate) fn tree(&self, program: &ir::Program) -> Result<Tree, Ice> {
@@ -487,6 +490,16 @@ impl<'c> Compiler<'c> {
     fn binary(&self, op: BinaryOp, lhs: &ir::Expr, rhs: &ir::Expr, id: NodeId, span: Span) -> Result<Compiled, Ice> {
         let overflow = move || Frame::fault(EvalErrorKind::Overflow, span);
         Ok(match op {
+            BinaryOp::Int(op) if self.unchecked.contains(&id) => {
+                // Lean `evalFast`: the ranges prove the result fits, so no check.
+                let (a, b) = (self.int(lhs)?, self.int(rhs)?);
+                Compiled::Int(match op {
+                    IntOp::Add => int_node(move |f| Ok(a(f)?.wrapping_add(b(f)?))),
+                    IntOp::Sub => int_node(move |f| Ok(a(f)?.wrapping_sub(b(f)?))),
+                    IntOp::Mul => int_node(move |f| Ok(a(f)?.wrapping_mul(b(f)?))),
+                    IntOp::Mod => return Err(Ice("an unchecked modulo")),
+                })
+            }
             BinaryOp::Int(op) => {
                 let (a, b) = (self.int(lhs)?, self.int(rhs)?);
                 Compiled::Int(match op {

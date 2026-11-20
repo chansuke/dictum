@@ -25,6 +25,7 @@ pub(crate) mod json;
 pub(crate) mod layout;
 pub(crate) mod methods;
 pub(crate) mod ops;
+pub(crate) mod optimize;
 pub(crate) mod set;
 pub(crate) mod trace;
 pub(crate) mod value;
@@ -133,20 +134,30 @@ pub(crate) struct Prepared {
     tree: Result<compile::Tree, compile::Ice>,
 }
 
-/// A folded copy of `checked`'s IR, with the dependence of each folded node.
-fn folded(checked: &Checked, schema: &Arc<SchemaCore>) -> (ir::Program, Vec<analysis::Dependence>) {
+/// A copy of `checked`'s IR for the closure tree: folded, then simplified
+/// (`optimize`), with the dependence of each node it keeps.
+struct Optimized {
+    ir: ir::Program,
+    deps: Vec<analysis::Dependence>,
+    /// The integer operations that cannot overflow, so compile without the check.
+    unchecked: alloc::collections::BTreeSet<ir::NodeId>,
+}
+
+fn folded(checked: &Checked, schema: &Arc<SchemaCore>) -> Optimized {
     let mut ir = checked.ir.clone();
     let before = analysis::dependence(&ir, schema);
     fold::fold(&mut ir, schema, &before);
+    let unchecked = optimize::optimize(&mut ir);
     let deps = analysis::dependence(&ir, schema);
-    (ir, deps)
+    Optimized { ir, deps, unchecked }
 }
 
 impl Prepared {
     /// Fold a copy of the IR and compile it, for a single rule.
     pub(crate) fn new(checked: Checked, schema: Arc<SchemaCore>) -> Result<Prepared, CompileError> {
-        let (ir, _) = folded(&checked, &schema);
-        let prepared = Prepared::compile(checked, schema, &ir, None);
+        let opt = folded(&checked, &schema);
+        let ir = &opt.ir;
+        let prepared = Prepared::compile(checked, schema, &opt, None);
         if let Err(ice) = &prepared.tree {
             let args = alloc::vec![dictum_syntax::Arg::Text(ice.0.into())];
             let mut diags = dictum_syntax::Diagnostics::new();
@@ -161,10 +172,10 @@ impl Prepared {
     fn compile(
         checked: Checked,
         schema: Arc<SchemaCore>,
-        ir: &ir::Program,
+        opt: &Optimized,
         slots: Option<&[Option<analysis::CacheSlot>]>,
     ) -> Prepared {
-        let tree = compile::Compiler::new(&schema, &checked.patterns, slots).tree(ir);
+        let tree = compile::Compiler::new(&schema, &checked.patterns, slots, &opt.unchecked).tree(&opt.ir);
         Prepared { checked, schema, tree }
     }
 
@@ -230,16 +241,16 @@ impl PreparedSet {
     /// its slot table.
     pub(crate) fn new(rules: Vec<Checked>, schema: Arc<SchemaCore>) -> PreparedSet {
         let folded: Vec<_> = rules.iter().map(|c| folded(c, &schema)).collect();
-        let inputs: Vec<_> = folded.iter().map(|(ir, deps)| (ir, deps.as_slice())).collect();
+        let inputs: Vec<_> = folded.iter().map(|o| (&o.ir, o.deps.as_slice())).collect();
         let sharing = analysis::share(&inputs);
         let mut by_name = BTreeMap::new();
         let mut prepared = Vec::with_capacity(rules.len());
-        for (i, (checked, (ir, _))) in rules.into_iter().zip(&folded).enumerate() {
+        for (i, (checked, opt)) in rules.into_iter().zip(&folded).enumerate() {
             if let Some(name) = &checked.name {
                 by_name.insert(name.clone(), i);
             }
             let slots = sharing.per_rule.get(i).map(Vec::as_slice);
-            prepared.push(Prepared::compile(checked, schema.clone(), ir, slots));
+            prepared.push(Prepared::compile(checked, schema.clone(), opt, slots));
         }
         PreparedSet { rules: prepared, by_name, cache_slots: sharing.slot_count }
     }
