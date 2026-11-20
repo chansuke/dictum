@@ -91,6 +91,12 @@ expr = "findIndex(nums, # > 3)"
 expect = 2
 
 [[case]]
+name = "findIndex of no match"
+expr = "findIndex(nums, # > 100)"
+expect = -1
+deviation = "Go returns nil when nothing matches; dictum returns -1, as indexOf does"
+
+[[case]]
 name = "sum"
 expr = "sum(nums)"
 expect = 31
