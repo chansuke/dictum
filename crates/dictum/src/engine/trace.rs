@@ -97,25 +97,33 @@ fn literal(e: &ir::Expr) -> bool {
     }
 }
 
-/// Elements in `v`, counting into nested containers.
+/// Elements in `v`, counting into nested containers, once per reference. Counting
+/// stops past [`MAX_REPORTED_ELEMENTS`], so a value shared many times costs at most
+/// that many visits.
 fn size(v: &Value<'_>) -> u64 {
-    match (v.as_seq(), v.as_map()) {
-        (Some(s), _) => s
-            .iter()
-            .take(usize::try_from(MAX_REPORTED_ELEMENTS).unwrap_or(usize::MAX).saturating_add(1))
-            .fold(u64::try_from(s.len()).unwrap_or(u64::MAX), |n, x| n.saturating_add(size(&x))),
-        (None, Some(m)) => {
-            let mut n = u64::try_from(m.len()).unwrap_or(u64::MAX);
-            m.for_each(&mut |_, x| {
-                n = n.saturating_add(size(&x));
-                if n > MAX_REPORTED_ELEMENTS {
-                    core::ops::ControlFlow::Break(())
-                } else {
-                    core::ops::ControlFlow::Continue(())
-                }
-            });
-            n
+    let mut n = 0u64;
+    count(v, &mut n);
+    n
+}
+
+fn count(v: &Value<'_>, n: &mut u64) {
+    let add = |n: &mut u64, k: usize| *n = n.saturating_add(u64::try_from(k).unwrap_or(u64::MAX));
+    if let Some(s) = v.as_seq() {
+        add(n, s.len());
+        for x in s.iter() {
+            if *n > MAX_REPORTED_ELEMENTS {
+                return;
+            }
+            count(&x, n);
         }
-        _ => 0,
+    } else if let Some(m) = v.as_map() {
+        add(n, m.len());
+        m.for_each(&mut |_, x| {
+            if *n > MAX_REPORTED_ELEMENTS {
+                return core::ops::ControlFlow::Break(());
+            }
+            count(&x, n);
+            core::ops::ControlFlow::Continue(())
+        });
     }
 }

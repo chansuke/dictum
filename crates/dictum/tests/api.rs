@@ -270,3 +270,25 @@ fn rule_set_explains_one_rule_by_name() {
     assert!(*report.result().as_ref().unwrap());
     assert!(set.explain("missing", &Ctx::new(&facts)).is_none());
 }
+
+#[test]
+fn a_value_shared_many_times_is_walked_once_per_reference_budget() {
+    // Each step doubles the references to one value; walking it per reference would
+    // take 2^40 visits when the folder makes it a constant or explain sizes it.
+    let src = r#"len(reduce(1..40, [#acc, #acc], fromJSON("0")))"#;
+    let rule = Rule::<i64, Facts>::compile(src, &schema()).unwrap();
+    let facts = sample();
+    let ctx = Ctx::new(&facts);
+    assert_eq!(rule.eval(&ctx).unwrap(), 2);
+    assert_eq!(rule.explain(&ctx).into_result().unwrap(), 2);
+}
+
+#[test]
+fn copying_out_a_shared_value_is_charged_per_reference() {
+    // The `Dynamic` result is a tree: 2^40 elements, so the copy must hit the limit.
+    let src = r#"reduce(1..40, [#acc, #acc], fromJSON("0"))"#;
+    let rule = Rule::<Dynamic, Facts>::compile(src, &schema()).unwrap();
+    let facts = sample();
+    let err = rule.eval(&Ctx::new(&facts)).unwrap_err();
+    assert!(matches!(err.kind(), EvalErrorKind::AllocLimit), "{err:?}");
+}

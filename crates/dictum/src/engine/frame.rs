@@ -37,6 +37,10 @@ impl Budget {
 
     /// Charge `n` elements/bytes *before* allocating them, so an oversized request
     /// (`repeat("x", 1 << 40)`) fails without attempting the allocation.
+    pub(crate) const fn alloc_left(&self) -> u64 {
+        self.alloc
+    }
+
     pub(crate) fn alloc(&mut self, n: u64) -> Result<(), EvalErrorKind> {
         self.alloc = self.alloc.checked_sub(n).ok_or(EvalErrorKind::AllocLimit)?;
         Ok(())

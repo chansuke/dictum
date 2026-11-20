@@ -28,7 +28,7 @@ use crate::engine::frame::{Fault, Frame};
 use crate::engine::interp::{self, Res, at, internal};
 use crate::engine::ops;
 use crate::engine::set::ConstSet;
-use crate::engine::value::{MapRef, Repr, Seq, Value};
+use crate::engine::value::{Repr, Seq, Value};
 
 /// The Rust type a node of some dictum type evaluates to.
 pub(crate) trait Kind: 'static {
@@ -396,7 +396,7 @@ impl<'c> Compiler<'c> {
                         }
                         out.push((key, value));
                     }
-                    Ok(Value(Repr::Map(MapRef::Owned(out.into()))))
+                    Ok(Value::map(out))
                 }))
             }
             ExprKind::Range { from, to } => {

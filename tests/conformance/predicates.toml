@@ -432,3 +432,21 @@ error = "E0205"
 name = "reduce with too many arguments"
 expr = "reduce(nums, #acc + #, 0, 1)"
 error = "E0205"
+
+[[case]]
+name = "reduce cannot nest a value without bound"
+expr = 'len(toJSON(reduce(1..30000, [#acc], fromJSON("0"))))'
+error = "E0312"
+deviation = "Go nests as deep as memory allows; dictum stops at 256 levels so that every walk over a value stays within the stack"
+
+[[case]]
+name = "reduce may nest a value a few levels"
+expr = 'toJSON(reduce(1..3, [#acc], fromJSON("0")))'
+expect = """
+[
+  [
+    [
+      0
+    ]
+  ]
+]"""

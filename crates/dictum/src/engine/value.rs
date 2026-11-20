@@ -26,6 +26,19 @@ pub fn missing_field<'a>() -> Value<'a> {
     Value(Repr::Nil)
 }
 
+/// How deeply `reduce` may nest computed containers. Twice the syntax's depth, so
+/// that a `fromJSON` value (at most [`dictum_syntax::MAX_DEPTH`]) fits inside an
+/// accumulator, while every recursive walk over a value stays well within the stack.
+pub(crate) const MAX_VALUE_DEPTH: u16 = 256;
+
+/// The most elements a folded constant holds (as the folder's allocation budget).
+const MAX_CONST_ELEMENTS: usize = 1 << 16;
+
+/// The depth of a container of `children`.
+fn nesting<'v, 'a: 'v>(children: impl Iterator<Item = &'v Value<'a>>) -> u16 {
+    children.map(Value::depth).max().unwrap_or(0).saturating_add(1)
+}
+
 // Every evaluation step moves values; a time carries its zone without growing them.
 #[cfg(target_pointer_width = "64")]
 const _: () = assert!(core::mem::size_of::<Value<'static>>() == 32);
@@ -85,8 +98,8 @@ impl Bytes<'_> {
 pub(crate) enum Seq<'a> {
     /// A fact field; elements are read on access.
     Borrowed(&'a dyn SeqView),
-    /// Built during evaluation.
-    Owned(Arc<[Value<'a>]>),
+    /// Built during evaluation, with its nesting depth ([`Value::depth`]).
+    Owned(Arc<[Value<'a>]>, u16),
     /// A constant of the rule; elements are converted on access, so using one costs
     /// no allocation.
     Const(Arc<[Const]>),
@@ -98,7 +111,7 @@ impl<'a> Seq<'a> {
     pub(crate) fn len(&self) -> usize {
         match self {
             Seq::Borrowed(v) => v.len(),
-            Seq::Owned(xs) => xs.len(),
+            Seq::Owned(xs, _) => xs.len(),
             Seq::Const(xs) => xs.len(),
             Seq::Range { from, to } => {
                 let n = i128::from(*to).saturating_sub(i128::from(*from)).saturating_add(1).max(0);
@@ -110,7 +123,7 @@ impl<'a> Seq<'a> {
     pub(crate) fn get(&self, i: usize) -> Option<Value<'a>> {
         match self {
             Seq::Borrowed(v) => v.get(i),
-            Seq::Owned(xs) => xs.get(i).cloned(),
+            Seq::Owned(xs, _) => xs.get(i).cloned(),
             Seq::Const(xs) => xs.get(i).map(Value::from_const),
             Seq::Range { from, to } => {
                 let n = from.checked_add(i64::try_from(i).ok()?)?;
@@ -131,7 +144,7 @@ pub(crate) enum MapRef<'a> {
     Borrowed(&'a dyn MapView),
     /// A map literal: insertion order, unique keys (checked when built). Literals
     /// are small, so lookup is a linear scan; no hasher is needed in `no_std`.
-    Owned(Arc<[(Arc<str>, Value<'a>)]>),
+    Owned(Arc<[(Arc<str>, Value<'a>)]>, u16),
     /// A constant of the rule, as `Seq::Const`.
     Const(Arc<[(Arc<str>, Const)]>),
 }
@@ -140,7 +153,7 @@ impl<'a> MapRef<'a> {
     pub(crate) fn len(&self) -> usize {
         match self {
             MapRef::Borrowed(m) => m.len(),
-            MapRef::Owned(kvs) => kvs.len(),
+            MapRef::Owned(kvs, _) => kvs.len(),
             MapRef::Const(kvs) => kvs.len(),
         }
     }
@@ -148,7 +161,7 @@ impl<'a> MapRef<'a> {
     pub(crate) fn get(&self, key: &str) -> Option<Value<'a>> {
         match self {
             MapRef::Borrowed(m) => m.get(key),
-            MapRef::Owned(kvs) => kvs.iter().find(|(k, _)| &**k == key).map(|(_, v)| v.clone()),
+            MapRef::Owned(kvs, _) => kvs.iter().find(|(k, _)| &**k == key).map(|(_, v)| v.clone()),
             MapRef::Const(kvs) => kvs.iter().find(|(k, _)| &**k == key).map(|(_, v)| Value::from_const(v)),
         }
     }
@@ -157,7 +170,7 @@ impl<'a> MapRef<'a> {
     pub(crate) fn for_each(&self, f: &mut dyn FnMut(&str, Value<'a>) -> ControlFlow<()>) {
         match self {
             MapRef::Borrowed(m) => m.for_each(&mut |k, v| f(k, v)),
-            MapRef::Owned(kvs) => {
+            MapRef::Owned(kvs, _) => {
                 for (k, v) in kvs.iter() {
                     if f(k, v.clone()).is_break() {
                         break;
@@ -197,7 +210,26 @@ impl<'a> Value<'a> {
 
     /// A computed array.
     pub(crate) fn array(xs: Vec<Value<'a>>) -> Self {
-        Value(Repr::Array(Seq::Owned(Arc::from(xs))))
+        let depth = nesting(xs.iter());
+        Value(Repr::Array(Seq::Owned(Arc::from(xs), depth)))
+    }
+
+    /// A map built during evaluation: insertion order, unique keys.
+    pub(crate) fn map(kvs: Vec<(Arc<str>, Value<'a>)>) -> Self {
+        let depth = nesting(kvs.iter().map(|(_, v)| v));
+        Value(Repr::Map(MapRef::Owned(Arc::from(kvs), depth)))
+    }
+
+    /// How deeply containers built during evaluation nest inside this value: 0 for a
+    /// scalar, 1 for a container of facts or constants (their depth is bounded by
+    /// the schema and the rule's syntax). Only `reduce` can nest values without a
+    /// bound, so it checks this against [`MAX_VALUE_DEPTH`].
+    pub(crate) fn depth(&self) -> u16 {
+        match &self.0 {
+            Repr::Array(Seq::Owned(_, d)) | Repr::Map(MapRef::Owned(_, d)) => *d,
+            Repr::Array(_) | Repr::Map(_) => 1,
+            _ => 0,
+        }
     }
 
     /// A folded constant or literal. Constants are part of the rule, so building one
@@ -221,8 +253,15 @@ impl<'a> Value<'a> {
     }
 
     /// The value as a constant, for the folder. `None` for what a constant cannot
-    /// hold: a struct, a range (kept lazy), or anything borrowed from facts.
+    /// hold: a struct, a range (kept lazy), anything borrowed from facts, or more
+    /// than [`MAX_CONST_ELEMENTS`] elements. A constant is a tree, so a value shared
+    /// several times counts once per reference.
     pub(crate) fn to_const(&self) -> Option<Const> {
+        self.to_const_within(&mut MAX_CONST_ELEMENTS.clone())
+    }
+
+    fn to_const_within(&self, budget: &mut usize) -> Option<Const> {
+        *budget = budget.checked_sub(1)?;
         Some(match &self.0 {
             Repr::Nil => Const::Nil,
             Repr::Bool(b) => Const::Bool(*b),
@@ -236,11 +275,13 @@ impl<'a> Value<'a> {
             Repr::Duration(d) => Const::Duration(*d),
             Repr::Location(z) => Const::Location(z.clone()),
             Repr::Array(Seq::Const(xs)) => Const::Array(xs.clone()),
-            Repr::Array(Seq::Owned(xs)) => Const::Array(xs.iter().map(Value::to_const).collect::<Option<_>>()?),
-            Repr::Map(MapRef::Const(kvs)) => Const::Map(kvs.clone()),
-            Repr::Map(MapRef::Owned(kvs)) => {
-                Const::Map(kvs.iter().map(|(k, v)| Some((k.clone(), v.to_const()?))).collect::<Option<_>>()?)
+            Repr::Array(Seq::Owned(xs, _)) => {
+                Const::Array(xs.iter().map(|x| x.to_const_within(budget)).collect::<Option<_>>()?)
             }
+            Repr::Map(MapRef::Const(kvs)) => Const::Map(kvs.clone()),
+            Repr::Map(MapRef::Owned(kvs, _)) => Const::Map(
+                kvs.iter().map(|(k, v)| Some((k.clone(), v.to_const_within(budget)?))).collect::<Option<_>>()?,
+            ),
             Repr::Str(Str::Borrowed(_))
             | Repr::Bytes(Bytes::Borrowed(_))
             | Repr::Array(Seq::Borrowed(_) | Seq::Range { .. })
@@ -331,14 +372,38 @@ impl<'a> Value<'a> {
         matches!(self.0, Repr::Nil)
     }
 
-    /// Elements a range inside this value would add if copied out (to a `Dynamic`
-    /// result). Everything else is already in memory, so only ranges are counted.
-    pub(crate) fn range_elements(&self) -> u64 {
+    /// Elements that copying this value out (to a `Dynamic` result) would build
+    /// beyond what is in memory: a range's elements, and a computed container once
+    /// per reference, since the copy is a tree. Counting stops past `limit`.
+    pub(crate) fn copied_elements(&self, limit: u64) -> u64 {
+        let mut n = 0u64;
+        self.count_copied(limit, &mut n);
+        n
+    }
+
+    fn count_copied(&self, limit: u64, n: &mut u64) {
+        let add = |n: &mut u64, k: usize| *n = n.saturating_add(u64::try_from(k).unwrap_or(u64::MAX));
         match &self.0 {
-            Repr::Array(Seq::Range { .. }) => self.as_seq().map_or(0, |s| u64::try_from(s.len()).unwrap_or(u64::MAX)),
-            Repr::Array(Seq::Owned(xs)) => xs.iter().fold(0u64, |n, x| n.saturating_add(x.range_elements())),
-            Repr::Map(MapRef::Owned(kvs)) => kvs.iter().fold(0u64, |n, (_, x)| n.saturating_add(x.range_elements())),
-            _ => 0,
+            Repr::Array(s @ Seq::Range { .. }) => add(n, s.len()),
+            Repr::Array(Seq::Owned(xs, _)) => {
+                add(n, xs.len());
+                for x in xs.iter() {
+                    if *n > limit {
+                        return;
+                    }
+                    x.count_copied(limit, n);
+                }
+            }
+            Repr::Map(MapRef::Owned(kvs, _)) => {
+                add(n, kvs.len());
+                for (_, x) in kvs.iter() {
+                    if *n > limit {
+                        return;
+                    }
+                    x.count_copied(limit, n);
+                }
+            }
+            _ => {}
         }
     }
 

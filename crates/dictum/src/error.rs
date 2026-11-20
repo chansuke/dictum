@@ -154,6 +154,9 @@ pub enum EvalErrorKind {
     DuplicateKey(Box<str>),
     /// `now()` was called on a `Ctx` built without [`Ctx::with_now`](crate::Ctx::with_now).
     ClockUnset,
+    /// `reduce` nested a value deeper than 256 levels (`[#acc]` at each step), which
+    /// would let a later walk over it exhaust the stack.
+    DepthLimit,
     /// A schema function returned `Err`.
     Function {
         /// The function's name.
@@ -181,6 +184,7 @@ impl EvalErrorKind {
             EvalErrorKind::CharBoundary { index } => (vec![Arg::Int(*index)], Some(Help::ByteIndices)),
             EvalErrorKind::TypeMismatch { expected, found } => (vec![text(expected), text(found)], None),
             EvalErrorKind::InvalidArgument { what, value } => (vec![text(what), text(value)], None),
+            EvalErrorKind::DepthLimit => (vec![Arg::Int(i64::from(crate::engine::value::MAX_VALUE_DEPTH))], None),
             EvalErrorKind::DuplicateKey(key) => (vec![text(key)], None),
             EvalErrorKind::Function { name, error } => (vec![Arg::Name(name.clone()), text(&format!("{error}"))], None),
             EvalErrorKind::Internal(what) => (vec![text(what)], None),
@@ -200,6 +204,7 @@ impl EvalErrorKind {
             EvalErrorKind::InvalidArgument { .. } => ErrorCode::InvalidArgument,
             EvalErrorKind::DuplicateKey(_) => ErrorCode::RuntimeDuplicateKey,
             EvalErrorKind::ClockUnset => ErrorCode::ClockUnset,
+            EvalErrorKind::DepthLimit => ErrorCode::DepthLimit,
             EvalErrorKind::Function { .. } => ErrorCode::FunctionFailed,
             EvalErrorKind::Internal(_) => ErrorCode::Internal,
         }
