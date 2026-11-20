@@ -7,7 +7,9 @@ all-features = true
 yanked = "deny"
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+# Zlib: foldhash, under indexmap, which the CLI's TOML and JSON readers use to keep
+# the order fields are written in. Permissive and OSI-approved, as the others are.
+allow = ["MIT", "Apache-2.0", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.9
 
 [bans]

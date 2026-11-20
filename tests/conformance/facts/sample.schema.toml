@@ -1,0 +1,30 @@
+# The schema of `sample.json`: the same types as `dictum_testkit::Facts`, so the
+# conformance cases run through the CLI as they do through the derived structs.
+
+[root]
+user = "User"
+order = "Order"
+nums = "array<int>"
+limit = "int"
+
+[types.User]
+Name = "string"
+Age = "int"
+Score = "float"
+Active = "bool"
+Email = "Option<string>"
+Tags = "array<string>"
+Created = "time"
+Attrs = "any"
+Manager = "Option<User>"
+
+[types.Item]
+Sku = "string"
+Price = "float"
+Qty = "int"
+
+[types.Order]
+Total = "float"
+Items = "array<Item>"
+Notes = "map<string, string>"
+Discount = "Option<float>"

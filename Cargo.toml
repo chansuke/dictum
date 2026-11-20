@@ -16,6 +16,7 @@ members = [
     "crates/dictum",
     "crates/dictum-derive",
     "crates/dictum-testkit",
+    "crates/dictum-cli",
 ]
 # The fuzz crate needs nightly and libFuzzer, so it has its own workspace.
 exclude = ["fuzz"]
@@ -50,6 +51,10 @@ syn = { version = "2.0.110", default-features = false, features = [
 ] }
 quote = "1.0.44"
 proc-macro2 = "1.0.103"
+
+# The CLI's own dependencies (std only; not dependencies of the library crates).
+clap = { version = "4.6", features = ["derive"] }
+serde_json = "1.0.149"
 
 # Test-only crates. Never dependencies of a published crate.
 dictum-testkit = { path = "crates/dictum-testkit" }
