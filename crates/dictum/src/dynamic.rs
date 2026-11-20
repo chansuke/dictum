@@ -45,6 +45,17 @@ pub enum Dynamic {
     Map(DynMap),
 }
 
+/// The value as a rule literal would write it: `"Ada"`, `[1, 2]`, `{gift: "yes"}`,
+/// `nil`, a duration as `1h30m0s`, a float as Go prints it. Used by `explain` and
+/// the CLI.
+impl core::fmt::Display for Dynamic {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let mut out = String::new();
+        crate::explain::write_value(self, &mut out);
+        f.write_str(&out)
+    }
+}
+
 /// String-keyed map in insertion order with unique keys.
 ///
 /// The `Vec` is private so uniqueness holds by construction; lookups are linear,
