@@ -146,6 +146,7 @@ fn json_conversions_are_charged_to_the_budget() {
 }
 
 #[test]
+#[cfg_attr(target_os = "wasi", ignore = "wasm32-wasip1 has no threads")]
 fn compiled_rules_are_shared_across_threads() {
     let rule = Arc::new(Rule::<bool, Facts>::compile("user.Age >= 18", &schema()).unwrap());
     let handles: Vec<_> = (0..4)

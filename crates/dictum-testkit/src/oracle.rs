@@ -41,6 +41,9 @@ impl Oracle {
     /// the tests that need it should be ignored. Panics if `$DICTUM_ORACLE` names a
     /// file that does not exist.
     pub fn locate() -> Result<PathBuf, String> {
+        if cfg!(target_os = "wasi") {
+            return Err("WASI cannot start the oracle process; `just drt` runs these on the host".into());
+        }
         if let Some(path) = std::env::var_os("DICTUM_ORACLE") {
             let path = PathBuf::from(path);
             assert!(path.is_file(), "DICTUM_ORACLE={} does not exist; run `just oracle`", path.display());

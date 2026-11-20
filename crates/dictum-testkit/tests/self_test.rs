@@ -52,7 +52,10 @@ fn load_str(text: &str) -> Result<Vec<conformance::Case>, String> {
     // One directory per call: tests run in parallel.
     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("dictum-testkit-{}-{n}", std::process::id()));
+    // Under cargo's per-target scratch directory, which a WASI runner can map; WASI
+    // has no process id, and its single process runs the tests one at a time.
+    let process = if cfg!(target_os = "wasi") { 0 } else { std::process::id() };
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("dictum-testkit-{process}-{n}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("a.toml"), text).unwrap();
