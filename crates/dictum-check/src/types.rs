@@ -190,8 +190,9 @@ impl Tag {
 /// the same field list):
 /// - `fields[i]` is what `Object::field(FieldId(i))` returns;
 /// - names are valid dictum identifiers (`dictum_syntax::is_identifier`) and unique;
-/// - the descriptor lives in a `static`, so `&'static StructDesc` identity is type
-///   identity. This is why `Type::Struct` holds a reference, not an `Arc`.
+/// - the descriptor lives in a `static` (or, described at run time, is leaked), so
+///   `&'static StructDesc` identity is type identity. This is why `Type::Struct`
+///   holds a reference, not an `Arc`.
 #[derive(Debug)]
 pub struct StructDesc {
     name: &'static str,
@@ -229,20 +230,38 @@ impl PartialEq for StructDesc {
     }
 }
 
-/// One field of a derived struct.
-#[derive(Debug)]
+/// One field of a struct: derived, or described at run time.
 pub struct FieldDesc {
     name: &'static str,
-    /// A function rather than a `Type` so the descriptor is const-constructible
-    /// (`Type` holds `Arc`s) and recursive structs (`children: Vec<Node>`) need no
-    /// lazy initialization.
-    ty: fn() -> Type,
+    ty: FieldType,
+}
+
+/// How a field's type is produced. A function rather than a `Type` so the
+/// descriptor is const-constructible (`Type` holds `Arc`s) and recursive structs
+/// (`children: Vec<Node>`) need no lazy initialization; a runtime description
+/// cannot be a function pointer, so it is a closure, which may read a type that is
+/// filled in after every descriptor of a recursive schema exists.
+#[derive(Clone, Copy)]
+enum FieldType {
+    Derived(fn() -> Type),
+    Described(&'static (dyn Fn() -> Type + Send + Sync)),
+}
+
+impl core::fmt::Debug for FieldDesc {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("FieldDesc").field("name", &self.name).finish_non_exhaustive()
+    }
 }
 
 impl FieldDesc {
     /// Used by the derive.
     pub const fn new(name: &'static str, ty: fn() -> Type) -> Self {
-        FieldDesc { name, ty }
+        FieldDesc { name, ty: FieldType::Derived(ty) }
+    }
+
+    /// A field of a struct described at run time (`dictum::runtime`).
+    pub const fn described(name: &'static str, ty: &'static (dyn Fn() -> Type + Send + Sync)) -> Self {
+        FieldDesc { name, ty: FieldType::Described(ty) }
     }
 
     /// The rule-visible name (after `rename`).
@@ -252,7 +271,10 @@ impl FieldDesc {
 
     /// The field's dictum type.
     pub fn ty(&self) -> Type {
-        (self.ty)()
+        match self.ty {
+            FieldType::Derived(f) => f(),
+            FieldType::Described(f) => f(),
+        }
     }
 }
 
