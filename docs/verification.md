@@ -20,6 +20,7 @@ Tools come from `nix develop`. Rust comes from rustup (`rust-toolchain.toml`, pi
 | property tests (proptest) | invariants over generated input: `Type::option` normalization, `Span`, Go `%` semantics; `eval == explain` (equivalence); `RuleSet` vs standalone rules (sharing) | `crates/dictum/tests/properties.rs` |
 | conformance (e2e) | `tests/conformance/*.toml` through the public API; each case at every reached stage (parse, check, eval) | `crates/dictum/tests/conformance.rs` |
 | conformance against Go | every case without a `deviation` gives Go expr's result, and every `deviation` still differs from Go | `just conformance-go`: `crates/dictum/benches/go/conformance_test.go` |
+| optimizer | the rewrites of each rule in `Opt/Simp.lean` and `Opt/Reorder.lean`, and the ranges of `Opt/Range.lean`, on a schema with a `u8` field; seeded bugs (every check skipped, every operand safe, reordering past an operand that can fail) each fail them | `engine/optimize.rs` unit tests, `tests/conformance/optimize.toml` |
 | conformance through the CLI | the same cases give the same results with the TOML schema and JSON facts in `tests/conformance/facts/`, and those facts equal the derived sample | `crates/dictum-cli/tests/conformance.rs` |
 | tests on WASM | the workspace's tests pass on `wasm32-wasip1` (a 32-bit target) under wasmtime, with all features and with none; those that need a thread or a process (the thread test, trybuild, the differential tests against Lean) are ignored there | `just wasm` |
 | API e2e | contexts, `ClockUnset`, rule sets, explain reports, limits, threads | `crates/dictum/tests/api.rs` |
@@ -61,7 +62,7 @@ The Lean fragment (`formal/lean/Dictum/Core.lean`) has checked 64-bit integers, 
 
 ### Optimizations, and the theorem that allows each
 
-The engine may only apply an optimization that has a theorem here, under the same side conditions. Each theorem says the optimized rule gives the same result as the original on every input, errors included. A new optimization is proved first, then implemented, and the differential tests compare the two.
+The engine may only apply an optimization that has a theorem here, under the same side conditions. Constant folding is `engine/fold.rs`; the interval analysis, the simplifications and the reordering are `engine/optimize.rs`, which names the Lean definition each function follows. They touch `int` and `bool` only, decide `<` only, and treat a field read at any depth as the fragment's `var`. Each theorem says the optimized rule gives the same result as the original on every input, errors included. A new optimization is proved first, then implemented, and the differential tests compare the two.
 
 | optimization | condition | theorem |
 | --- | --- | --- |
