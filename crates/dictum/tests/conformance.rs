@@ -22,7 +22,7 @@
     clippy::arithmetic_side_effects
 )]
 
-use dictum::{Ctx, Dynamic, ErrorCode, Rule, Schema};
+use dictum::{Ctx, DynMap, Dynamic, ErrorCode, Rule, Schema};
 use dictum_check::{Env, Type};
 use dictum_testkit::conformance::{self, Case, Expect, Stage};
 use dictum_testkit::{Facts, sample, sample_now};
@@ -93,10 +93,34 @@ fn run(case: &Case, reached: Stage) -> Result<(), Failed> {
     if fast != spec {
         return Err(ctx(format!("eval and explain disagree: eval {fast:?}, explain {spec:?}")));
     }
-    if fast != case.expect {
+    if unordered(&fast) != unordered(&case.expect) {
         return Err(ctx(format!("got {fast:?}")));
     }
     Ok(())
+}
+
+/// `e` with every map's entries sorted by key. A map's entry order is not part of a
+/// case's result: TOML tables are sorted and Go iterates maps in random order.
+fn unordered(e: &Expect) -> Expect {
+    fn sort(v: &Dynamic) -> Dynamic {
+        match v {
+            Dynamic::Array(xs) => Dynamic::Array(xs.iter().map(sort).collect()),
+            Dynamic::Map(m) => {
+                let mut entries: Vec<(&str, Dynamic)> = m.iter().map(|(k, v)| (k, sort(v))).collect();
+                entries.sort_by(|a, b| a.0.cmp(b.0));
+                let mut out = DynMap::new();
+                for (k, v) in entries {
+                    out.insert(k, v);
+                }
+                Dynamic::Map(out)
+            }
+            v => v.clone(),
+        }
+    }
+    match e {
+        Expect::Value(v) => Expect::Value(sort(v)),
+        Expect::Error(code) => Expect::Error(code.clone()),
+    }
 }
 
 fn codes(diags: &[dictum::Diagnostic]) -> Vec<&'static str> {

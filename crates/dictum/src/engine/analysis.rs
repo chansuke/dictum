@@ -55,10 +55,12 @@ fn visit(e: &ir::Expr, schema: &SchemaCore, out: &mut [Dependence]) -> (Dependen
         _ => Dependence::Const,
     };
     let mut reads_pointer = matches!(e.kind(), ExprKind::Pointer(_));
-    if let ExprKind::Predicate { seq, body, .. } = e.kind() {
-        let (d, p) = visit(seq, schema, out);
-        dep = dep.max(d);
-        reads_pointer = p;
+    if let ExprKind::Predicate { seq, arg, body, .. } = e.kind() {
+        for c in core::iter::once(&**seq).chain(arg.as_deref()) {
+            let (d, p) = visit(c, schema, out);
+            dep = dep.max(d);
+            reads_pointer |= p;
+        }
         if let Some(b) = body {
             dep = dep.max(visit(b, schema, out).0);
         }
@@ -171,7 +173,7 @@ fn key(e: &ir::Expr, visit: &mut dyn FnMut(usize, u32, &str)) -> (String, u32) {
         ExprKind::Array(_) => write!(out, "array"),
         ExprKind::Map(_) => write!(out, "map"),
         ExprKind::Range { .. } => write!(out, "range"),
-        ExprKind::Predicate { op, body, .. } => write!(out, "{op:?}{}", body.is_some()),
+        ExprKind::Predicate { op, arg, body, .. } => write!(out, "{op:?}{}{}", arg.is_some(), body.is_some()),
         ExprKind::Intrinsic { op, .. } => write!(out, "{op:?}"),
         ExprKind::Call { func, .. } => write!(out, "{func:?}"),
         // `Check` converts to the node's type, so the type is part of the key.

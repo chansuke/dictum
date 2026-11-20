@@ -126,8 +126,8 @@ fn max_predicates<'a>(roots: impl Iterator<Item = &'a Expr>) -> u16 {
     /// Predicate nesting below `e`: a predicate's body is one deeper than its sequence.
     fn go(e: &Expr) -> u16 {
         match &e.kind {
-            ExprKind::Predicate { seq, body, .. } => {
-                go(seq).max(body.as_deref().map_or(0, |b| go(b).saturating_add(1)))
+            ExprKind::Predicate { seq, arg, body, .. } => {
+                go(seq).max(arg.as_deref().map_or(0, go)).max(body.as_deref().map_or(0, |b| go(b).saturating_add(1)))
             }
             _ => e.children().map(go).max().unwrap_or(0),
         }
@@ -254,17 +254,31 @@ impl Validator {
                     return bad_type("range needs two ints");
                 }
             }
+            ExprKind::Predicate { op, arg, body, .. } => {
+                let arg_ok = match (op, arg.as_deref()) {
+                    (_, None) => true,
+                    (PredicateOp::SortBy(_), Some(order)) => *order.ty() == Type::String,
+                    (PredicateOp::Reduce, Some(init)) => *init.ty() == e.ty,
+                    (_, Some(_)) => false,
+                };
+                let body_ok = *op != PredicateOp::Reduce || body.as_deref().is_some_and(|b| *b.ty() == e.ty);
+                if !arg_ok || !body_ok {
+                    return bad_type(&format!("{op:?} with this argument or body"));
+                }
+            }
             ExprKind::Coalesce { .. }
             | ExprKind::Index { .. }
             | ExprKind::Slice { .. }
             | ExprKind::Array(_)
             | ExprKind::Map(_)
-            | ExprKind::Predicate { .. }
             | ExprKind::Intrinsic { .. } => {}
         }
-        // A predicate's body (not its sequence) is one predicate deeper.
-        if let ExprKind::Predicate { seq, body, .. } = &e.kind {
+        // A predicate's body (not its sequence or argument) is one predicate deeper.
+        if let ExprKind::Predicate { seq, arg, body, .. } = &e.kind {
             self.expr(seq, slots, preds, depth.saturating_add(1))?;
+            if let Some(a) = arg {
+                self.expr(a, slots, preds, depth.saturating_add(1))?;
+            }
             if let Some(b) = body {
                 self.expr(b, slots, preds.saturating_add(1), depth.saturating_add(1))?;
             }
@@ -361,8 +375,9 @@ impl Expr {
                 }
             }
             ExprKind::Range { from, to } => out.extend([&**from, &**to]),
-            ExprKind::Predicate { seq, body, .. } => {
+            ExprKind::Predicate { seq, arg, body, .. } => {
                 out.push(seq);
+                out.extend(arg.as_deref());
                 out.extend(body.as_deref());
             }
             ExprKind::Intrinsic { args, .. } | ExprKind::Call { args, .. } => out.extend(args),
@@ -401,8 +416,9 @@ impl Expr {
                 }
             }
             ExprKind::Range { from, to } => out.extend([&mut **from, &mut **to]),
-            ExprKind::Predicate { seq, body, .. } => {
+            ExprKind::Predicate { seq, arg, body, .. } => {
                 out.push(seq);
+                out.extend(arg.as_deref_mut());
                 out.extend(body.as_deref_mut());
             }
             ExprKind::Intrinsic { args, .. } | ExprKind::Call { args, .. } => out.extend(args),
@@ -461,8 +477,11 @@ pub enum ExprKind {
     Map(Vec<(Expr, Expr)>),
     /// `from..to` (inclusive, Go-compatible), a lazy sequence of `int`.
     Range { from: Box<Expr>, to: Box<Expr> },
-    /// `all(seq, body)` etc. `body` is `None` only where the builtin allows it.
-    Predicate { op: PredicateOp, seq: Box<Expr>, body: Option<Box<Expr>> },
+    /// `all(seq, body)` etc. `body` is `None` only where the builtin allows it. `arg`
+    /// is the optional third argument, evaluated after `seq` and outside the body's
+    /// scope: `sortBy`'s order (a string) or `reduce`'s initial `#acc` (of the
+    /// node's type); no other predicate has one.
+    Predicate { op: PredicateOp, seq: Box<Expr>, arg: Option<Box<Expr>>, body: Option<Box<Expr>> },
     /// A builtin resolved to one monomorphic operation.
     Intrinsic { op: Intrinsic, args: Vec<Expr> },
     /// A schema function.
@@ -755,6 +774,17 @@ pub enum PredicateOp {
     Find,
     /// `findIndex` → `int` (`-1` when not found)
     FindIndex,
+    /// `findLast` → `Option<T>`, scanning from the end
+    FindLast,
+    /// `findLastIndex` → `int` (`-1` when not found), scanning from the end
+    FindLastIndex,
+    /// `groupBy` → `Map<Array<T>>`, keyed by the body's string, groups in first-seen order
+    GroupBy,
+    /// `sortBy(xs, key[, order])`: every key first, then a stable sort by the keys' ordering
+    SortBy(CompareKind),
+    /// `reduce(xs, body[, init])` → the last `#acc`; without `init`, the first element
+    /// is the initial `#acc` and the body starts at the second
+    Reduce,
 }
 
 /// Non-predicate builtins after overload resolution.

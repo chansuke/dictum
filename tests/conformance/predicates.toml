@@ -1,0 +1,434 @@
+# findLast, findLastIndex, groupBy, sortBy and reduce over the sample facts.
+
+[[case]]
+name = "findLast"
+expr = "findLast(nums, # > 3)"
+expect = 6
+
+[[case]]
+name = "findLast over a range"
+expr = "findLast(1..9, # % 2 == 0)"
+expect = 8
+
+[[case]]
+name = "findLast with no match"
+expr = "findLast(nums, # > 30)"
+nil = true
+
+[[case]]
+name = "findLast of an empty array"
+expr = "findLast([], # > 3)"
+nil = true
+
+[[case]]
+name = "findLast scans from the end"
+expr = "findLast(nums, 10 % (# - 3) > 0)"
+expect = 6
+
+[[case]]
+name = "findLast fails on the first element it visits"
+expr = "findLast(nums, 10 % (# - 6) > 0)"
+error = "E0302"
+
+[[case]]
+name = "findLast of structs"
+expr = "findLast(order.Items, .Price > 50)?.Sku"
+expect = "A-1"
+
+[[case]]
+name = "findLast with a nested predicate"
+expr = "findLast(order.Items, all(user.Tags, len(#) > 3))?.Sku"
+expect = "B-2"
+
+[[case]]
+name = "findLast with a nested predicate and no match"
+expr = "findLast(order.Items, all(user.Tags, len(#) > 4))?.Sku"
+nil = true
+
+[[case]]
+name = "findLast piped"
+expr = "nums | findLast(# < 3)"
+expect = 2
+
+[[case]]
+name = "findLast of any elements"
+expr = "findLast([user.Attrs, 1], # > 5)"
+expect = 7
+
+[[case]]
+name = "findLast of any"
+expr = "findLast(user.Attrs, true)"
+error = "E0307"
+
+[[case]]
+name = "findLast with #index"
+expr = "findLast(nums, #index < 3)"
+expect = 4
+deviation = "Go accepts #index only in map and reduce; dictum accepts it in every predicate"
+
+[[case]]
+name = "findLast with a body that is not a bool"
+expr = "findLast(nums, #)"
+error = "E0201"
+
+[[case]]
+name = "findLast of a non-array"
+expr = "findLast(1, true)"
+error = "E0201"
+
+[[case]]
+name = "findLast arity"
+expr = "findLast(nums)"
+error = "E0205"
+
+[[case]]
+name = "findLastIndex"
+expr = "findLastIndex(nums, # > 3)"
+expect = 7
+
+[[case]]
+name = "findLastIndex over a range"
+expr = "findLastIndex(1..9, # % 2 == 0)"
+expect = 7
+
+[[case]]
+name = "findLastIndex of structs"
+expr = "findLastIndex(order.Items, .Qty == 1)"
+expect = 0
+
+[[case]]
+name = "findLastIndex piped"
+expr = "nums | findLastIndex(# == 1)"
+expect = 3
+
+[[case]]
+name = "findLastIndex with no match"
+expr = "findLastIndex(nums, # > 30)"
+expect = -1
+deviation = "Go returns nil when nothing matches; dictum returns -1, as its findIndex does"
+
+[[case]]
+name = "findLastIndex of an empty array"
+expr = "findLastIndex([], true)"
+expect = -1
+deviation = "Go returns nil when nothing matches; dictum returns -1, as its findIndex does"
+
+[[case]]
+name = "findLastIndex with a body error"
+expr = "findLastIndex(nums, 10 % (# - 6) > 0)"
+error = "E0302"
+
+[[case]]
+name = "findLastIndex arity"
+expr = "findLastIndex(nums, true, 1)"
+error = "E0205"
+
+[[case]]
+name = "groupBy"
+expr = 'groupBy(nums, # % 2 == 0 ? "even" : "odd")'
+expect = { even = [4, 2, 6], odd = [3, 1, 1, 5, 9] }
+
+[[case]]
+name = "groupBy piped"
+expr = 'nums | groupBy(# > 3 ? "big" : "small")'
+expect = { big = [4, 5, 9, 6], small = [3, 1, 1, 2] }
+
+[[case]]
+name = "groupBy lookup"
+expr = 'groupBy(nums, string(#))["1"]'
+expect = [1, 1]
+
+[[case]]
+name = "groupBy of structs"
+expr = 'groupBy(order.Items, .Sku)["B-2"]?.[0]?.Qty'
+expect = 2
+
+[[case]]
+name = "groupBy keys"
+expr = 'sort(keys(groupBy(nums, # % 2 == 0 ? "even" : "odd")))'
+expect = ["even", "odd"]
+
+[[case]]
+name = "groupBy keeps groups in first-seen order"
+expr = 'keys(groupBy(nums, # % 2 == 0 ? "even" : "odd"))'
+expect = ["odd", "even"]
+deviation = "Go's map has no order, so its keys come in random order; dictum keeps the order in which groups first appear"
+
+[[case]]
+name = "groupBy of an empty array"
+expr = 'groupBy([], "x")'
+expect = {}
+
+[[case]]
+name = "groupBy with a nested predicate"
+expr = 'len(groupBy(order.Items, filter(user.Tags, # != "beta")[0]))'
+expect = 1
+
+[[case]]
+name = "groupBy of any elements"
+expr = "groupBy([user.Attrs, 7, 8], string(#))"
+expect = { 7 = [7, 7], 8 = [8] }
+
+[[case]]
+name = "groupBy with an any key that is not a string"
+expr = "groupBy([user.Attrs], #)"
+error = "E0307"
+deviation = "Go groups by keys of any type; dictum maps have string keys, so convert the key with string()"
+
+[[case]]
+name = "groupBy with a key that is not a string"
+expr = "groupBy(nums, # % 2 == 0)"
+error = "E0201"
+deviation = "Go groups by keys of any type; dictum maps have string keys, so convert the key with string()"
+
+[[case]]
+name = "groupBy with a body error"
+expr = "groupBy(nums, string(10 % (# - 1)))"
+error = "E0302"
+
+[[case]]
+name = "groupBy of any"
+expr = 'groupBy(user.Attrs, "x")'
+error = "E0307"
+
+[[case]]
+name = "groupBy arity"
+expr = "groupBy(nums)"
+error = "E0205"
+
+[[case]]
+name = "sortBy"
+expr = "sortBy(nums, -#)"
+expect = [9, 6, 5, 4, 3, 2, 1, 1]
+
+[[case]]
+name = "sortBy descending"
+expr = 'sortBy(nums, #, "desc")'
+expect = [9, 6, 5, 4, 3, 2, 1, 1]
+
+[[case]]
+name = "sortBy ascending"
+expr = 'sortBy(nums, #, "asc")'
+expect = [1, 1, 2, 3, 4, 5, 6, 9]
+
+[[case]]
+name = "sortBy of strings by length"
+expr = "sortBy(user.Tags, len(#))"
+expect = ["beta", "admin"]
+
+[[case]]
+name = "sortBy of structs"
+expr = "sortBy(order.Items, .Price)[0].Sku"
+expect = "B-2"
+
+[[case]]
+name = "sortBy piped"
+expr = 'order.Items | sortBy(.Price, "desc") | map(.Sku)'
+expect = ["A-1", "B-2"]
+
+[[case]]
+name = "sortBy with a nested predicate"
+expr = "map(sortBy(order.Items, count(user.Tags, len(#) > 4) - .Qty), .Sku)"
+expect = ["B-2", "A-1"]
+
+[[case]]
+name = "sortBy of an empty array"
+expr = "sortBy([], #)"
+expect = []
+
+[[case]]
+name = "sortBy of any elements"
+expr = "sortBy([user.Attrs, 2, 9.5], #)"
+expect = [2, 7, 9.5]
+
+[[case]]
+name = "sortBy of mixed any keys"
+expr = 'sortBy([1, "a"], #)'
+error = "E0307"
+
+[[case]]
+name = "sortBy an invalid order"
+expr = 'sortBy(nums, #, "up")'
+error = "E0309"
+
+[[case]]
+name = "sortBy an invalid order of an empty array"
+expr = 'sortBy([], #, "up")'
+error = "E0309"
+
+[[case]]
+name = "sortBy checks the order before the keys"
+expr = 'sortBy(nums, 10 % (# - 1), "up")'
+error = "E0309"
+
+[[case]]
+name = "sortBy with a key error"
+expr = "sortBy(nums, 10 % (# - 1))"
+error = "E0302"
+
+[[case]]
+name = "sortBy an any order that is not a string"
+expr = "sortBy(nums, #, user.Attrs)"
+error = "E0307"
+
+[[case]]
+name = "sortBy a non-string order"
+expr = "sortBy(nums, #, 1)"
+error = "E0201"
+
+[[case]]
+name = "sortBy unordered keys"
+expr = "sortBy(nums, # > 1)"
+error = "E0201"
+
+[[case]]
+name = "sortBy struct keys"
+expr = "sortBy(order.Items, #)"
+error = "E0201"
+
+[[case]]
+name = "sortBy of any"
+expr = "sortBy(user.Attrs, #)"
+error = "E0307"
+
+[[case]]
+name = "sortBy arity"
+expr = 'sortBy(nums, #, "asc", 1)'
+error = "E0205"
+
+[[case]]
+name = "reduce"
+expr = "reduce(nums, #acc + #)"
+expect = 31
+
+[[case]]
+name = "reduce with an initial value"
+expr = "reduce(nums, #acc + #, 100)"
+expect = 131
+
+[[case]]
+name = "reduce of an empty array"
+expr = "reduce([], #acc + #)"
+error = "E0309"
+
+[[case]]
+name = "reduce of an empty array with an initial value"
+expr = "reduce([], #acc + #, 0)"
+expect = 0
+
+[[case]]
+name = "reduce starts at the second element without an initial value"
+expr = "reduce(nums, #acc + #index)"
+expect = 31
+
+[[case]]
+name = "reduce starts at the first element with an initial value"
+expr = "reduce(nums, #acc + #index, 0)"
+expect = 28
+
+[[case]]
+name = "reduce last #index"
+expr = "reduce(nums, #index)"
+expect = 7
+
+[[case]]
+name = "reduce skips the body for the first element"
+expr = "reduce(nums, #acc + 10 % (# - 3))"
+expect = 8
+
+[[case]]
+name = "reduce with a body error"
+expr = "reduce(nums, #acc + 10 % (# - 3), 0)"
+error = "E0302"
+
+[[case]]
+name = "reduce of structs"
+expr = "reduce(order.Items, #acc + .Price * .Qty, 0.0)"
+expect = 120.5
+
+[[case]]
+name = "reduce of strings"
+expr = 'reduce(user.Tags, #acc + "," + #)'
+expect = "admin,beta"
+
+[[case]]
+name = "reduce of strings with an initial value"
+expr = 'reduce(user.Tags, #acc + #, "")'
+expect = "adminbeta"
+
+[[case]]
+name = "reduce to nil"
+expr = "reduce(nums, #acc, nil)"
+nil = true
+
+[[case]]
+name = "reduce piped"
+expr = "nums | reduce(#acc + #)"
+expect = 31
+
+[[case]]
+name = "reduce piped with an initial value"
+expr = "nums | reduce(#acc + #, 1)"
+expect = 32
+
+[[case]]
+name = "reduce with a nested predicate"
+expr = "reduce(nums, #acc + count(nums, # == 1), 0)"
+expect = 16
+
+[[case]]
+name = "reduce in a predicate"
+expr = "filter(nums, reduce(nums, #acc + #) > #)"
+expect = [3, 1, 4, 1, 5, 9, 2, 6]
+
+[[case]]
+name = "reduce's initial value is in the enclosing scope"
+expr = "map(order.Items, reduce(nums, #acc + #index, #index))"
+expect = [28, 29]
+deviation = "Go types reduce's initial value in the enclosing predicate but evaluates it in reduce's own scope; dictum evaluates it where it is typed"
+
+[[case]]
+name = "reduce of any elements"
+expr = "reduce([user.Attrs, 1], #acc + #)"
+expect = 8
+
+[[case]]
+name = "reduce of any"
+expr = "reduce(user.Attrs, #acc)"
+error = "E0307"
+
+[[case]]
+name = "reduce with a body that changes #acc's type"
+expr = "reduce(nums, #acc + 0.5, 0)"
+error = "E0201"
+deviation = "Go lets #acc change type from step to step; dictum requires the body to keep the type of the initial value"
+
+[[case]]
+name = "reduce with a body that is not an accumulator"
+expr = "reduce(nums, #acc > 0, 0)"
+error = "E0201"
+
+[[case]]
+name = "#acc outside reduce"
+expr = "filter(nums, #acc > 0)"
+error = "E0109"
+
+[[case]]
+name = "#acc in a predicate nested in reduce"
+expr = "reduce(nums, filter(nums, #acc > 0), 0)"
+error = "E0109"
+
+[[case]]
+name = "reduce of a non-array"
+expr = "reduce(1, #acc)"
+error = "E0201"
+
+[[case]]
+name = "reduce arity"
+expr = "reduce(nums)"
+error = "E0205"
+
+[[case]]
+name = "reduce with too many arguments"
+expr = "reduce(nums, #acc + #, 0, 1)"
+error = "E0205"
