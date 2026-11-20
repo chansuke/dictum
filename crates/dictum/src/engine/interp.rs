@@ -1260,7 +1260,19 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         Intrinsic::LoadLocation => Ok(Value(Repr::Location(builtins::load_location(s(0)?).map_err(at(span))?))),
         Intrinsic::ParseDuration => Ok(Value(Repr::Duration(builtins::parse_go_duration(s(0)?).map_err(at(span))?))),
         Intrinsic::ParseDate => {
-            Ok(Value(Repr::Time(builtins::parse_date(s(0)?).map_err(at(span))?, jiff::tz::TimeZone::UTC)))
+            // Go's argument forms: an optional location first, then the text, a layout
+            // and a zone name that replaces the location.
+            let (loc, rest) = match args.split_first() {
+                Some((first, rest)) if first.as_location().is_some() => (location(first, span)?.clone(), rest),
+                _ => (jiff::tz::TimeZone::UTC, args),
+            };
+            let text = |i: usize| {
+                rest.get(i).ok_or_else(|| internal("missing date argument", span)).and_then(|v| string(v, span))
+            };
+            let loc = if rest.len() > 2 { builtins::load_location(text(2)?).map_err(at(span))? } else { loc };
+            let layout = if rest.len() > 1 { Some(text(1)?) } else { None };
+            let (t, z) = builtins::parse_date(text(0)?, layout, &loc).map_err(at(span))?;
+            Ok(Value(Repr::Time(t, z)))
         }
         Intrinsic::GetArray => {
             let xs = seq(arg(0)?, span)?;

@@ -285,8 +285,7 @@ expect = '"2024-02-29T00:00:00Z"'
 [[case]]
 name = "toJSON of a date with an offset"
 expr = 'toJSON(date("2024-01-01T09:00:00+09:00"))'
-expect = '"2024-01-01T00:00:00Z"'
-deviation = "Go keeps the parsed offset in the time; dictum times are instants, so they encode in UTC"
+expect = '"2024-01-01T09:00:00+09:00"'
 
 [[case]]
 name = "toJSON of a time before year 0"

@@ -260,15 +260,29 @@ pub(crate) fn parse_go_duration(s: &str) -> Result<jiff::SignedDuration, EvalErr
     Ok(jiff::SignedDuration::from_nanos(nanos))
 }
 
-/// `date(s)`: RFC 3339 with offset, or `YYYY-MM-DD` / `YYYY-MM-DDTHH:MM:SS` read as
-/// UTC (no time zone database is needed, so this works in `no_std`). Go layouts and
-/// time zones (`date(s, layout, tz)`) are not provided.
-pub(crate) fn parse_date(s: &str) -> Result<jiff::Timestamp, EvalErrorKind> {
-    if let Ok(t) = s.parse::<jiff::Timestamp>() {
-        return Ok(t);
-    }
-    let civil = s.parse::<jiff::civil::DateTime>().or_else(|_| s.parse::<jiff::civil::Date>().map(Into::into));
-    civil.ok().and_then(|dt| jiff::tz::Offset::UTC.to_timestamp(dt).ok()).ok_or_else(|| invalid("date", s))
+/// The layouts `date(s)` tries, in Go's order.
+const DATE_LAYOUTS: [&str; 7] = [
+    "2006-01-02",
+    "15:04:05",
+    "2006-01-02 15:04:05",
+    "2006-01-02T15:04:05Z07:00",
+    "02 Jan 06 15:04 MST",
+    "Monday, 02-Jan-06 15:04:05 MST",
+    "Mon, 02 Jan 2006 15:04:05 MST",
+];
+
+/// `date(s[, layout])` read in `loc` (Go's `ParseInLocation`): with no layout, the
+/// first of Go's layouts that matches.
+pub(crate) fn parse_date(
+    s: &str,
+    layout: Option<&str>,
+    loc: &jiff::tz::TimeZone,
+) -> Result<(jiff::Timestamp, jiff::tz::TimeZone), EvalErrorKind> {
+    let parsed = match layout {
+        Some(layout) => super::layout::parse(layout, s, loc),
+        None => DATE_LAYOUTS.iter().find_map(|layout| super::layout::parse(layout, s, loc)),
+    };
+    parsed.ok_or_else(|| invalid("date", s))
 }
 
 /// A float as Go's `%v` prints it (`strconv.FormatFloat(x, 'g', -1, 64)`): the
@@ -387,33 +401,7 @@ pub(crate) fn go_offset(seconds: i32, colon: bool, out: &mut String) {
 /// Go's `time.Time.String`: `2026-01-01 09:00:00 +0900 JST`, with a fraction only
 /// when nonzero.
 pub(crate) fn go_time(t: jiff::Timestamp, z: &jiff::tz::TimeZone, out: &mut String) {
-    let (dt, offset, name) = zoned(t, z);
-    let _ = write!(
-        out,
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        dt.year(),
-        dt.month(),
-        dt.day(),
-        dt.hour(),
-        dt.minute(),
-        dt.second()
-    );
-    let nanos = dt.subsec_nanosecond();
-    if nanos > 0 {
-        let mut f = alloc::format!("{nanos:09}");
-        while f.ends_with('0') {
-            f.pop();
-        }
-        out.push('.');
-        out.push_str(&f);
-    }
-    out.push(' ');
-    go_offset(offset, false, out);
-    out.push(' ');
-    match name {
-        Some(name) => out.push_str(&name),
-        None => go_offset(offset, false, out),
-    }
+    super::layout::format(t, z, "2006-01-02 15:04:05.999999999 -0700 MST", out);
 }
 
 /// A location as Go's `Location.String` names it.
@@ -469,9 +457,10 @@ mod tests {
 
     #[test]
     fn dates_with_and_without_offsets() {
-        let t = |s| parse_date(s).ok().map(jiff::Timestamp::as_second);
+        let t = |s| parse_date(s, None, &jiff::tz::TimeZone::UTC).ok().map(|(t, _)| t.as_second());
         assert_eq!(t("2026-01-01"), Some(1_767_225_600));
-        assert_eq!(t("2026-01-01T00:00:00"), Some(1_767_225_600));
+        assert_eq!(t("2026-01-01 00:00:00"), Some(1_767_225_600));
+        assert_eq!(t("2026-01-01T00:00:00"), None);
         assert_eq!(t("2026-01-01T09:00:00+09:00"), Some(1_767_225_600));
         assert_eq!(t("2026-01-01T00:00:00Z"), Some(1_767_225_600));
         assert_eq!(t("01/02/2026"), None);

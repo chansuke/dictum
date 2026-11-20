@@ -17,10 +17,10 @@ use dictum_check::FieldId;
 use dictum_syntax::{MAX_DEPTH, Span};
 
 use crate::EvalErrorKind;
-use crate::engine::builtins;
 use crate::engine::frame::{Fault, Frame};
 use crate::engine::interp::{Res, alloc, internal, steps};
 use crate::engine::value::{MapRef, Repr, Str, Value};
+use crate::engine::{builtins, layout};
 
 fn invalid(what: &'static str, value: &str, span: Span) -> Fault {
     Frame::fault(EvalErrorKind::InvalidArgument { what, value: value.into() }, span)
@@ -181,33 +181,14 @@ impl Encoder<'_, '_> {
     /// Go's `Time.MarshalJSON`: RFC 3339 in the time's zone, the nanoseconds trimmed
     /// and `Z` for a zero offset, years 0 to 9999.
     fn time(&mut self, t: jiff::Timestamp, z: &jiff::tz::TimeZone) -> Result<(), Fault> {
-        let (dt, offset, _) = builtins::zoned(t, z);
+        let (dt, _, _) = builtins::zoned(t, z);
         if dt.year() < 0 {
             let mut text = String::new();
             builtins::go_time(t, z, &mut text);
             return Err(invalid("JSON time, year outside 0 to 9999", &text, self.span));
         }
-        let _ = write!(
-            self.out,
-            "\"{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
-            dt.year(),
-            dt.month(),
-            dt.day(),
-            dt.hour(),
-            dt.minute(),
-            dt.second()
-        );
-        let nanos = dt.subsec_nanosecond();
-        if nanos > 0 {
-            let fraction = alloc::format!("{nanos:09}");
-            self.out.push('.');
-            self.out.push_str(fraction.trim_end_matches('0'));
-        }
-        if offset == 0 {
-            self.out.push('Z');
-        } else {
-            builtins::go_offset(offset, true, &mut self.out);
-        }
+        self.out.push('"');
+        layout::format(t, z, "2006-01-02T15:04:05.999999999Z07:00", &mut self.out);
         self.out.push('"');
         Ok(())
     }

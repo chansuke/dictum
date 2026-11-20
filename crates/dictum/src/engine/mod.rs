@@ -22,6 +22,7 @@ pub(crate) mod fold;
 pub(crate) mod frame;
 pub(crate) mod interp;
 pub(crate) mod json;
+pub(crate) mod layout;
 pub(crate) mod ops;
 pub(crate) mod set;
 pub(crate) mod trace;
