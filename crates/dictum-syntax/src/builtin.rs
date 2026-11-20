@@ -99,6 +99,12 @@ builtins! {
     Sum = "sum";
     Len = "len";
     Join = "join";
+    Concat = "concat";
+    Flatten = "flatten";
+    Uniq = "uniq";
+    Take = "take";
+    Reverse = "reverse";
+    Sort = "sort";
     // maps
     Keys = "keys";
     Values = "values";

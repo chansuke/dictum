@@ -1,0 +1,428 @@
+# concat, flatten, uniq, take, reverse and sort over the sample facts.
+
+[[case]]
+name = "concat"
+expr = "concat([1, 2], [3])"
+expect = [1, 2, 3]
+
+[[case]]
+name = "concat of one array"
+expr = "concat(nums)"
+expect = [3, 1, 4, 1, 5, 9, 2, 6]
+
+[[case]]
+name = "concat of three arrays"
+expr = 'concat(user.Tags, ["x"], user.Tags)'
+expect = ["admin", "beta", "x", "admin", "beta"]
+
+[[case]]
+name = "concat of empty arrays"
+expr = "concat([], [])"
+expect = []
+
+[[case]]
+name = "concat of different element types"
+expr = 'concat([1], ["a"])'
+expect = [1, "a"]
+
+[[case]]
+name = "concat keeps nested arrays"
+expr = "concat([[1]], [[2, 3]])"
+expect = [[1], [2, 3]]
+
+[[case]]
+name = "concat of structs"
+expr = "map(concat(order.Items, order.Items), .Sku)"
+expect = ["A-1", "B-2", "A-1", "B-2"]
+
+[[case]]
+name = "concat keeps the element type"
+expr = "sum(concat(nums, [10]))"
+expect = 41
+
+[[case]]
+name = "concat piped"
+expr = "nums | concat([7])"
+expect = [3, 1, 4, 1, 5, 9, 2, 6, 7]
+
+[[case]]
+name = "concat of any"
+expr = "concat(user.Attrs, [1])"
+error = "E0307"
+
+[[case]]
+name = "concat of a non-array"
+expr = "concat([1], 1)"
+error = "E0201"
+
+[[case]]
+name = "concat of nothing"
+expr = "concat()"
+error = "E0205"
+
+[[case]]
+name = "flatten"
+expr = "flatten([[1, 2], [3]])"
+expect = [1, 2, 3]
+
+[[case]]
+name = "flatten to any depth"
+expr = "flatten([1, [2, [3, [4]]]])"
+expect = [1, 2, 3, 4]
+
+[[case]]
+name = "flatten of a flat array"
+expr = "flatten(nums)"
+expect = [3, 1, 4, 1, 5, 9, 2, 6]
+
+[[case]]
+name = "flatten of empty arrays"
+expr = "flatten([[], []])"
+expect = []
+
+[[case]]
+name = "flatten of an empty array"
+expr = "flatten([])"
+expect = []
+
+[[case]]
+name = "flatten strips every array level of the type"
+expr = "sum(flatten([[1, 2], [3, 4]]))"
+expect = 10
+
+[[case]]
+name = "flatten of mixed nesting"
+expr = 'flatten([user.Tags, [1, [2.5]]])'
+expect = ["admin", "beta", 1, 2.5]
+
+[[case]]
+name = "flatten of structs"
+expr = "map(flatten([order.Items, order.Items]), .Qty)"
+expect = [1, 2, 1, 2]
+
+[[case]]
+name = "flatten piped"
+expr = "[[1], [2]] | flatten()"
+expect = [1, 2]
+
+[[case]]
+name = "flatten of any"
+expr = "flatten(user.Attrs)"
+error = "E0307"
+
+[[case]]
+name = "flatten of a non-array"
+expr = "flatten(1)"
+error = "E0201"
+
+[[case]]
+name = "flatten arity"
+expr = "flatten([1], [2])"
+error = "E0205"
+
+[[case]]
+name = "uniq"
+expr = "uniq(nums)"
+expect = [3, 1, 4, 5, 9, 2, 6]
+
+[[case]]
+name = "uniq of strings"
+expr = 'uniq(["a", "b", "a", "c", "b"])'
+expect = ["a", "b", "c"]
+
+[[case]]
+name = "uniq of an empty array"
+expr = "uniq([])"
+expect = []
+
+[[case]]
+name = "uniq compares an int and a float by value"
+expr = "len(uniq([1, 1.0, 2]))"
+expect = 2
+
+[[case]]
+name = "uniq of any elements compares an int and a float by value"
+expr = "uniq([1, 1.0, 2, user.Attrs])"
+expect = [1, 2, 7]
+
+[[case]]
+name = "uniq of any elements keeps values of different types"
+expr = 'uniq([1, "1", 1, "1"])'
+expect = [1, "1"]
+
+[[case]]
+name = "uniq keeps every NaN"
+expr = 'len(uniq([float("NaN"), float("NaN")]))'
+expect = 2
+
+[[case]]
+name = "uniq of nested arrays"
+expr = "uniq([[1], [1], [2]])"
+expect = [[1], [2]]
+
+[[case]]
+name = "uniq of maps"
+expr = 'uniq([{"a": 1}, {"a": 1}, {"a": 2}])'
+expect = [{ a = 1 }, { a = 2 }]
+
+[[case]]
+name = "uniq of structs"
+expr = "uniq(order.Items)"
+error = "E0207"
+deviation = "Go compares structs field by field; dictum structs cannot be compared, as with =="
+
+[[case]]
+name = "uniq piped"
+expr = "nums | uniq()"
+expect = [3, 1, 4, 5, 9, 2, 6]
+
+[[case]]
+name = "uniq of any"
+expr = "uniq(user.Attrs)"
+error = "E0307"
+
+[[case]]
+name = "uniq of a non-array"
+expr = "uniq(1)"
+error = "E0201"
+
+[[case]]
+name = "take"
+expr = "take(nums, 3)"
+expect = [3, 1, 4]
+
+[[case]]
+name = "take none"
+expr = "take(nums, 0)"
+expect = []
+
+[[case]]
+name = "take more than there are"
+expr = "take(nums, 100)"
+expect = [3, 1, 4, 1, 5, 9, 2, 6]
+
+[[case]]
+name = "take from an empty array"
+expr = "take([], 2)"
+expect = []
+
+[[case]]
+name = "take a negative count"
+expr = "take(nums, -1)"
+error = "E0309"
+
+[[case]]
+name = "take keeps the element type"
+expr = "take(nums, 3)[0] + 1"
+expect = 4
+
+[[case]]
+name = "take of nested arrays"
+expr = "take([[1], [2, 3]], 1)"
+expect = [[1]]
+
+[[case]]
+name = "take of structs"
+expr = "map(take(order.Items, 1), .Sku)"
+expect = ["A-1"]
+
+[[case]]
+name = "take piped"
+expr = "nums | take(2)"
+expect = [3, 1]
+
+[[case]]
+name = "take from any"
+expr = "take(user.Attrs, 1)"
+error = "E0307"
+
+[[case]]
+name = "take an any count"
+expr = "take(nums, user.Attrs)"
+expect = [3, 1, 4, 1, 5, 9, 2]
+
+[[case]]
+name = "take a float count"
+expr = "take(nums, 1.5)"
+error = "E0201"
+
+[[case]]
+name = "take from a non-array"
+expr = "take(1, 1)"
+error = "E0201"
+
+[[case]]
+name = "take arity"
+expr = "take(nums)"
+error = "E0205"
+
+[[case]]
+name = "reverse"
+expr = "reverse(nums)"
+expect = [6, 2, 9, 5, 1, 4, 1, 3]
+
+[[case]]
+name = "reverse of an empty array"
+expr = "reverse([])"
+expect = []
+
+[[case]]
+name = "reverse of nested arrays"
+expr = "reverse([[1], [2, 3]])"
+expect = [[2, 3], [1]]
+
+[[case]]
+name = "reverse of structs"
+expr = "map(reverse(order.Items), .Sku)"
+expect = ["B-2", "A-1"]
+
+[[case]]
+name = "reverse of a range"
+expr = "reverse(1..4)"
+expect = [4, 3, 2, 1]
+
+[[case]]
+name = "reverse piped"
+expr = "nums | reverse()"
+expect = [6, 2, 9, 5, 1, 4, 1, 3]
+
+[[case]]
+name = "reverse of any"
+expr = "reverse(user.Attrs)"
+error = "E0307"
+
+[[case]]
+name = "reverse of a non-array"
+expr = "reverse(1)"
+error = "E0201"
+
+[[case]]
+name = "reverse arity"
+expr = "reverse()"
+error = "E0205"
+
+[[case]]
+name = "sort"
+expr = "sort([3, 1, 2])"
+expect = [1, 2, 3]
+
+[[case]]
+name = "sort descending"
+expr = 'sort([3, 1, 2], "desc")'
+expect = [3, 2, 1]
+
+[[case]]
+name = "sort ascending"
+expr = 'sort([3, 1, 2], "asc")'
+expect = [1, 2, 3]
+
+[[case]]
+name = "sort of an empty array"
+expr = "sort([])"
+expect = []
+
+[[case]]
+name = "sort of strings"
+expr = "sort(user.Tags, \"desc\")"
+expect = ["beta", "admin"]
+
+[[case]]
+name = "sort of ints and floats"
+expr = "string(sort([3, 1.5, 2]))"
+expect = "[1.5 2 3]"
+
+[[case]]
+name = "sort of any elements"
+expr = "sort([user.Attrs, 2, 9.5])"
+expect = [2, 7, 9.5]
+
+[[case]]
+name = "sort of durations"
+expr = 'sort([duration("2h"), duration("1h")])[0] == duration("1h")'
+expect = true
+
+[[case]]
+name = "sort of times"
+expr = 'sort([now(), now() - duration("1h")], "desc")[0] == now()'
+expect = true
+
+[[case]]
+name = "sort of an int array field"
+expr = "sort(nums)"
+expect = [1, 1, 2, 3, 4, 5, 6, 9]
+deviation = "Go's sort takes only []int, []float64, []string and []any, so it rejects the []int64 field; dictum sorts any array of ordered values"
+
+[[case]]
+name = "sort piped"
+expr = "nums | sort()"
+expect = [1, 1, 2, 3, 4, 5, 6, 9]
+deviation = "Go's sort takes only []int, []float64, []string and []any, so it rejects the []int64 field; dictum sorts any array of ordered values"
+
+[[case]]
+name = "sort piped descending"
+expr = 'nums | sort("desc")'
+expect = [9, 6, 5, 4, 3, 2, 1, 1]
+deviation = "Go's sort takes only []int, []float64, []string and []any, so it rejects the []int64 field; dictum sorts any array of ordered values"
+
+[[case]]
+name = "sort piped from a literal"
+expr = '[2, 3, 1] | sort("desc")'
+expect = [3, 2, 1]
+
+[[case]]
+name = "sort puts NaN first"
+expr = 'string(sort([1.0, float("NaN"), -1.0]))'
+expect = "[NaN -1 1]"
+deviation = "Go's order around NaN depends on where the NaN starts; dictum puts NaN first, as Go's sort.Float64s"
+
+[[case]]
+name = "sort descending puts NaN last"
+expr = 'string(sort([float("NaN"), -1.0, 1.0], "desc"))'
+expect = "[1 -1 NaN]"
+deviation = "Go's order around NaN depends on where the NaN starts; dictum puts NaN last when descending"
+
+[[case]]
+name = "sort an invalid order"
+expr = 'sort([3, 1, 2], "up")'
+error = "E0309"
+
+[[case]]
+name = "sort a non-string order"
+expr = "sort([3, 1, 2], 1)"
+error = "E0201"
+
+[[case]]
+name = "sort of mixed any elements"
+expr = 'sort([1, "a"])'
+error = "E0307"
+
+[[case]]
+name = "sort of unordered elements"
+expr = "sort([true, false])"
+error = "E0201"
+
+[[case]]
+name = "sort of nested arrays"
+expr = "sort([[1], [0]])"
+error = "E0201"
+
+[[case]]
+name = "sort of structs"
+expr = "sort(order.Items)"
+error = "E0201"
+
+[[case]]
+name = "sort of any"
+expr = "sort(user.Attrs)"
+error = "E0307"
+deviation = "Go returns an empty array for a value that is not an array; dictum reports a runtime type error"
+
+[[case]]
+name = "sort of a non-array"
+expr = "sort(1)"
+error = "E0201"
+
+[[case]]
+name = "sort arity"
+expr = 'sort([1], "asc", "x")'
+error = "E0205"

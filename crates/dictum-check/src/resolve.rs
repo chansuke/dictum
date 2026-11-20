@@ -227,6 +227,9 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::First
         | Builtin::Last
         | Builtin::Sum
+        | Builtin::Flatten
+        | Builtin::Uniq
+        | Builtin::Reverse
         | Builtin::Len
         | Builtin::Keys
         | Builtin::Values
@@ -242,6 +245,7 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::HasSuffix
         | Builtin::IndexOf
         | Builtin::LastIndexOf
+        | Builtin::Take
         | Builtin::BitAnd
         | Builtin::BitOr
         | Builtin::BitXor
@@ -258,10 +262,12 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::Map
         | Builtin::Find
         | Builtin::FindIndex => (2, 2),
-        Builtin::Trim | Builtin::TrimPrefix | Builtin::TrimSuffix | Builtin::Count | Builtin::Join => (1, 2),
+        Builtin::Trim | Builtin::TrimPrefix | Builtin::TrimSuffix | Builtin::Count | Builtin::Join | Builtin::Sort => {
+            (1, 2)
+        }
         Builtin::Split | Builtin::SplitAfter => (2, 3),
         Builtin::Replace => (3, 3),
-        Builtin::Max | Builtin::Min | Builtin::Mean | Builtin::Median => (1, usize::MAX),
+        Builtin::Max | Builtin::Min | Builtin::Mean | Builtin::Median | Builtin::Concat => (1, usize::MAX),
     }
 }
 
@@ -269,8 +275,9 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
 /// `now` have fixed shapes and are typed directly by the checker.
 ///
 /// The returned tag is the result's when it is fixed. Where the result depends on
-/// an element type (`first`, `sum`, `max` of an array, `get`, `keys`, `values`), it is
-/// the container's tag and the checker computes the full type.
+/// an element type (`first`, `sum`, `max` of an array, `sort` and the other array
+/// builtins, `get`, `keys`, `values`), it is the container's tag and the checker
+/// computes the full type.
 pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
     use Tag as T;
     let ok = |i, t| Some((i, t));
@@ -329,6 +336,16 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
         (Builtin::Len, [T::Array]) => ok(Intrinsic::LenArray, T::Int),
         (Builtin::Len, [T::Map]) => ok(Intrinsic::LenMap, T::Int),
         (Builtin::Join, [T::Array] | [T::Array, T::String]) => ok(Intrinsic::Join, T::String),
+        (Builtin::Concat, args) if !args.is_empty() && args.iter().all(|t| *t == T::Array) => {
+            ok(Intrinsic::Concat, T::Array)
+        }
+        (Builtin::Flatten, [T::Array]) => ok(Intrinsic::Flatten, T::Array),
+        // Structural equality compares values of any types, as Go's `runtime.Equal`;
+        // the checker narrows it from the element type.
+        (Builtin::Uniq, [T::Array]) => ok(Intrinsic::Uniq(EqKind::Structural), T::Array),
+        (Builtin::Take, [T::Array, T::Int]) => ok(Intrinsic::Take, T::Array),
+        (Builtin::Reverse, [T::Array]) => ok(Intrinsic::Reverse, T::Array),
+        (Builtin::Sort, [T::Array] | [T::Array, T::String]) => ok(Intrinsic::Sort(CompareKind::Dyn), T::Array),
         (Builtin::Keys, [T::Map]) => ok(Intrinsic::Keys, T::Array),
         (Builtin::Values, [T::Map]) => ok(Intrinsic::Values, T::Array),
         (Builtin::Int, [t @ (T::Int | T::Float | T::String)]) => ok(Intrinsic::ToInt(*t), T::Int),
@@ -389,6 +406,12 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
             | Builtin::Sum
             | Builtin::Len
             | Builtin::Join
+            | Builtin::Concat
+            | Builtin::Flatten
+            | Builtin::Uniq
+            | Builtin::Take
+            | Builtin::Reverse
+            | Builtin::Sort
             | Builtin::Keys
             | Builtin::Values
             | Builtin::Int

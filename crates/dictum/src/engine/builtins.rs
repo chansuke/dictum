@@ -3,6 +3,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 use core::fmt::Write;
 
 use dictum_check::ir::BitOp;
@@ -26,6 +27,26 @@ pub(crate) fn median(xs: &mut [f64]) -> f64 {
     let half = xs.len() / 2;
     let mid = |i: usize| xs.get(i).copied().unwrap_or(0.0);
     if xs.len() % 2 == 1 { mid(half) } else { (mid(half.saturating_sub(1)) + mid(half)) / 2.0 }
+}
+
+/// A stable merge sort with a comparison that can fail; the first failure stops it.
+/// `slice::sort_by` would need a comparison that cannot fail, and may panic on one
+/// that is not a total order.
+pub(crate) fn sort_by<T, E>(mut xs: Vec<T>, cmp: &mut impl FnMut(&T, &T) -> Result<Ordering, E>) -> Result<Vec<T>, E> {
+    if xs.len() < 2 {
+        return Ok(xs);
+    }
+    let right = xs.split_off(xs.len() / 2);
+    let (left, right) = (sort_by(xs, cmp)?, sort_by(right, cmp)?);
+    let mut out = Vec::with_capacity(left.len().saturating_add(right.len()));
+    let (mut left, mut right) = (left.into_iter().peekable(), right.into_iter().peekable());
+    while let (Some(l), Some(r)) = (left.peek(), right.peek()) {
+        let next = if cmp(r, l)? == Ordering::Less { right.next() } else { left.next() };
+        out.extend(next);
+    }
+    out.extend(left);
+    out.extend(right);
+    Ok(out)
 }
 
 /// A bit operation on Go's 64-bit `int`. Shifts wrap as Go's do, a shift of 64 or

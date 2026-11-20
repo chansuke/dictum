@@ -93,6 +93,16 @@ fn equality(a: &Type, b: &Type) -> Option<(EqKind, Promote, Promote)> {
     }
 }
 
+/// The element type of `flatten` of an array of `t`: `t` without its array levels,
+/// or `any` where a level may or may not be an array.
+fn flattened(t: &Type) -> Type {
+    match t {
+        Type::Array(t) => flattened(t),
+        Type::Option(o) if matches!(o.inner(), Type::Array(_)) => Type::Any,
+        t => t.clone(),
+    }
+}
+
 fn op_text(op: ast::BinaryOp) -> &'static str {
     use ast::BinaryOp as B;
     match op {
@@ -835,6 +845,39 @@ impl<'e, P> Checker<'e, P> {
                 Some(Type::Int | Type::Float | Type::Any) => (op, Type::Float, args),
                 _ => return self.element_error(span, "an array of numbers", &args),
             },
+            Intrinsic::Concat => {
+                let first = args.first().map(elem).unwrap_or(Type::Any);
+                let t = if args.iter().all(|a| elem(a) == first) { first } else { Type::Any };
+                (op, Type::array(t), args)
+            }
+            Intrinsic::Flatten => {
+                let t = args.first().map(elem).map_or(Type::Any, |t| flattened(&t));
+                (op, Type::array(t), args)
+            }
+            Intrinsic::Take | Intrinsic::Reverse => {
+                let ty = args.first().map_or(Type::Any, |a| a.ty().clone());
+                (op, ty, args)
+            }
+            Intrinsic::Uniq(_) => {
+                let t = args.first().map(elem).unwrap_or(Type::Any);
+                let Some((kind, ..)) = equality(&t, &t) else {
+                    self.error(ErrorCode::NotComparable, span, vec![ty_arg(&t), ty_arg(&t)]);
+                    return None;
+                };
+                let kind = if kind == EqKind::Dyn { EqKind::Structural } else { kind };
+                (Intrinsic::Uniq(kind), Type::array(t), args)
+            }
+            Intrinsic::Sort(_) => {
+                let t = args.first().map(elem).unwrap_or(Type::Any);
+                let kind = match &t {
+                    Type::Any => CompareKind::Dyn,
+                    t => match t.tag().and_then(|tag| resolve::ordering(tag, tag)) {
+                        Some((kind, ..)) => kind,
+                        None => return self.element_error(span, "an array of ordered values", &args),
+                    },
+                };
+                (Intrinsic::Sort(kind), Type::array(t), args)
+            }
             Intrinsic::Extremum { kind: CompareKind::Float, of_array: false, .. } => {
                 let args = args.into_iter().map(|a| self.promote_int(a)).collect();
                 (op, Type::Float, args)
