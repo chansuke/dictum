@@ -426,3 +426,13 @@ error = "E0201"
 name = "sort arity"
 expr = 'sort([1], "asc", "x")'
 error = "E0205"
+
+[[case]]
+name = "sort of a huge range stops at the step limit"
+expr = "len(sort(1..1000000000000))"
+error = "E0305"
+
+[[case]]
+name = "sortBy of a huge range stops at the step limit"
+expr = "len(sortBy(1..1000000000000, #))"
+error = "E0305"

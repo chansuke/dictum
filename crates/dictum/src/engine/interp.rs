@@ -532,12 +532,15 @@ pub(super) fn predicate<'a>(
         }
         PredicateOp::SortBy(kind) => {
             let desc = descending(arg.as_ref(), span)?;
-            let mut keyed: Vec<(Value<'a>, Value<'a>)> = Vec::with_capacity(s.len());
+            // Not sized from `s.len()`: a range is lazy, and its keys charge their steps
+            // one by one before the sort charges the rest.
+            let mut keyed: Vec<(Value<'a>, Value<'a>)> = Vec::new();
             for i in 0..s.len() {
                 let key = visit(&mut body, s, i, None, f, span)?;
                 keyed.push((key, nth(s, i, span)?));
             }
-            let keyed = sorted(keyed, |(key, _)| key, kind, desc, f, span)?;
+            charge_sort(keyed.len(), f, span)?;
+            let keyed = sorted(keyed, |(key, _)| key, kind, desc, span)?;
             Ok(Value::array(keyed.into_iter().map(|(_, x)| x).collect()))
         }
         PredicateOp::Reduce => {
@@ -1130,7 +1133,8 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         Intrinsic::Sort(kind) => {
             let xs = seq(arg(0)?, span)?;
             let desc = descending(args.get(1), span)?;
-            Ok(Value::array(sorted(xs.iter().collect(), |x| x, kind, desc, f, span)?))
+            charge_sort(xs.len(), f, span)?;
+            Ok(Value::array(sorted(xs.iter().collect(), |x| x, kind, desc, span)?))
         }
         Intrinsic::Keys | Intrinsic::Values => {
             let m = map(arg(0)?, span)?;
@@ -1345,20 +1349,22 @@ fn descending(order: Option<&Value<'_>>, span: Span) -> Result<bool, Fault> {
     }
 }
 
+/// The budget of sorting `n` elements, charged before the elements are collected.
+fn charge_sort(n: usize, f: &mut Frame<'_>, span: Span) -> Result<(), Fault> {
+    let log = usize::try_from(n.checked_ilog2().unwrap_or(0)).unwrap_or(usize::MAX);
+    steps(f, n.saturating_mul(log.saturating_add(1)), span)?;
+    alloc(f, n, span)
+}
+
 /// `xs` sorted stably by `key` under `kind`'s ordering, NaN first (last when
-/// descending), charged as `sort`.
+/// descending). The caller charges [`charge_sort`] first.
 fn sorted<'a, T>(
     xs: Vec<T>,
     key: fn(&T) -> &Value<'a>,
     kind: CompareKind,
     desc: bool,
-    f: &mut Frame<'a>,
     span: Span,
 ) -> Result<Vec<T>, Fault> {
-    let n = xs.len();
-    let log = usize::try_from(n.checked_ilog2().unwrap_or(0)).unwrap_or(usize::MAX);
-    steps(f, n.saturating_mul(log.saturating_add(1)), span)?;
-    alloc(f, n, span)?;
     let nan = |v: &Value<'_>| v.as_float().is_some_and(f64::is_nan);
     let mut cmp = |a: &T, b: &T| -> Result<Ordering, Fault> {
         let (a, b) = (key(a), key(b));
