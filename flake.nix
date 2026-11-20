@@ -24,6 +24,7 @@
             elan
             tlaplus
             go
+            wasmtime
           ];
         };
       });
