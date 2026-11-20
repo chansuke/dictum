@@ -118,7 +118,7 @@ fn status_text(status: &NodeStatus) -> String {
 }
 
 /// A value as a rule literal would write it.
-fn write_value(v: &Dynamic, out: &mut String) {
+pub(crate) fn write_value(v: &Dynamic, out: &mut String) {
     use core::fmt::Write;
     match v {
         Dynamic::Nil => out.push_str("nil"),
@@ -161,7 +161,12 @@ fn write_value(v: &Dynamic, out: &mut String) {
                 if i > 0 {
                     out.push_str(", ");
                 }
-                let _ = write!(out, "{k}: ");
+                // A key a rule could not write bare is quoted, as in a map literal.
+                if dictum_syntax::is_identifier(k) {
+                    let _ = write!(out, "{k}: ");
+                } else {
+                    let _ = write!(out, "{k:?}: ");
+                }
                 write_value(x, out);
             }
             out.push('}');
