@@ -67,6 +67,10 @@ func normalize(v any) any {
 		}
 		return normalize(rv.Elem().Interface())
 	case reflect.Slice, reflect.Array:
+		// A nil slice is Go's nil, not an empty array: toJSON tells them apart.
+		if rv.Kind() == reflect.Slice && rv.IsNil() {
+			return nil
+		}
 		out := make([]any, rv.Len())
 		for i := range out {
 			out[i] = normalize(rv.Index(i).Interface())

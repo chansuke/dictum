@@ -416,8 +416,10 @@ pub(crate) fn load_location(name: &str) -> Result<jiff::tz::TimeZone, EvalErrorK
     if name.is_empty() || name == "UTC" {
         return Ok(jiff::tz::TimeZone::UTC);
     }
+    // The bundled database itself, not `jiff::tz::db()`: with another crate enabling
+    // jiff's `tz-system`, that one reads the machine's zoneinfo first.
     #[cfg(feature = "tzdb")]
-    if let Ok(z) = jiff::tz::db().get(name) {
+    if let Ok(z) = jiff::tz::TimeZoneDatabase::bundled().get(name) {
         if z.iana_name() == Some(name) {
             return Ok(z);
         }

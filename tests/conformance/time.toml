@@ -760,3 +760,78 @@ error = "E0201"
 name = "method names are case-sensitive"
 expr = "now().year()"
 error = "E0214"
+
+[[case]]
+name = "Round past the last representable time"
+expr = 'date("9999-12-30T12:01:00Z").Round(duration("24h")).Year()'
+error = "E0301"
+deviation = "Go's times reach far beyond year 9999; dictum's (jiff's) end near the start and end of years -9999 and 9999"
+
+[[case]]
+name = "Truncate before the first representable time"
+expr = 'date("0000-01-03").AddDate(-9999, 0, 0).Truncate(duration("8760h")).Year()'
+error = "E0301"
+deviation = "Go's times reach far beyond year -9999; dictum's (jiff's) end near the start and end of years -9999 and 9999"
+
+[[case]]
+name = "date with a fraction after another character"
+expr = 'date("12:34:56x123", "15:04:05.000")'
+error = "E0309"
+
+[[case]]
+name = "date with a signed two-digit year"
+expr = 'date("+1-01-02", "06-01-02").Year()'
+expect = 2001
+
+[[case]]
+name = "toJSON of an offset of 24 hours"
+expr = 'toJSON(date("2024-03-11 +24:00", "2006-01-02 -07:00"))'
+error = "E0309"
+
+[[case]]
+name = "Sub does not saturate at Go's duration range"
+expr = 'date("2300-01-01").Sub(date("1900-01-01")).Seconds()'
+expect = 12622780800.0
+deviation = "Go saturates a duration at about 292 years; dictum's durations hold the whole difference"
+
+[[case]]
+name = "date near the end of year 9999"
+expr = 'date("9999-12-31T23:00:00Z").Year()'
+error = "E0309"
+deviation = "Go's times reach far beyond year 9999; dictum's (jiff's) end near the start and end of years -9999 and 9999"
+
+[[case]]
+name = "AddDate past the last representable time"
+expr = 'date("9999-12-30").AddDate(0, 0, 1).Year()'
+error = "E0301"
+deviation = "Go's times reach far beyond year 9999; dictum's (jiff's) end near the start and end of years -9999 and 9999"
+
+[[case]]
+name = "a zone abbreviation far from the parsed time"
+expr = 'date(timezone("Europe/London"), "1840-01-01 BST", "2006-01-02 MST").Format("15:04 -0700 MST")'
+expect = "00:00 +0000 UTC"
+deviation = "Go searches every zone of the location for the abbreviation; dictum looks near the parsed time only"
+
+[[case]]
+name = "an unknown zone abbreviation keeps no name"
+expr = 'date("2024-03-11 ABC -0400", "2006-01-02 MST -0700").Location().String()'
+expect = ""
+deviation = "Go makes a fixed zone named ABC; dictum's fixed zones have no names"
+
+[[case]]
+name = "an offset of minus one second"
+expr = 'date("2024-03-11 -00:00:01", "2006-01-02 -07:00:00").Unix()'
+expect = 1710115201
+deviation = "Go's parser reads an offset of -1 second as no offset, the value it uses for none"
+
+[[case]]
+name = "a negative offset under a minute"
+expr = 'date("2024-03-11 -00:00:30", "2006-01-02 -07:00:00").Format("-07:00:00 MST")'
+expect = "-00:00:30 -0000"
+deviation = "Go prints a negative offset under a minute as +00:00:-30"
+
+[[case]]
+name = "toJSON of an empty concatenation"
+expr = 'toJSON(concat([], []))'
+expect = "[]"
+deviation = "Go returns a nil slice, which toJSON writes as null; dictum has no nil array and returns an empty one"

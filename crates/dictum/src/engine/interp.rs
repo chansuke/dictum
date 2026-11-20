@@ -1121,7 +1121,11 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         }
         Intrinsic::Take => {
             let (xs, n) = (seq(arg(0)?, span)?, int(arg(1)?, span)?);
-            let n = usize::try_from(n).map_err(|_| invalid("count", &alloc::format!("{n}")))?.min(xs.len());
+            if n < 0 {
+                return Err(invalid("count", &alloc::format!("{n}")));
+            }
+            // Compared as an i64 first, so a count past `usize` (32-bit) takes everything.
+            let n = usize::try_from(n).unwrap_or(usize::MAX).min(xs.len());
             steps(f, n, span)?;
             alloc(f, n, span)?;
             Ok(Value::array(xs.iter().take(n).collect()))

@@ -19,6 +19,7 @@ expect = ["admin", "beta", "x", "admin", "beta"]
 name = "concat of empty arrays"
 expr = "concat([], [])"
 expect = []
+deviation = "Go returns a nil slice, which toJSON writes as null; dictum has no nil array and returns an empty one"
 
 [[case]]
 name = "concat of different element types"
@@ -436,3 +437,8 @@ error = "E0305"
 name = "sortBy of a huge range stops at the step limit"
 expr = "len(sortBy(1..1000000000000, #))"
 error = "E0305"
+
+[[case]]
+name = "take more than fits in 32 bits"
+expr = "take([1, 2], 4294967296)"
+expect = [1, 2]
