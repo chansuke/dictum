@@ -15,10 +15,12 @@
 //! - one step per element a predicate visits, before its body runs;
 //! - `len` steps for `x in array`, before scanning (so a sorted constant set costs
 //!   what a scan does), and one per entry for `keys`, `values`, `sum`, `join`,
-//!   `max`/`min` of an array, structural `==`, and the deep check of `any`;
+//!   `max`/`min`/`mean`/`median` of an array, structural `==`, and the deep check
+//!   of `any`;
 //! - one alloc per element of a built array or map (literals, `filter`, `map`,
-//!   `split`, `keys`, `values`, `+` of arrays) and one per byte of a built string,
-//!   before building it. Constants are part of the rule and cost nothing.
+//!   `split`, `keys`, `values`, `+` of arrays, the numbers `median` sorts) and one
+//!   per byte of a built string, before building it. Constants are part of the rule
+//!   and cost nothing.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -909,6 +911,25 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 Ok(best)
             }
         }
+        Intrinsic::Center { median, of_array } => {
+            let mut xs = if of_array {
+                let xs = seq(arg(0)?, span)?;
+                steps(f, xs.len(), span)?;
+                xs.iter().map(|x| number(&x, span)).collect::<Result<Vec<f64>, Fault>>()?
+            } else {
+                args.iter().map(|x| number(x, span)).collect::<Result<Vec<f64>, Fault>>()?
+            };
+            if median {
+                alloc(f, xs.len(), span)?;
+                Ok(Value::float(builtins::median(&mut xs)))
+            } else {
+                Ok(Value::float(builtins::mean(&xs)))
+            }
+        }
+        Intrinsic::Bit(op) => {
+            let y = if args.len() > 1 { int(arg(1)?, span)? } else { 0 };
+            Ok(Value::int(builtins::bit(op, int(arg(0)?, span)?, y).map_err(at(span))?))
+        }
         Intrinsic::First => Ok(seq(arg(0)?, span)?.get(0).unwrap_or(Value::NIL)),
         Intrinsic::Last => {
             let xs = seq(arg(0)?, span)?;
@@ -1037,6 +1058,16 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             };
             intrinsic(op, &args, f, span)
         }
+    }
+}
+
+/// An int or float as a float, for `mean` and `median`.
+fn number(x: &Value<'_>, span: Span) -> Result<f64, Fault> {
+    match x.0 {
+        #[allow(clippy::cast_precision_loss)]
+        Repr::Int(n) => Ok(n as f64),
+        Repr::Float(x) => Ok(x),
+        _ => Err(mismatch("a number", x, span)),
     }
 }
 

@@ -5,10 +5,48 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
 
+use dictum_check::ir::BitOp;
+
 use crate::EvalErrorKind;
 
 fn invalid(what: &'static str, value: &str) -> EvalErrorKind {
     EvalErrorKind::InvalidArgument { what, value: value.into() }
+}
+
+/// `mean`: `0.0` of no numbers, as Go.
+#[allow(clippy::cast_precision_loss)]
+pub(crate) fn mean(xs: &[f64]) -> f64 {
+    if xs.is_empty() { 0.0 } else { xs.iter().sum::<f64>() / xs.len() as f64 }
+}
+
+/// `median`: the middle number, or the mean of the two middle ones; `0.0` of no
+/// numbers. Sorted as Go's `sort.Float64s`, NaN first.
+pub(crate) fn median(xs: &mut [f64]) -> f64 {
+    xs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or_else(|| b.is_nan().cmp(&a.is_nan())));
+    let half = xs.len() / 2;
+    let mid = |i: usize| xs.get(i).copied().unwrap_or(0.0);
+    if xs.len() % 2 == 1 { mid(half) } else { (mid(half.saturating_sub(1)) + mid(half)) / 2.0 }
+}
+
+/// A bit operation on Go's 64-bit `int`. Shifts wrap as Go's do, a shift of 64 or
+/// more shifts every bit out, and a negative count is an invalid argument.
+pub(crate) fn bit(op: BitOp, x: i64, y: i64) -> Result<i64, EvalErrorKind> {
+    let shift = || match u32::try_from(y) {
+        Ok(n) => Ok(n),
+        Err(_) if y > 0 => Ok(u32::MAX),
+        Err(_) => Err(invalid("shift count", &alloc::format!("{y}"))),
+    };
+    Ok(match op {
+        BitOp::And => x & y,
+        BitOp::Or => x | y,
+        BitOp::Xor => x ^ y,
+        BitOp::AndNot => x & !y,
+        BitOp::Not => !x,
+        BitOp::Shl => x.checked_shl(shift()?).unwrap_or(0),
+        BitOp::Shr => x.checked_shr(shift()?).unwrap_or(if x < 0 { -1 } else { 0 }),
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        BitOp::Ushr => (x as u64).checked_shr(shift()?).unwrap_or(0) as i64,
+    })
 }
 
 /// Go's `strings.SplitN` (or `SplitAfterN` when `after`, which keeps each separator

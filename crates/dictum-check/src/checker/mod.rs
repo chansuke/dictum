@@ -831,6 +831,10 @@ impl<'e, P> Checker<'e, P> {
                 };
                 (Intrinsic::Extremum { kind, max, of_array: true }, Type::option(t), args)
             }
+            Intrinsic::Center { of_array: true, .. } => match args.first().map(elem) {
+                Some(Type::Int | Type::Float | Type::Any) => (op, Type::Float, args),
+                _ => return self.element_error(span, "an array of numbers", &args),
+            },
             Intrinsic::Extremum { kind: CompareKind::Float, of_array: false, .. } => {
                 let args = args.into_iter().map(|a| self.promote_int(a)).collect();
                 (op, Type::Float, args)

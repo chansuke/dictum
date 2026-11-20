@@ -72,6 +72,17 @@ builtins! {
     Ceil = "ceil";
     Floor = "floor";
     Round = "round";
+    Mean = "mean";
+    Median = "median";
+    // bits
+    BitAnd = "bitand";
+    BitOr = "bitor";
+    BitXor = "bitxor";
+    BitNand = "bitnand";
+    BitNot = "bitnot";
+    BitShl = "bitshl";
+    BitShr = "bitshr";
+    BitUshr = "bitushr";
     // array predicates
     All = "all", predicate = 1;
     Any = "any", predicate = 1;

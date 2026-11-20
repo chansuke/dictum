@@ -12,7 +12,7 @@ use dictum_syntax::ast::{BinaryOp as AstBinary, UnaryOp as AstUnary};
 use crate::Tag;
 #[cfg(feature = "decimal")]
 use crate::ir::DecimalOp;
-use crate::ir::{BinaryOp, CompareKind, EqKind, FloatOp, InOp, IntOp, Intrinsic, UnaryOp};
+use crate::ir::{BinaryOp, BitOp, CompareKind, EqKind, FloatOp, InOp, IntOp, Intrinsic, UnaryOp};
 
 /// Numeric promotion applied to an operand before the operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -223,6 +223,7 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::Ceil
         | Builtin::Floor
         | Builtin::Round
+        | Builtin::BitNot
         | Builtin::First
         | Builtin::Last
         | Builtin::Sum
@@ -241,6 +242,13 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::HasSuffix
         | Builtin::IndexOf
         | Builtin::LastIndexOf
+        | Builtin::BitAnd
+        | Builtin::BitOr
+        | Builtin::BitXor
+        | Builtin::BitNand
+        | Builtin::BitShl
+        | Builtin::BitShr
+        | Builtin::BitUshr
         | Builtin::Get
         | Builtin::All
         | Builtin::Any
@@ -253,7 +261,7 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         Builtin::Trim | Builtin::TrimPrefix | Builtin::TrimSuffix | Builtin::Count | Builtin::Join => (1, 2),
         Builtin::Split | Builtin::SplitAfter => (2, 3),
         Builtin::Replace => (3, 3),
-        Builtin::Max | Builtin::Min => (1, usize::MAX),
+        Builtin::Max | Builtin::Min | Builtin::Mean | Builtin::Median => (1, usize::MAX),
     }
 }
 
@@ -297,6 +305,22 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
             let (kind, result) = if float { (CompareKind::Float, T::Float) } else { (CompareKind::Int, T::Int) };
             ok(Intrinsic::Extremum { kind, max: b == Builtin::Max, of_array: false }, result)
         }
+        (Builtin::Mean | Builtin::Median, [T::Array]) => {
+            ok(Intrinsic::Center { median: b == Builtin::Median, of_array: true }, T::Array)
+        }
+        (Builtin::Mean | Builtin::Median, args)
+            if !args.is_empty() && args.iter().all(|t| matches!(t, T::Int | T::Float)) =>
+        {
+            ok(Intrinsic::Center { median: b == Builtin::Median, of_array: false }, T::Float)
+        }
+        (Builtin::BitNot, [T::Int]) => ok(Intrinsic::Bit(BitOp::Not), T::Int),
+        (Builtin::BitAnd, [T::Int, T::Int]) => ok(Intrinsic::Bit(BitOp::And), T::Int),
+        (Builtin::BitOr, [T::Int, T::Int]) => ok(Intrinsic::Bit(BitOp::Or), T::Int),
+        (Builtin::BitXor, [T::Int, T::Int]) => ok(Intrinsic::Bit(BitOp::Xor), T::Int),
+        (Builtin::BitNand, [T::Int, T::Int]) => ok(Intrinsic::Bit(BitOp::AndNot), T::Int),
+        (Builtin::BitShl, [T::Int, T::Int]) => ok(Intrinsic::Bit(BitOp::Shl), T::Int),
+        (Builtin::BitShr, [T::Int, T::Int]) => ok(Intrinsic::Bit(BitOp::Shr), T::Int),
+        (Builtin::BitUshr, [T::Int, T::Int]) => ok(Intrinsic::Bit(BitOp::Ushr), T::Int),
         (Builtin::First, [T::Array]) => ok(Intrinsic::First, T::Array),
         (Builtin::Last, [T::Array]) => ok(Intrinsic::Last, T::Array),
         (Builtin::Sum, [T::Array]) => ok(Intrinsic::SumInt, T::Array),
@@ -346,6 +370,16 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
             | Builtin::LastIndexOf
             | Builtin::Max
             | Builtin::Min
+            | Builtin::Mean
+            | Builtin::Median
+            | Builtin::BitAnd
+            | Builtin::BitOr
+            | Builtin::BitXor
+            | Builtin::BitNand
+            | Builtin::BitNot
+            | Builtin::BitShl
+            | Builtin::BitShr
+            | Builtin::BitUshr
             | Builtin::Abs
             | Builtin::Ceil
             | Builtin::Floor

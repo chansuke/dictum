@@ -680,6 +680,27 @@ pub enum CompareKind {
     Dyn,
 }
 
+/// A bit operation, as Go's operator on `int`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum BitOp {
+    /// `bitand`: `&`
+    And,
+    /// `bitor`: `|`
+    Or,
+    /// `bitxor`: `^`
+    Xor,
+    /// `bitnand`: `&^` (and not)
+    AndNot,
+    /// `bitnot`: `^x`
+    Not,
+    /// `bitshl`: `<<`, `0` from a shift of 64 or more
+    Shl,
+    /// `bitshr`: `>>` with sign fill
+    Shr,
+    /// `bitushr`: `>>` with zero fill, as `int(uint(x) >> y)`
+    Ushr,
+}
+
 /// Membership.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum InOp {
@@ -794,6 +815,11 @@ pub enum Intrinsic {
     Round,
     /// `max`/`min` over arguments or one array.
     Extremum { kind: CompareKind, max: bool, of_array: bool },
+    /// `mean`/`median` over number arguments or one array of numbers, as a float;
+    /// `0.0` when there are none, as Go.
+    Center { median: bool, of_array: bool },
+    /// `bitand`, `bitnot` and the other bit operations on ints.
+    Bit(BitOp),
     /// `first` → `Option<T>`
     First,
     /// `last` → `Option<T>`
