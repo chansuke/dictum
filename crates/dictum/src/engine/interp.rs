@@ -50,6 +50,7 @@ use crate::engine::SchemaCore;
 use crate::engine::builtins;
 use crate::engine::frame::{Fault, Frame, Scope};
 use crate::engine::json;
+use crate::engine::methods;
 use crate::engine::ops;
 use crate::engine::trace::{Recorded, Trace};
 use crate::engine::value::{Bytes, MapRef, Repr, Seq, Str, Value};
@@ -146,7 +147,7 @@ pub(super) fn alloc(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault
 }
 
 /// A computed string, charged one alloc per byte before it is kept.
-fn built(f: &mut Frame<'_>, s: String, span: Span) -> Res<'static> {
+pub(super) fn built(f: &mut Frame<'_>, s: String, span: Span) -> Res<'static> {
     alloc(f, s.len(), span)?;
     Ok(Value::string(s))
 }
@@ -1314,17 +1315,21 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             };
             intrinsic(op, &args, f, span)
         }
-        Intrinsic::DynMethod => {
+        Intrinsic::Method { method, optional } => {
+            let [recv, rest @ ..] = args else { return Err(internal("method call without a receiver", span)) };
+            if optional && matches!(recv.0, Repr::Nil) {
+                return Ok(Value::NIL);
+            }
+            methods::call(method, recv, rest, f, span)
+        }
+        Intrinsic::DynMethod { optional } => {
             let [name, recv, rest @ ..] = args else {
                 return Err(internal("method call without a receiver", span));
             };
-            let tags: Vec<Tag> = rest.iter().map(Value::tag).collect();
-            let Some((op, _)) = resolve::method(recv.tag(), string(name, span)?, &tags) else {
-                let kind = EvalErrorKind::TypeMismatch { expected: "a value with methods", found: recv.tag().name() };
-                return Err(Frame::fault(kind, span));
-            };
-            let args: Vec<Value<'a>> = core::iter::once(recv).chain(rest).cloned().collect();
-            intrinsic(op, &args, f, span)
+            if optional && matches!(recv.0, Repr::Nil) {
+                return Ok(Value::NIL);
+            }
+            methods::call_dyn(string(name, span)?, recv, rest, f, span)
         }
     }
 }
@@ -1427,7 +1432,7 @@ fn simple_case(s: &str, upper: bool) -> String {
 }
 
 /// `string(x)`: Go's `fmt.Sprint(x)`. One step per container element.
-fn go_string(v: &Value<'_>, out: &mut String, f: &mut Frame<'_>, span: Span) -> Result<(), Fault> {
+pub(super) fn go_string(v: &Value<'_>, out: &mut String, f: &mut Frame<'_>, span: Span) -> Result<(), Fault> {
     use core::fmt::Write;
     match &v.0 {
         Repr::Nil => out.push_str("<nil>"),

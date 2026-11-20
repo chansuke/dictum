@@ -401,3 +401,362 @@ expect = "2023-08-14 00:00:00 +0000 UTC"
 name = "date of a pipe"
 expr = '"2023-08-14" | date() | string()'
 expect = "2023-08-14 00:00:00 +0000 UTC"
+
+# Methods. `t` below is 2023-08-14 08:05:06.123456789 UTC (a Monday).
+
+[[case]]
+name = "Year"
+expr = 'date("2023-08-14 08:05:06.123456789").Year()'
+expect = 2023
+
+[[case]]
+name = "Month"
+expr = 'date("2023-08-14 08:05:06.123456789").Month()'
+expect = 8
+
+[[case]]
+name = "Day"
+expr = 'date("2023-08-14 08:05:06.123456789").Day()'
+expect = 14
+
+[[case]]
+name = "Hour Minute Second"
+expr = 'let t = date("2023-08-14 08:05:06.123456789"); [t.Hour(), t.Minute(), t.Second()]'
+expect = [8, 5, 6]
+
+[[case]]
+name = "Nanosecond"
+expr = 'date("2023-08-14 08:05:06.123456789").Nanosecond()'
+expect = 123456789
+
+[[case]]
+name = "Weekday counts from Sunday"
+expr = 'date("2023-08-14").Weekday()'
+expect = 1
+
+[[case]]
+name = "Weekday of a Sunday"
+expr = 'date("2023-08-13").Weekday()'
+expect = 0
+
+[[case]]
+name = "YearDay"
+expr = 'date("2024-12-31").YearDay()'
+expect = 366
+
+[[case]]
+name = "calendar fields use the time's zone"
+expr = 'let t = date("2023-08-14 22:00:00").In(timezone("Asia/Tokyo")); [t.Day(), t.Hour()]'
+expect = [15, 7]
+
+[[case]]
+name = "Unix"
+expr = 'date("2023-08-14 08:05:06.123456789").Unix()'
+expect = 1692000306
+
+[[case]]
+name = "UnixMilli"
+expr = 'date("2023-08-14 08:05:06.123456789").UnixMilli()'
+expect = 1692000306123
+
+[[case]]
+name = "UnixMicro"
+expr = 'date("2023-08-14 08:05:06.123456789").UnixMicro()'
+expect = 1692000306123456
+
+[[case]]
+name = "UnixNano"
+expr = 'date("2023-08-14 08:05:06.123456789").UnixNano()'
+expect = 1692000306123456789
+
+[[case]]
+name = "Unix rounds down before 1970"
+expr = 'date("1969-12-31 23:59:59.5").Unix()'
+expect = -1
+
+[[case]]
+name = "UnixMilli before 1970"
+expr = 'date("1969-12-31 23:59:59.5").UnixMilli()'
+expect = -500
+
+[[case]]
+name = "Unix does not depend on the zone"
+expr = 'now().In(timezone("Asia/Tokyo")).Unix() == now().Unix()'
+expect = true
+
+[[case]]
+name = "Add"
+expr = 'now().Add(duration("36h")).String()'
+expect = "2026-01-02 12:00:00 +0000 UTC"
+
+[[case]]
+name = "Add keeps the zone"
+expr = 'now().In(timezone("Asia/Tokyo")).Add(duration("1h")).String()'
+expect = "2026-01-01 10:00:00 +0900 JST"
+
+[[case]]
+name = "Sub"
+expr = 'now().Sub(date("2025-12-31")).String()'
+expect = "24h0m0s"
+
+[[case]]
+name = "Sub is the minus operator"
+expr = 'now().Sub(user.Created) == now() - user.Created'
+expect = true
+
+[[case]]
+name = "AddDate"
+expr = 'now().AddDate(1, 2, 3).String()'
+expect = "2027-03-04 00:00:00 +0000 UTC"
+
+[[case]]
+name = "AddDate normalizes the day"
+expr = 'date("2023-01-31").AddDate(0, 1, 0).String()'
+expect = "2023-03-03 00:00:00 +0000 UTC"
+
+[[case]]
+name = "AddDate with negative values"
+expr = 'date("2024-03-01").AddDate(0, -12, -1).String()'
+expect = "2023-02-28 00:00:00 +0000 UTC"
+
+[[case]]
+name = "AddDate across daylight saving keeps the clock"
+expr = 'date("2023-03-11 12:00", "2006-01-02 15:04", "America/New_York").AddDate(0, 0, 1).String()'
+expect = "2023-03-12 12:00:00 -0400 EDT"
+
+[[case]]
+name = "Before After Equal"
+expr = 'let a = date("2023-08-14"); let b = date("2023-08-15"); [a.Before(b), a.After(b), a.Equal(b), a.Equal(b.In(timezone("Asia/Tokyo")).Add(duration("-24h")))]'
+expect = [true, false, false, true]
+
+[[case]]
+name = "Compare"
+expr = 'let a = date("2023-08-14"); [a.Compare(now()), now().Compare(a), a.Compare(a)]'
+expect = [-1, 1, 0]
+
+[[case]]
+name = "Format"
+expr = 'date("2023-08-14 08:05:06").Format("Mon, 02 Jan 2006 03:04:05 PM")'
+expect = "Mon, 14 Aug 2023 08:05:06 AM"
+
+[[case]]
+name = "Format RFC 3339 in a zone"
+expr = 'date("2023-08-14 08:05:06").In(timezone("Europe/Zurich")).Format("2006-01-02T15:04:05Z07:00 MST")'
+expect = "2023-08-14T10:05:06+02:00 CEST"
+
+[[case]]
+name = "Format with fractions"
+expr = 'date("2023-08-14 08:05:06.120").Format("05.000 05.999 05,9")'
+expect = "06.120 06.12 06,1"
+
+[[case]]
+name = "Format of a day of the year"
+expr = 'date("2023-02-01").Format("002 __2 Monday January")'
+expect = "032  32 Wednesday February"
+
+[[case]]
+name = "In"
+expr = 'now().In(timezone("America/New_York")).String()'
+expect = "2025-12-31 19:00:00 -0500 EST"
+
+[[case]]
+name = "UTC"
+expr = 'now().In(timezone("Asia/Tokyo")).UTC().String()'
+expect = "2026-01-01 00:00:00 +0000 UTC"
+
+[[case]]
+name = "Location"
+expr = 'now().In(timezone("Asia/Tokyo")).Location().String()'
+expect = "Asia/Tokyo"
+
+[[case]]
+name = "Location of a parsed offset has no name"
+expr = 'date("2023-08-14T09:00:00+09:00").Location().String()'
+expect = ""
+
+[[case]]
+name = "Location of a time in UTC"
+expr = 'now().Location().String()'
+expect = "UTC"
+
+[[case]]
+name = "Truncate"
+expr = 'date("2023-08-14 08:05:06.7").Truncate(duration("1h")).String()'
+expect = "2023-08-14 08:00:00 +0000 UTC"
+
+[[case]]
+name = "Truncate counts from year 1, not from the zone's midnight"
+expr = 'date("2023-08-14 08:05:06").In(timezone("Asia/Kolkata")).Truncate(duration("24h")).String()'
+expect = "2023-08-14 05:30:00 +0530 IST"
+
+[[case]]
+name = "Round"
+expr = 'date("2023-08-14 08:35:00").Round(duration("1h")).String()'
+expect = "2023-08-14 09:00:00 +0000 UTC"
+
+[[case]]
+name = "Round halves up"
+expr = 'date("2023-08-14 08:30:00").Round(duration("1h")).String()'
+expect = "2023-08-14 09:00:00 +0000 UTC"
+
+[[case]]
+name = "Round by a non-positive duration"
+expr = 'date("2023-08-14 08:35:00").Round(duration("0s")).String()'
+expect = "2023-08-14 08:35:00 +0000 UTC"
+
+[[case]]
+name = "Truncate before year 1"
+expr = 'date("0000-12-31 13:00:00").Truncate(duration("24h")).String()'
+expect = "0000-12-31 00:00:00 +0000 UTC"
+
+[[case]]
+name = "IsZero"
+expr = '[date("0001-01-01").IsZero(), now().IsZero()]'
+expect = [true, false]
+
+[[case]]
+name = "String of a time"
+expr = 'date("2023-08-14 08:05:06.5").String()'
+expect = "2023-08-14 08:05:06.5 +0000 UTC"
+
+[[case]]
+name = "Hours"
+expr = 'duration("1h30m").Hours()'
+expect = 1.5
+
+[[case]]
+name = "Minutes"
+expr = 'duration("90s").Minutes()'
+expect = 1.5
+
+[[case]]
+name = "Seconds"
+expr = 'duration("1500ms").Seconds()'
+expect = 1.5
+
+[[case]]
+name = "Seconds of a negative duration"
+expr = 'duration("-1500ms").Seconds()'
+expect = -1.5
+
+[[case]]
+name = "Milliseconds Microseconds Nanoseconds"
+expr = 'let d = duration("1.5ms"); [d.Milliseconds(), d.Microseconds(), d.Nanoseconds()]'
+expect = [1, 1500, 1500000]
+
+[[case]]
+name = "Milliseconds truncate toward zero"
+expr = 'duration("-1.5ms").Milliseconds()'
+expect = -1
+
+[[case]]
+name = "Duration Truncate"
+expr = 'duration("1h15m30s").Truncate(duration("1h")).String()'
+expect = "1h0m0s"
+
+[[case]]
+name = "Duration Truncate of a negative duration"
+expr = 'duration("-1h15m").Truncate(duration("1h")).String()'
+expect = "-1h0m0s"
+
+[[case]]
+name = "Duration Round"
+expr = 'duration("1h30m").Round(duration("1h")).String()'
+expect = "2h0m0s"
+
+[[case]]
+name = "Duration Round of a negative half"
+expr = 'duration("-1h30m").Round(duration("1h")).String()'
+expect = "-2h0m0s"
+
+[[case]]
+name = "Duration Round saturates"
+expr = 'duration("2562047h47m16.854775807s").Round(duration("2h")).String()'
+expect = "2562047h47m16.854775807s"
+
+[[case]]
+name = "Abs"
+expr = 'duration("-90s").Abs().String()'
+expect = "1m30s"
+
+[[case]]
+name = "String of a duration"
+expr = 'duration("90m").String()'
+expect = "1h30m0s"
+
+[[case]]
+name = "String of a location"
+expr = 'timezone("Europe/Zurich").String()'
+expect = "Europe/Zurich"
+
+[[case]]
+name = "methods chain"
+expr = 'now().AddDate(0, 0, 1).In(timezone("Asia/Tokyo")).Format("2006-01-02 15:04")'
+expect = "2026-01-02 09:00"
+
+[[case]]
+name = "method of a fact"
+expr = 'user.Created.Year()'
+expect = 2023
+
+[[case]]
+name = "method in a predicate"
+expr = 'map([now(), date("2023-08-14")], .Year())'
+expect = [2026, 2023]
+
+[[case]]
+name = "method of an any value"
+expr = '[now(), 1][0].Year()'
+expect = 2026
+
+[[case]]
+name = "method with an any argument"
+expr = 'now().Add([duration("1h"), 1][0]).Hour()'
+expect = 1
+
+[[case]]
+name = "method of an any value that has none"
+expr = '[1, now()][0].Year()'
+error = "E0307"
+
+[[case]]
+name = "safe method call on a missing value"
+expr = 'user.Manager?.Created?.Year() ?? 0'
+expect = 0
+
+[[case]]
+name = "a method after a safe field needs its own ?."
+expr = 'user.Manager?.Created.Year() ?? 0'
+error = "E0206"
+deviation = "Go's ?. skips the rest of the chain; dictum needs ?. at each step after an option"
+
+[[case]]
+name = "safe method call is optional"
+expr = 'type(user.Manager?.Created?.Year())'
+expect = "nil"
+
+[[case]]
+name = "unknown time method"
+expr = "now().Yesterday()"
+error = "E0214"
+
+[[case]]
+name = "the machine's zone is not a method"
+expr = "now().Local()"
+error = "E0214"
+deviation = "Go converts to the machine's zone; dictum has no local zone"
+
+[[case]]
+name = "method with wrong argument types"
+expr = 'now().Add(1)'
+error = "E0201"
+
+[[case]]
+name = "method with too many arguments"
+expr = 'now().Year(1)'
+error = "E0201"
+
+[[case]]
+name = "method names are case-sensitive"
+expr = "now().year()"
+error = "E0214"
