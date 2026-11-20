@@ -1,0 +1,109 @@
+# Rules the engine optimizes (formal/lean/Dictum/Opt): each must give the result of
+# the unoptimized rule, errors included. `level` is a u8 (200), `delta` an i8 (-100).
+
+[[case]]
+name = "a sum the ranges bound"
+expr = "level + 1"
+expect = 201
+
+[[case]]
+name = "a product of narrow fields"
+expr = "level * delta"
+expect = -20000
+
+[[case]]
+name = "a power of a narrow field that still fits"
+expr = "level * level * level * level * level * level * level * level"
+expect = 2560000000000000000
+
+[[case]]
+name = "a power of a narrow field that overflows"
+expr = "level * level * level * level * level * level * level * level * level"
+error = "E0301"
+deviation = "Go wraps an integer that overflows; dictum reports the overflow"
+
+[[case]]
+name = "a remainder by a narrow field"
+expr = "limit % delta"
+expect = 10
+
+[[case]]
+name = "a comparison the ranges decide"
+expr = "level < 256"
+expect = true
+
+[[case]]
+name = "a comparison the ranges decide as false"
+expr = "level < 0"
+expect = false
+
+[[case]]
+name = "a product with zero drops a field"
+expr = "level * 0 + limit"
+expect = 10
+
+[[case]]
+name = "adding zero"
+expr = "[level + 0, 0 + delta, limit - 0, limit * 1, 1 * limit]"
+expect = [200, -100, 10, 10, 10]
+
+[[case]]
+name = "a product with zero keeps an error"
+expr = "7 % 0 * 0"
+error = "E0302"
+
+[[case]]
+name = "a product with zero keeps an overflow"
+expr = "limit * 9223372036854775807 * 0"
+error = "E0301"
+deviation = "Go wraps an integer that overflows; dictum reports the overflow"
+
+[[case]]
+name = "double negation"
+expr = "not not user.Active"
+expect = true
+
+[[case]]
+name = "a value equals itself"
+expr = "level == level && user.Active == user.Active"
+expect = true
+
+[[case]]
+name = "a branch on a constant"
+expr = "true ? level : delta"
+expect = 200
+
+[[case]]
+name = "both branches alike"
+expr = "user.Active ? level : level"
+expect = 200
+
+[[case]]
+name = "and with false after a safe operand"
+expr = "level < 100 && false"
+expect = false
+
+[[case]]
+name = "and with false after one that fails"
+expr = "7 % 0 > 0 && false"
+error = "E0302"
+
+[[case]]
+name = "nothing after false is evaluated"
+expr = "user.Active && false && user.Age % 0 > 0"
+expect = false
+
+[[case]]
+name = "or with true after one that fails"
+expr = "7 % 0 > 0 || true"
+error = "E0302"
+
+[[case]]
+name = "a cheap operand found false first"
+expr = "level + delta > 1000 && limit < 0 && level < 255"
+expect = false
+
+[[case]]
+name = "an operand that fails keeps its place"
+expr = "user.Active && 7 % 0 > 0 && limit < 0"
+error = "E0302"

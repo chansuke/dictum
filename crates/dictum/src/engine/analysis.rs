@@ -112,7 +112,7 @@ pub(crate) fn share(rules: &[(&ir::Program, &[Dependence])]) -> Sharing {
     let mut occurrences: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
     for (r, (program, deps)) in rules.iter().enumerate() {
         for root in program.lets().iter().chain(core::iter::once(program.body())) {
-            key(root, &mut |id, cost, k| {
+            key(root, true, &mut |id, cost, k| {
                 if cost >= MIN_SHARE_COST && deps.get(id) == Some(&Dependence::Input) {
                     occurrences.entry(k.into()).or_default().push((r, id));
                 }
@@ -134,14 +134,21 @@ pub(crate) fn share(rules: &[(&ir::Program, &[Dependence])]) -> Sharing {
     Sharing { per_rule, slot_count }
 }
 
+/// `e`'s structure exactly, operand order included, and its size in nodes: two
+/// expressions with one key are the same expression (spans and ids aside).
+pub(crate) fn exact_key(e: &ir::Expr) -> (String, u32) {
+    key(e, false, &mut |_, _, _| {})
+}
+
 /// The structural key of `e` and its size in nodes; `visit(id, cost, key)` is
-/// called for every node, children first.
-fn key(e: &ir::Expr, visit: &mut dyn FnMut(usize, u32, &str)) -> (String, u32) {
+/// called for every node, children first. With `commute`, the operands of a
+/// commutative operator are sorted, so `a + b` and `b + a` get one key.
+fn key(e: &ir::Expr, commute: bool, visit: &mut dyn FnMut(usize, u32, &str)) -> (String, u32) {
     use core::fmt::Write;
     let mut children: Vec<String> = Vec::new();
     let mut cost: u32 = 1;
     for c in e.children() {
-        let (k, n) = key(c, visit);
+        let (k, n) = key(c, commute, visit);
         children.push(k);
         cost = cost.saturating_add(n);
     }
@@ -158,7 +165,7 @@ fn key(e: &ir::Expr, visit: &mut dyn FnMut(usize, u32, &str)) -> (String, u32) {
         }
         ExprKind::Unary { op, .. } => write!(out, "{op:?}"),
         ExprKind::Binary { op, .. } => {
-            if commutes(*op) {
+            if commute && commutes(*op) {
                 children.sort();
             }
             write!(out, "{op:?}")
