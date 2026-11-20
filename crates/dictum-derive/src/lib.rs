@@ -111,6 +111,7 @@ fn expand(input: &DeriveInput) -> syn::Result<TokenStream2> {
         StaticLifetimes { names: &lifetimes }.visit_type_mut(&mut static_ty);
         descs.push(quote! {
             #krate::__private::FieldDesc::new(#name, <#static_ty as #krate::__private::Field>::ty)
+                .with_range(<#static_ty as #krate::__private::Field>::RANGE)
         });
         arms.push(quote! { #index => #krate::__private::Field::read(&self.#ident), });
         names.push(name);
