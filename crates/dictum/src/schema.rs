@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
-use dictum_check::{FuncSig, SchemaError};
+use dictum_check::{FuncSig, SchemaError, StructDesc};
 
 use crate::Dictum;
 use crate::engine::SchemaCore;
@@ -32,13 +32,23 @@ impl<F> Clone for Schema<F> {
 impl<F: Dictum<Static = F>> Schema<F> {
     /// Start a schema whose variables are `F`'s fields.
     pub fn builder() -> SchemaBuilder<F> {
-        SchemaBuilder { funcs: Vec::new(), _facts: PhantomData }
+        SchemaBuilder { root: F::__desc(), funcs: Vec::new(), _facts: PhantomData }
+    }
+}
+
+#[cfg(feature = "runtime-schema")]
+impl Schema<crate::runtime::Facts> {
+    /// Start a schema whose variables are the fields of a root described at run time.
+    /// Evaluate its rules with facts read by the same [`Root`](crate::runtime::Root).
+    pub fn runtime(root: &crate::runtime::Root) -> SchemaBuilder<crate::runtime::Facts> {
+        SchemaBuilder { root: root.desc(), funcs: Vec::new(), _facts: PhantomData }
     }
 }
 
 /// Registers schema functions. Validation (names, duplicates, builtin shadowing)
 /// happens once, in [`build`](SchemaBuilder::build).
 pub struct SchemaBuilder<F> {
+    root: &'static StructDesc,
     funcs: Vec<(Box<str>, FuncSig, FuncImpl)>,
     _facts: PhantomData<fn(&F)>,
 }
@@ -66,7 +76,7 @@ impl<F: Dictum<Static = F>> SchemaBuilder<F> {
 
     /// Validate and freeze.
     pub fn build(self) -> Result<Schema<F>, SchemaError> {
-        let env = SchemaCore::new(F::__desc(), self.funcs)?;
+        let env = SchemaCore::new(self.root, self.funcs)?;
         Ok(Schema { core: Arc::new(env), _facts: PhantomData })
     }
 }

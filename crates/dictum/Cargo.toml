@@ -19,6 +19,9 @@ std = ["regex/std", "jiff/std"]
 # Without it, only "UTC" resolves.
 tzdb = ["jiff/tzdb-bundle-always"]
 decimal = ["dep:rust_decimal", "dictum-check/decimal"]
+# `dictum::runtime`: schemas described at run time (the CLI's TOML schema). The
+# descriptors are leaked, and recursive structs are tied with `std`'s `OnceLock`.
+runtime-schema = ["std"]
 
 [dependencies]
 dictum-syntax.workspace = true
