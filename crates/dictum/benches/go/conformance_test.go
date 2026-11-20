@@ -99,7 +99,7 @@ func agrees(c conformanceCase, got any, err error) bool {
 // alwaysAgrees reruns a case, because Go's result can differ between runs where it
 // iterates a map, and one run that happens to match dictum does not make the note stale.
 func alwaysAgrees(c conformanceCase) bool {
-	for range 32 {
+	for range 1000 {
 		got, err := runGo(c.Expr)
 		if !agrees(c, got, err) {
 			return false
