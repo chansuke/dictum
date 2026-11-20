@@ -72,6 +72,7 @@ flowchart LR
 | `dictum-check` | `Type`、構造体の型情報 `StructDesc`、型付きIR、Checker | `dictum-syntax`、`jiff` |
 | `dictum` | 外部向けAPI（`Rule`、`RuleSet`、`Schema`、`Ctx`）と、非公開の評価エンジン（`Value`、定数の畳み込み、クロージャコンパイル、組み込み関数、実行上限、explain） | 上記すべて、`regex`、`libm` |
 | `dictum-derive` | `#[derive(Dictum)]` | `syn`、`quote`、`dictum-syntax` |
+| `dictum-cli` | CLIとREPL（バイナリ `dictum`）。TOMLのスキーマとJSONの事実データを読む | `dictum`（`runtime-schema`）、`toml`、`serde_json` |
 
 評価エンジンは `dictum` の非公開モジュールに置く。別クレートにすると、`dictum` から使うために評価エンジンの内部型を公開しなければならず、利用者からもimportできてしまうためである。
 
@@ -531,6 +532,39 @@ user.Group in ["admin"] && user.Age >= 18   → false
 - 更新時は新しい `RuleSet` をビルドし、`arc-swap` で差し替える。評価中のスレッドは古いルールのまま最後まで評価する。
 - ルールはソース文字列で保存し、読み込み時にコンパイルする。コンパイル済み形式のシリアライズは提供しない。
 
+### 実行時に記述するスキーマとCLI
+
+CLI（`dictum-cli`、バイナリ名 `dictum`）は、derive した構造体の代わりに、TOMLで書いたスキーマとJSONの事実データを受け取る。
+
+```toml
+# sample.schema.toml
+[root]                      # 根の構造体のフィールド。ルールの変数になる
+user  = "User"
+order = "Order"
+nums  = "array<int>"
+limit = "int"
+
+[types.User]                # 名前付きの構造体。フィールドの順に並ぶ
+Name    = "string"
+Age     = "int"
+Email   = "Option<string>"
+Created = "time"
+Attrs   = "any"
+Manager = "Option<User>"    # 自分自身も参照できる
+```
+
+```sh
+dictum eval --schema sample.schema.toml --facts sample.json 'user.Age >= 18'
+dictum repl --schema sample.schema.toml --facts sample.json
+dictum schema infer sample.json > sample.schema.toml
+```
+
+- 型はエラーメッセージと同じ表記で書く：`bool` `int` `float` `string` `bytes` `time` `duration` `location` `any`、`array<T>`、`map<string, T>`、`Option<T>`、`[types]` の構造体名。
+- JSONは書いた型に合わせて読む。`time` はRFC 3339の文字列、`duration` はGoの書式の文字列、`int` は整数の数値で、合わなければどこが違うかをパスで示して止める。値のない `Option` のフィールドは `null` でも省略でもよい。
+- 型を書くので、型付けはderive した構造体と同じになり、存在しないフィールドや型の誤りはコンパイル時のエラーになる。キーをすべて `any` にする方式や、値から型を推論する方式は採らない。前者では事実データに関わる型エラーが実行時に移り、後者では時刻、期間、`int` と `float`、空の配列の要素の型が決まらないためである。推論は `dictum schema infer` が下書きを出すのにだけ使い、時刻のフィールドなどは書き手が直す。
+
+ライブラリ側では、`runtime-schema` featureの `dictum::runtime` が、型の記述から型情報を作る。型情報は `'static` を前提にしているので、作った型情報は `Box::leak` で解放せずに持つ。スキーマを1つ作って使い続けるCLIやREPLでは問題にならないが、ホットリロードのたびにスキーマを作り直す用途には向かないので、その要望が出たら、`Arc` で持つ2つ目の型情報（`Type::Record` など）を足す。自分自身を参照する構造体は、全構造体の型情報を作ったあとで各フィールドの型を書き込む（`AtomicPtr`）ので、`no_std` でも作れる。
+
 ## エラー報告
 
 エラーは発生段階ごとに型を分け、すべてSpanとエラーコードを持つ。全段階をまとめる列挙型は設けない。どちらの型も `core::error::Error` を実装するので、利用者のエラー型へ `?` で変換できる。
@@ -627,7 +661,7 @@ pub struct Diagnostic {
 3. 参照評価：仕様インタプリタとMVPの組み込み関数。完了条件は、適合テストを通し、Go版との意図的な差分をすべて `deviation` に書くこと
 4. 高速評価：定数の畳み込み、クロージャコンパイル、実行上限。完了条件は、差分テストが10万ケース通ること、Go版とのベンチマークを記録すること
 5. ルールエンジン（`dictum`）：`Rule`、共通部分式を共有する `RuleSet`、`explain`、`Ctx`。完了条件は、`RuleSet` の差分テストが通ること、使用例（`examples/quickstart.rs`）が動くこと
-6. 拡張：残りの組み込み関数、CLIとREPL、WASM対応。それぞれ別に完了させる。組み込み関数は、一覧への追加、型付け、実装、移植した適合テストがそろったら完了とする。CLIは `dictum eval --facts f.json '<expr>'` が適合テストの全式で結果を表示したら完了とする（実行時に記述したスキーマを扱う方式を先に決める必要がある）。WASMは、CIで適合テストのランナーが `wasm32-wasip1` 上のwasmtimeで通ったら完了とする
+6. 拡張：残りの組み込み関数、CLIとREPL、WASM対応。それぞれ別に完了させる。組み込み関数は、一覧への追加、型付け、実装、移植した適合テストがそろったら完了とする。CLIは `dictum eval --schema s.toml --facts f.json '<expr>'` が適合テストの全式で期待どおりの結果を表示したら完了とする（方式は「実行時に記述するスキーマとCLI」）。WASMは、CIで適合テストのランナーが `wasm32-wasip1` 上のwasmtimeで通ったら完了とする
 
 ## 決定事項
 
@@ -646,5 +680,6 @@ pub struct Diagnostic {
 | explain | 仕様インタプリタで実装し、差分テストの基準を兼ねる | ルールエンジンAPI、テスト戦略 |
 | ルールをまたいだ共通部分式 | `RuleSet` で実施。`build()` で決めるキャッシュスロットを評価ごとに持つ | ルールエンジンAPI |
 | エラーの件数 | コンパイル時はまとめて（最大20件）、実行時は1件。`RuleSet` も最初のエラーで止まる | エラー報告 |
-| クレート構成 | 4クレート。評価エンジンは `dictum` の非公開モジュール | アーキテクチャとクレート構成 |
+| クレート構成 | ライブラリは4クレート。評価エンジンは `dictum` の非公開モジュール。CLIは `dictum-cli` | アーキテクチャとクレート構成 |
+| CLIのスキーマ | TOMLで型を書く。作った型情報は解放しない（`runtime-schema` feature） | 実行時に記述するスキーマとCLI |
 | MSRVと `no_std` | MSRV 1.85。全クレート `no_std` + `alloc` 対応 | アーキテクチャとクレート構成 |
