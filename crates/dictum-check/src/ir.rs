@@ -140,7 +140,7 @@ fn max_predicates<'a>(roots: impl Iterator<Item = &'a Expr>) -> u16 {
 /// freshly built programs, whose depth is bounded by the parser's AST
 /// limit plus the conversions checking adds, so the recursion is shallow.
 pub(crate) fn expr_depth(e: &Expr) -> u32 {
-    1 + e.children().map(expr_depth).max().unwrap_or(0)
+    e.children().map(expr_depth).max().unwrap_or(0).saturating_add(1)
 }
 
 /// Walks a program for [`Program::validate`].
