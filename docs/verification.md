@@ -20,6 +20,7 @@ Tools come from `nix develop`. Rust comes from rustup (`rust-toolchain.toml`, pi
 | property tests (proptest) | invariants over generated input: `Type::option` normalization, `Span`, Go `%` semantics; `eval == explain` (equivalence); `RuleSet` vs standalone rules (sharing) | `crates/dictum/tests/properties.rs` |
 | conformance (e2e) | `tests/conformance/*.toml` through the public API; each case at every reached stage (parse, check, eval) | `crates/dictum/tests/conformance.rs` |
 | conformance against Go | every case without a `deviation` gives Go expr's result, and every `deviation` still differs from Go | `just conformance-go`: `crates/dictum/benches/go/conformance_test.go` |
+| conformance through the CLI | the same cases give the same results with the TOML schema and JSON facts in `tests/conformance/facts/`, and those facts equal the derived sample | `crates/dictum-cli/tests/conformance.rs` |
 | tests on WASM | the workspace's tests pass on `wasm32-wasip1` (a 32-bit target) under wasmtime, with all features and with none; those that need a thread or a process (the thread test, trybuild, the differential tests against Lean) are ignored there | `just wasm` |
 | API e2e | contexts, `ClockUnset`, rule sets, explain reports, limits, threads | `crates/dictum/tests/api.rs` |
 | snapshots (insta) | rendered diagnostics | `crates/dictum/tests/diagnostics.rs` |
