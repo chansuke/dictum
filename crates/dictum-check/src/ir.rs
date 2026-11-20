@@ -876,6 +876,11 @@ pub enum Intrinsic {
     Keys,
     /// `values`
     Values,
+    /// `toPairs`: `[key, value]` for each entry, in the map's order.
+    ToPairs,
+    /// `fromPairs`: a map from `[key, value]` pairs with string keys, the last of
+    /// equal keys winning, in key order.
+    FromPairs,
     /// `int(x)` from the given source tag
     ToInt(Tag),
     /// `float(x)`
@@ -887,6 +892,15 @@ pub enum Intrinsic {
     ToDecimal(Tag),
     /// `type(x)`
     TypeName,
+    /// `toJSON(x)`: Go's `json.MarshalIndent(x, "", "  ")`.
+    ToJson,
+    /// `fromJSON(s)`: numbers as floats and objects as maps in key order, as Go's
+    /// `json.Unmarshal` into `any`.
+    FromJson,
+    /// `toBase64(s)`: standard base64 with padding.
+    ToBase64,
+    /// `fromBase64(s)`: Go's `base64.StdEncoding`; the decoded bytes must be UTF-8.
+    FromBase64,
     /// `now()`: the evaluation's timestamp from `Ctx`, the same for every call within
     /// one evaluation (and one `RuleSet::eval`). Fails with `ClockUnset` when the
     /// `Ctx` has no time.

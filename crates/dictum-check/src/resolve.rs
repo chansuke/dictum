@@ -233,11 +233,17 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::Len
         | Builtin::Keys
         | Builtin::Values
+        | Builtin::ToPairs
+        | Builtin::FromPairs
         | Builtin::Int
         | Builtin::Float
         | Builtin::String
         | Builtin::Type
         | Builtin::Decimal
+        | Builtin::ToJson
+        | Builtin::FromJson
+        | Builtin::ToBase64
+        | Builtin::FromBase64
         | Builtin::Duration
         | Builtin::Date => (1, 1),
         Builtin::Repeat
@@ -279,8 +285,9 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
 ///
 /// The returned tag is the result's when it is fixed. Where the result depends on
 /// an element type (`first`, `sum`, `max` of an array, `sort` and the other array
-/// builtins, `get`, `keys`, `values`), it is the container's tag and the checker
-/// computes the full type.
+/// builtins, `get`, `keys`, `values`, `toPairs`, `fromPairs`), it is the container's
+/// tag and the checker computes the full type. `fromJSON` returns `any`, which has no
+/// tag; its tag here is the argument's.
 pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
     use Tag as T;
     let ok = |i, t| Some((i, t));
@@ -351,10 +358,16 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
         (Builtin::Sort, [T::Array] | [T::Array, T::String]) => ok(Intrinsic::Sort(CompareKind::Dyn), T::Array),
         (Builtin::Keys, [T::Map]) => ok(Intrinsic::Keys, T::Array),
         (Builtin::Values, [T::Map]) => ok(Intrinsic::Values, T::Array),
+        (Builtin::ToPairs, [T::Map]) => ok(Intrinsic::ToPairs, T::Array),
+        (Builtin::FromPairs, [T::Array]) => ok(Intrinsic::FromPairs, T::Map),
         (Builtin::Int, [t @ (T::Int | T::Float | T::String)]) => ok(Intrinsic::ToInt(*t), T::Int),
         (Builtin::Float, [t @ (T::Int | T::Float | T::String)]) => ok(Intrinsic::ToFloat(*t), T::Float),
         (Builtin::String, [t]) => ok(Intrinsic::ToString(*t), T::String),
         (Builtin::Type, [_]) => ok(Intrinsic::TypeName, T::String),
+        (Builtin::ToJson, [_]) => ok(Intrinsic::ToJson, T::String),
+        (Builtin::FromJson, [T::String]) => ok(Intrinsic::FromJson, T::String),
+        (Builtin::ToBase64, [T::String]) => ok(Intrinsic::ToBase64, T::String),
+        (Builtin::FromBase64, [T::String]) => ok(Intrinsic::FromBase64, T::String),
         #[cfg(feature = "decimal")]
         (Builtin::Decimal, [t @ (T::Int | T::Float | T::String | T::Decimal)]) => {
             ok(Intrinsic::ToDecimal(*t), T::Decimal)
@@ -422,11 +435,17 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
             | Builtin::Sort
             | Builtin::Keys
             | Builtin::Values
+            | Builtin::ToPairs
+            | Builtin::FromPairs
             | Builtin::Int
             | Builtin::Float
             | Builtin::String
             | Builtin::Type
             | Builtin::Decimal
+            | Builtin::ToJson
+            | Builtin::FromJson
+            | Builtin::ToBase64
+            | Builtin::FromBase64
             | Builtin::Now
             | Builtin::Duration
             | Builtin::Date
