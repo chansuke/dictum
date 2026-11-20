@@ -247,6 +247,7 @@ expect = ["a,b,c"]
 name = "split with a limit of zero"
 expr = 'split("a,b,c", ",", 0)'
 expect = []
+deviation = "Go returns a nil slice, which toJSON writes as null; dictum has no nil array and returns an empty one"
 
 [[case]]
 name = "split with a negative limit"
@@ -337,6 +338,7 @@ expect = ["foo,", "bar,baz"]
 name = "splitAfter with a limit of zero"
 expr = 'splitAfter("a,b", ",", 0)'
 expect = []
+deviation = "Go returns a nil slice, which toJSON writes as null; dictum has no nil array and returns an empty one"
 
 [[case]]
 name = "splitAfter with a negative limit"

@@ -300,8 +300,9 @@ pub(crate) fn parse(layout: &str, value: &str, loc: &TimeZone) -> Option<(Timest
         layout = suffix;
         match chunk {
             Chunk::Year => {
+                // Go's `atoi` takes a sign, so `+1` is the year 2001.
                 let (n, rest) = (v.get(..2)?, v.get(2..)?);
-                let y = atoi(n)?;
+                let y = atoi_signed(n)?;
                 p.year = y.saturating_add(if y >= 69 { 1900 } else { 2000 });
                 v = rest;
             }
@@ -698,6 +699,9 @@ fn atoi_signed(s: &[u8]) -> Option<i64> {
 /// Go's `parseNanoseconds`: `v[0]` is the separator, `v[1..n]` the digits, at most
 /// nine of which count.
 fn nanoseconds(v: &[u8], n: usize) -> Option<i64> {
+    if !matches!(v.first(), Some(b'.' | b',')) {
+        return None;
+    }
     let n = n.min(10);
     let digits = v.get(1..n)?;
     let mut ns = atoi(digits)?;

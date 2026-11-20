@@ -125,7 +125,11 @@ pub(super) fn call<'a>(method: Method, recv: &Value<'a>, args: &[Value<'a>], f: 
                 d.saturating_sub(r)
             };
             let shifted = nanos.checked_add(shift).ok_or_else(overflow)?;
-            time(Timestamp::from_nanosecond(shifted).map_err(|_| overflow())?, z)
+            // `Timestamp::new` checks the range; `from_nanosecond` (jiff 0.2.38) only
+            // debug-asserts it.
+            let secs = i64::try_from(shifted.div_euclid(NANOS)).map_err(|_| overflow())?;
+            let nanos = i32::try_from(shifted.rem_euclid(NANOS)).map_err(|_| overflow())?;
+            time(Timestamp::new(secs, nanos).map_err(|_| overflow())?, z)
         }
         Method::IsZero => Value::bool(t.as_second() == ZERO_TIME && t.subsec_nanosecond() == 0),
         Method::Hours

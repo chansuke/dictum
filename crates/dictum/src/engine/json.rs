@@ -181,7 +181,12 @@ impl Encoder<'_, '_> {
     /// Go's `Time.MarshalJSON`: RFC 3339 in the time's zone, the nanoseconds trimmed
     /// and `Z` for a zero offset, years 0 to 9999.
     fn time(&mut self, t: jiff::Timestamp, z: &jiff::tz::TimeZone) -> Result<(), Fault> {
-        let (dt, _, _) = builtins::zoned(t, z);
+        let (dt, offset, _) = builtins::zoned(t, z);
+        if offset.unsigned_abs() / 3600 >= 24 {
+            let mut text = String::new();
+            builtins::go_time(t, z, &mut text);
+            return Err(invalid("JSON time, offset outside -23:59 to +23:59", &text, self.span));
+        }
         if dt.year() < 0 {
             let mut text = String::new();
             builtins::go_time(t, z, &mut text);
