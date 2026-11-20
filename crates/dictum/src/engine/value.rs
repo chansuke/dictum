@@ -26,6 +26,10 @@ pub fn missing_field<'a>() -> Value<'a> {
     Value(Repr::Nil)
 }
 
+// Every evaluation step moves values; a time carries its zone without growing them.
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<Value<'static>>() == 32);
+
 #[derive(Clone)]
 pub(crate) enum Repr<'a> {
     Nil,
@@ -36,8 +40,10 @@ pub(crate) enum Repr<'a> {
     Decimal(rust_decimal::Decimal),
     Str(Str<'a>),
     Bytes(Bytes<'a>),
-    Time(jiff::Timestamp),
+    /// An instant and the zone it is shown in; comparisons use the instant only.
+    Time(jiff::Timestamp, jiff::tz::TimeZone),
     Duration(jiff::SignedDuration),
+    Location(jiff::tz::TimeZone),
     Array(Seq<'a>),
     Map(MapRef<'a>),
     Object(&'a dyn Object),
@@ -206,8 +212,9 @@ impl<'a> Value<'a> {
             Const::Decimal(d) => Repr::Decimal(*d),
             Const::Str(s) => Repr::Str(Str::Shared(s.clone())),
             Const::Bytes(b) => Repr::Bytes(Bytes::Shared(b.clone())),
-            Const::Time(t) => Repr::Time(*t),
+            Const::Time(t, z) => Repr::Time(*t, z.clone()),
             Const::Duration(d) => Repr::Duration(*d),
+            Const::Location(z) => Repr::Location(z.clone()),
             Const::Array(xs) => Repr::Array(Seq::Const(xs.clone())),
             Const::Map(kvs) => Repr::Map(MapRef::Const(kvs.clone())),
         })
@@ -225,8 +232,9 @@ impl<'a> Value<'a> {
             Repr::Decimal(d) => Const::Decimal(*d),
             Repr::Str(Str::Shared(s)) => Const::Str(s.clone()),
             Repr::Bytes(Bytes::Shared(b)) => Const::Bytes(b.clone()),
-            Repr::Time(t) => Const::Time(*t),
+            Repr::Time(t, z) => Const::Time(*t, z.clone()),
             Repr::Duration(d) => Const::Duration(*d),
+            Repr::Location(z) => Const::Location(z.clone()),
             Repr::Array(Seq::Const(xs)) => Const::Array(xs.clone()),
             Repr::Array(Seq::Owned(xs)) => Const::Array(xs.iter().map(Value::to_const).collect::<Option<_>>()?),
             Repr::Map(MapRef::Const(kvs)) => Const::Map(kvs.clone()),
@@ -276,9 +284,24 @@ impl<'a> Value<'a> {
         }
     }
 
+    /// The instant of a time, without its zone.
     pub(crate) fn as_time(&self) -> Option<jiff::Timestamp> {
         match self.0 {
-            Repr::Time(t) => Some(t),
+            Repr::Time(t, _) => Some(t),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_zoned(&self) -> Option<(jiff::Timestamp, &jiff::tz::TimeZone)> {
+        match &self.0 {
+            Repr::Time(t, z) => Some((*t, z)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_location(&self) -> Option<&jiff::tz::TimeZone> {
+        match &self.0 {
+            Repr::Location(z) => Some(z),
             _ => None,
         }
     }
@@ -330,8 +353,9 @@ impl<'a> Value<'a> {
             Repr::Decimal(d) => Dynamic::Decimal(*d),
             Repr::Str(s) => Dynamic::String(s.as_str().into()),
             Repr::Bytes(b) => Dynamic::Bytes(b.as_slice().into()),
-            Repr::Time(t) => Dynamic::Time(*t),
+            Repr::Time(t, z) => Dynamic::Time(t.to_zoned(z.clone())),
             Repr::Duration(d) => Dynamic::Duration(*d),
+            Repr::Location(z) => Dynamic::Location(z.clone()),
             Repr::Array(seq) => Dynamic::Array(seq.iter().map(|x| x.to_dynamic()).collect()),
             Repr::Map(m) => {
                 let mut out = DynMap::new();
@@ -369,8 +393,9 @@ impl<'a> Value<'a> {
             Repr::Decimal(_) => Tag::Decimal,
             Repr::Str(_) => Tag::String,
             Repr::Bytes(_) => Tag::Bytes,
-            Repr::Time(_) => Tag::Time,
+            Repr::Time(..) => Tag::Time,
             Repr::Duration(_) => Tag::Duration,
+            Repr::Location(_) => Tag::Location,
             Repr::Array(_) => Tag::Array,
             Repr::Map(_) => Tag::Map,
             Repr::Object(_) => Tag::Struct,

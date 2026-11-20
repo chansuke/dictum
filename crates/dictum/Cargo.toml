@@ -10,10 +10,14 @@ repository.workspace = true
 exclude = ["benches/go"]
 
 [features]
-default = ["std"]
-# std only buys performance (regex thread-local pool) and, later, `timezone()`.
-# Semantics are identical with and without it.
+default = ["std", "tzdb"]
+# std only buys performance (regex thread-local pool). Semantics are identical with
+# and without it.
 std = ["regex/std", "jiff/std"]
+# The IANA time zone database, embedded in the binary (about 200 KB) so that
+# `timezone("Asia/Tokyo")` gives the same zone on every machine and without std.
+# Without it, only "UTC" resolves.
+tzdb = ["jiff/tzdb-bundle-always"]
 decimal = ["dep:rust_decimal", "dictum-check/decimal"]
 
 [dependencies]

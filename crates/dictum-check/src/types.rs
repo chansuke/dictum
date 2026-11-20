@@ -27,10 +27,12 @@ pub enum Type {
     String,
     /// `bytes`
     Bytes,
-    /// `time` (`jiff::Timestamp`)
+    /// `time`: an instant and the time zone it is shown in, as Go's `time.Time`
     Time,
     /// `duration` (`jiff::SignedDuration`)
     Duration,
+    /// `location`: a time zone (`jiff::tz::TimeZone`), as Go's `*time.Location`
+    Location,
     /// `array<T>`
     Array(Arc<Type>),
     /// `map<string, T>`. Keys are always strings.
@@ -91,6 +93,7 @@ impl Type {
             Type::Bytes => Tag::Bytes,
             Type::Time => Tag::Time,
             Type::Duration => Tag::Duration,
+            Type::Location => Tag::Location,
             Type::Array(_) => Tag::Array,
             Type::Map(_) => Tag::Map,
             Type::Struct(_) => Tag::Struct,
@@ -149,6 +152,8 @@ pub enum Tag {
     Time,
     /// `duration`
     Duration,
+    /// `location`
+    Location,
     /// `array`
     Array,
     /// `map`
@@ -171,6 +176,7 @@ impl Tag {
             Tag::Bytes => "bytes",
             Tag::Time => "time",
             Tag::Duration => "duration",
+            Tag::Location => "location",
             Tag::Array => "array",
             Tag::Map => "map",
             Tag::Struct => "struct",

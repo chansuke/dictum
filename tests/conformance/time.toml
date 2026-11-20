@@ -1,0 +1,138 @@
+# Times with their zones, locations, timezone() and now(loc). `now()` is
+# 2026-01-01T00:00:00Z (`sample_now`).
+
+[[case]]
+name = "now is shown in UTC"
+expr = "string(now())"
+expect = "2026-01-01 00:00:00 +0000 UTC"
+
+[[case]]
+name = "now in a location"
+expr = 'string(now(timezone("Asia/Tokyo")))'
+expect = "2026-01-01 09:00:00 +0900 JST"
+
+[[case]]
+name = "now in a location with daylight saving rules"
+expr = 'string(now(timezone("America/New_York")))'
+expect = "2025-12-31 19:00:00 -0500 EST"
+
+[[case]]
+name = "a zone does not change the instant"
+expr = 'now(timezone("Asia/Tokyo")) == now()'
+expect = true
+
+[[case]]
+name = "a zone does not change the order"
+expr = 'now(timezone("Asia/Tokyo")) < now() + duration("1s")'
+expect = true
+
+[[case]]
+name = "times in two zones differ by nothing"
+expr = 'string(now(timezone("Asia/Tokyo")) - now(timezone("Europe/Zurich")))'
+expect = "0s"
+
+[[case]]
+name = "adding a duration keeps the zone"
+expr = 'string(now(timezone("Asia/Tokyo")) + duration("1h30m"))'
+expect = "2026-01-01 10:30:00 +0900 JST"
+
+[[case]]
+name = "a location prints its name"
+expr = 'string(timezone("Europe/Zurich"))'
+expect = "Europe/Zurich"
+deviation = "Go's string() prints the fields of the dereferenced *time.Location; dictum prints its name, as loc.String() does"
+
+[[case]]
+name = "UTC is a location"
+expr = 'string(timezone("UTC"))'
+expect = "UTC"
+deviation = "Go's string() prints the fields of the dereferenced *time.Location; dictum prints its name, as loc.String() does"
+
+[[case]]
+name = "the empty name is UTC"
+expr = 'string(timezone(""))'
+expect = "UTC"
+deviation = "Go's string() prints the fields of the dereferenced *time.Location; dictum prints its name, as loc.String() does"
+
+[[case]]
+name = "now in UTC by location"
+expr = 'string(now(timezone("UTC")))'
+expect = "2026-01-01 00:00:00 +0000 UTC"
+
+[[case]]
+name = "unknown zone"
+expr = 'timezone("Nowhere/City")'
+error = "E0309"
+
+[[case]]
+name = "zone names are case-sensitive"
+expr = 'timezone("asia/tokyo")'
+error = "E0309"
+
+[[case]]
+name = "the local zone is refused"
+expr = 'timezone("Local")'
+error = "E0309"
+deviation = "Go returns the machine's zone; dictum refuses it so that a rule gives the same result everywhere"
+
+[[case]]
+name = "timezone of a number"
+expr = "timezone(1)"
+error = "E0201"
+
+[[case]]
+name = "timezone needs a name"
+expr = "timezone()"
+error = "E0205"
+
+[[case]]
+name = "now of a string"
+expr = 'now("Asia/Tokyo")'
+error = "E0201"
+
+[[case]]
+name = "now takes one location at most"
+expr = 'now(timezone("UTC"), timezone("UTC"))'
+error = "E0205"
+
+[[case]]
+name = "type of a time"
+expr = "type(now())"
+expect = "time.Time"
+
+[[case]]
+name = "type of a duration"
+expr = 'type(duration("1h"))'
+expect = "time.Duration"
+
+[[case]]
+name = "type of a location"
+expr = 'type(timezone("UTC"))'
+expect = "location"
+deviation = "Go names a *time.Location \"unknown\"; dictum has a location type"
+
+[[case]]
+name = "locations are not comparable"
+expr = 'timezone("UTC") == timezone("UTC")'
+error = "E0207"
+deviation = "Go compares the pointers, which is true for UTC and false for two loads of any other zone"
+
+[[case]]
+name = "JSON of a time keeps its offset"
+expr = 'toJSON(now(timezone("Asia/Tokyo")))'
+expect = '"2026-01-01T09:00:00+09:00"'
+
+[[case]]
+name = "JSON of a time with a negative offset"
+expr = 'toJSON(now(timezone("America/New_York")))'
+expect = '"2025-12-31T19:00:00-05:00"'
+
+[[case]]
+name = "JSON of a location"
+expr = 'toJSON(timezone("Asia/Tokyo"))'
+expect = "{}"
+
+[[case]]
+name = "a zone through any"
+expr = 'string(now([timezone("Asia/Tokyo"), 1][0]))'
+expect = "2026-01-01 09:00:00 +0900 JST"

@@ -4,7 +4,7 @@ error[E0277]: `u64` cannot be used in a dictum fact
 3 |     pub id: u64,
   |             ^^^ the trait `dictum::__private::Field` is not implemented for `u64`
   |
-  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
+  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::Zoned, jiff::SignedDuration, jiff::tz::TimeZone, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
   = note: HashMap is rejected because its order is not deterministic; use BTreeMap
   = note: use #[dictum(skip)] to keep the field out of rules
   = help: the following other types implement trait `dictum::__private::Field`:
@@ -24,7 +24,7 @@ error[E0277]: `u64` cannot be used in a dictum fact
 1 | #[derive(dictum::Dictum)]
   |          ^^^^^^^^^^^^^^ the trait `dictum::__private::Field` is not implemented for `u64`
   |
-  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::SignedDuration, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
+  = note: supported: bool, i8..i64, u8..u32, f32, f64, String, &str, Box<str>, jiff::Timestamp, jiff::Zoned, jiff::SignedDuration, jiff::tz::TimeZone, Option<T>, Vec<T>, Box<[T]>, &[T], Box<T>, &T, BTreeMap<String, T>, dictum::Dynamic, and #[derive(Dictum)] structs
   = note: HashMap is rejected because its order is not deterministic; use BTreeMap
   = note: use #[dictum(skip)] to keep the field out of rules
   = help: the following other types implement trait `dictum::__private::Field`:

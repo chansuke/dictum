@@ -59,7 +59,9 @@ impl Encoder<'_, '_> {
                 builtins::base64_encode(b.as_slice(), &mut self.out);
                 self.out.push('"');
             }
-            Repr::Time(t) => self.time(*t)?,
+            Repr::Time(t, z) => self.time(*t, z)?,
+            // Go's `*time.Location` has no exported fields.
+            Repr::Location(_) => self.out.push_str("{}"),
             Repr::Duration(d) => {
                 let _ = write!(self.out, "{}", d.as_nanos());
             }
@@ -176,12 +178,13 @@ impl Encoder<'_, '_> {
         self.out.push('"');
     }
 
-    /// Go's `Time.MarshalJSON`: RFC 3339 with the nanoseconds trimmed, years 0 to 9999.
-    fn time(&mut self, t: jiff::Timestamp) -> Result<(), Fault> {
-        let dt = jiff::tz::Offset::UTC.to_datetime(t);
+    /// Go's `Time.MarshalJSON`: RFC 3339 in the time's zone, the nanoseconds trimmed
+    /// and `Z` for a zero offset, years 0 to 9999.
+    fn time(&mut self, t: jiff::Timestamp, z: &jiff::tz::TimeZone) -> Result<(), Fault> {
+        let (dt, offset, _) = builtins::zoned(t, z);
         if dt.year() < 0 {
             let mut text = String::new();
-            builtins::go_time(t, &mut text);
+            builtins::go_time(t, z, &mut text);
             return Err(invalid("JSON time, year outside 0 to 9999", &text, self.span));
         }
         let _ = write!(
@@ -200,7 +203,12 @@ impl Encoder<'_, '_> {
             self.out.push('.');
             self.out.push_str(fraction.trim_end_matches('0'));
         }
-        self.out.push_str("Z\"");
+        if offset == 0 {
+            self.out.push('Z');
+        } else {
+            builtins::go_offset(offset, true, &mut self.out);
+        }
+        self.out.push('"');
         Ok(())
     }
 }

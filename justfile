@@ -67,6 +67,7 @@ msrv:
 nostd:
     cargo build -p dictum --no-default-features --target thumbv7em-none-eabihf
     cargo build -p dictum --no-default-features --features decimal --target thumbv7em-none-eabihf
+    cargo build -p dictum --no-default-features --features tzdb --target thumbv7em-none-eabihf
 
 # Benchmarks compile.
 bench-build:

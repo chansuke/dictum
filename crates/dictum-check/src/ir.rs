@@ -516,10 +516,12 @@ pub enum Const {
     Str(Arc<str>),
     /// `bytes`
     Bytes(Arc<[u8]>),
-    /// `time` (from a folded `date("...")`)
-    Time(jiff::Timestamp),
+    /// `time` (from a folded `date("...")`) and its time zone
+    Time(jiff::Timestamp, jiff::tz::TimeZone),
     /// `duration` (from a folded `duration("...")`)
     Duration(jiff::SignedDuration),
+    /// `location` (from a folded `timezone("...")`)
+    Location(jiff::tz::TimeZone),
     /// `array`
     Array(Arc<[Const]>),
     /// `map`, insertion order, unique keys.
@@ -537,8 +539,9 @@ impl Const {
             | (Const::Float(_), Type::Float)
             | (Const::Str(_), Type::String)
             | (Const::Bytes(_), Type::Bytes)
-            | (Const::Time(_), Type::Time)
-            | (Const::Duration(_), Type::Duration) => true,
+            | (Const::Time(..), Type::Time)
+            | (Const::Duration(_), Type::Duration)
+            | (Const::Location(_), Type::Location) => true,
             #[cfg(feature = "decimal")]
             (Const::Decimal(_), Type::Decimal) => true,
             (Const::Array(xs), Type::Array(t)) => xs.iter().all(|x| x.inhabits(t)),
@@ -901,10 +904,13 @@ pub enum Intrinsic {
     ToBase64,
     /// `fromBase64(s)`: Go's `base64.StdEncoding`; the decoded bytes must be UTF-8.
     FromBase64,
-    /// `now()`: the evaluation's timestamp from `Ctx`, the same for every call within
-    /// one evaluation (and one `RuleSet::eval`). Fails with `ClockUnset` when the
-    /// `Ctx` has no time.
+    /// `now()` and `now(loc)`: the evaluation's timestamp from `Ctx`, the same for
+    /// every call within one evaluation (and one `RuleSet::eval`), in UTC or in the
+    /// given location. Fails with `ClockUnset` when the `Ctx` has no time.
     Now,
+    /// `timezone(name)`: a zone of the bundled time zone database (feature `tzdb`),
+    /// or `UTC`.
+    LoadLocation,
     /// `duration(string)`: Go duration syntax (`1h30m`, `-1.5h`, `300ms`).
     ParseDuration,
     /// `date(string)`: RFC 3339, or a date / naive date-time read as UTC.

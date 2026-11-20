@@ -137,9 +137,13 @@ fn write_value(v: &Dynamic, out: &mut String) {
         Dynamic::Bytes(b) => {
             let _ = write!(out, "{b:?}");
         }
+        Dynamic::Time(t) if t.time_zone() == &jiff::tz::TimeZone::UTC => {
+            let _ = write!(out, "{}", t.timestamp());
+        }
         Dynamic::Time(t) => {
             let _ = write!(out, "{t}");
         }
+        Dynamic::Location(z) => out.push_str(crate::engine::builtins::location_name(z)),
         Dynamic::Duration(d) => crate::engine::builtins::go_duration(*d, out),
         Dynamic::Array(xs) => {
             out.push('[');

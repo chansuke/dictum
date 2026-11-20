@@ -19,6 +19,8 @@ mod sealed {
     impl Sealed for f64 {}
     impl Sealed for alloc::string::String {}
     impl Sealed for jiff::Timestamp {}
+    impl Sealed for jiff::Zoned {}
+    impl Sealed for jiff::tz::TimeZone {}
     impl Sealed for jiff::SignedDuration {}
     #[cfg(feature = "decimal")]
     impl Sealed for rust_decimal::Decimal {}
@@ -87,6 +89,24 @@ impl Output for jiff::Timestamp {
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
         v.as_time()
+    }
+}
+
+impl Output for jiff::Zoned {
+    fn expected() -> Type {
+        Type::Time
+    }
+    fn from_value(v: Value<'_>) -> Option<Self> {
+        v.as_zoned().map(|(t, z)| t.to_zoned(z.clone()))
+    }
+}
+
+impl Output for jiff::tz::TimeZone {
+    fn expected() -> Type {
+        Type::Location
+    }
+    fn from_value(v: Value<'_>) -> Option<Self> {
+        v.as_location().cloned()
     }
 }
 
