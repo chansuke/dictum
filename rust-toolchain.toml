@@ -3,5 +3,6 @@
 [toolchain]
 channel = "1.99.0"
 components = ["rustfmt", "clippy"]
-# The no_std check builds for a bare-metal target.
-targets = ["thumbv7em-none-eabihf"]
+# The no_std check builds for a bare-metal target; the conformance cases also run
+# on wasm32-wasip1 under wasmtime (`just wasm`).
+targets = ["thumbv7em-none-eabihf", "wasm32-wasip1"]
