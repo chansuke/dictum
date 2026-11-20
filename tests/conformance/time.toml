@@ -136,3 +136,268 @@ expect = "{}"
 name = "a zone through any"
 expr = 'string(now([timezone("Asia/Tokyo"), 1][0]))'
 expect = "2026-01-01 09:00:00 +0900 JST"
+
+[[case]]
+name = "date of a day"
+expr = 'string(date("2023-08-14"))'
+expect = "2023-08-14 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date of a clock time"
+expr = 'string(date("15:04:05"))'
+expect = "0000-01-01 15:04:05 +0000 UTC"
+
+[[case]]
+name = "date of a date and time"
+expr = 'string(date("2023-08-14 09:30:00"))'
+expect = "2023-08-14 09:30:00 +0000 UTC"
+
+[[case]]
+name = "date of RFC 3339 keeps the offset"
+expr = 'string(date("2023-08-14T09:30:00+09:00"))'
+expect = "2023-08-14 09:30:00 +0900 +0900"
+
+[[case]]
+name = "date of RFC 3339 in UTC"
+expr = 'string(date("2023-08-14T09:30:00Z"))'
+expect = "2023-08-14 09:30:00 +0000 UTC"
+
+[[case]]
+name = "date of RFC 3339 with a fraction"
+expr = 'string(date("2023-08-14T09:30:00.25Z"))'
+expect = "2023-08-14 09:30:00.25 +0000 UTC"
+
+[[case]]
+name = "date of RFC 822"
+expr = 'string(date("14 Aug 23 09:30 UTC"))'
+expect = "2023-08-14 09:30:00 +0000 UTC"
+
+[[case]]
+name = "date of RFC 850"
+expr = 'string(date("Monday, 14-Aug-23 09:30:00 UTC"))'
+expect = "2023-08-14 09:30:00 +0000 UTC"
+
+[[case]]
+name = "date of RFC 1123"
+expr = 'string(date("Mon, 14 Aug 2023 09:30:00 UTC"))'
+expect = "2023-08-14 09:30:00 +0000 UTC"
+
+[[case]]
+name = "date without an offset after T is not a default layout"
+expr = 'date("2023-08-14T09:30:00")'
+error = "E0309"
+
+[[case]]
+name = "date that matches no layout"
+expr = 'date("14/08/2023")'
+error = "E0309"
+
+[[case]]
+name = "date of a day out of range"
+expr = 'date("2023-02-30")'
+error = "E0309"
+
+[[case]]
+name = "dates compare by instant"
+expr = 'date("2023-08-14T09:00:00+09:00") == date("2023-08-14")'
+expect = true
+
+[[case]]
+name = "date with a layout"
+expr = 'string(date("14/08/2023", "02/01/2006"))'
+expect = "2023-08-14 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date with month and weekday names"
+expr = 'string(date("Monday, August 14, 2023", "Monday, January 2, 2006"))'
+expect = "2023-08-14 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date with month names in any case"
+expr = 'string(date("14 aug 2023", "02 Jan 2006"))'
+expect = "2023-08-14 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date with a twelve-hour clock"
+expr = 'string(date("2023-08-14 3:04PM", "2006-01-02 3:04PM"))'
+expect = "2023-08-14 15:04:00 +0000 UTC"
+
+[[case]]
+name = "date with midnight on a twelve-hour clock"
+expr = 'string(date("12:30am", "3:04pm"))'
+expect = "0000-01-01 00:30:00 +0000 UTC"
+
+[[case]]
+name = "date with a two-digit year before 69"
+expr = 'string(date("01/02/68", "01/02/06"))'
+expect = "2068-01-02 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date with a two-digit year from 69"
+expr = 'string(date("01/02/69", "01/02/06"))'
+expect = "1969-01-02 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date with a day of the year"
+expr = 'string(date("2024 060", "2006 002"))'
+expect = "2024-02-29 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date with a space-padded day"
+expr = 'string(date("Aug  4 2023", "Jan _2 2006"))'
+expect = "2023-08-04 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date with exact milliseconds"
+expr = 'string(date("09:30:00.120", "15:04:05.000"))'
+expect = "0000-01-01 09:30:00.12 +0000 UTC"
+
+[[case]]
+name = "date with too few milliseconds"
+expr = 'date("09:30:00.12", "15:04:05.000")'
+error = "E0309"
+
+[[case]]
+name = "date with optional fraction"
+expr = 'string(date("09:30:00.123456789", "15:04:05.999"))'
+expect = "0000-01-01 09:30:00.123456789 +0000 UTC"
+
+[[case]]
+name = "date with a comma fraction"
+expr = 'string(date("09:30:00,5", "15:04:05,999"))'
+expect = "0000-01-01 09:30:00.5 +0000 UTC"
+
+[[case]]
+name = "date with a numeric offset"
+expr = 'string(date("2023-08-14 09:30 -0700", "2006-01-02 15:04 -0700"))'
+expect = "2023-08-14 09:30:00 -0700 -0700"
+
+[[case]]
+name = "date with a short offset"
+expr = 'string(date("2023-08-14 09:30 +05", "2006-01-02 15:04 -07"))'
+expect = "2023-08-14 09:30:00 +0500 +0500"
+
+[[case]]
+name = "date with an offset with seconds"
+expr = 'toJSON(date("2023-08-14 09:30 +05:30:15", "2006-01-02 15:04 -07:00:00") - duration("0s"))'
+expect = '"2023-08-14T09:30:00+05:30"'
+
+[[case]]
+name = "date with Z for the offset"
+expr = 'string(date("2023-08-14 09:30 Z", "2006-01-02 15:04 Z07:00"))'
+expect = "2023-08-14 09:30:00 +0000 UTC"
+
+[[case]]
+name = "date with extra text"
+expr = 'date("2023-08-14 extra", "2006-01-02")'
+error = "E0309"
+
+[[case]]
+name = "date with an hour out of range"
+expr = 'date("25:00", "15:04")'
+error = "E0309"
+
+[[case]]
+name = "date with a month out of range"
+expr = 'date("2023-13-01", "2006-01-02")'
+error = "E0309"
+
+[[case]]
+name = "date with a day of the year out of range"
+expr = 'date("2023 366", "2006 002")'
+error = "E0309"
+
+[[case]]
+name = "date in a zone"
+expr = 'string(date("2023-08-14 10:00", "2006-01-02 15:04", "Europe/Zurich"))'
+expect = "2023-08-14 10:00:00 +0200 CEST"
+
+[[case]]
+name = "date in a zone in winter"
+expr = 'string(date("2023-01-14 10:00", "2006-01-02 15:04", "Europe/Zurich"))'
+expect = "2023-01-14 10:00:00 +0100 CET"
+
+[[case]]
+name = "date in a zone is a different instant"
+expr = 'string(date("2023-08-14 09:00", "2006-01-02 15:04", "Asia/Tokyo") - date("2023-08-14"))'
+expect = "0s"
+
+[[case]]
+name = "date in a zone with its abbreviation"
+expr = 'string(date("2023-01-14 10:00 CET", "2006-01-02 15:04 MST", "Europe/Zurich"))'
+expect = "2023-01-14 10:00:00 +0100 CET"
+
+[[case]]
+name = "date in a zone with UTC"
+expr = 'string(date("2023-01-14 10:00 UTC", "2006-01-02 15:04 MST", "Europe/Zurich"))'
+expect = "2023-01-14 10:00:00 +0000 UTC"
+
+[[case]]
+name = "date in a zone with a matching offset"
+expr = 'string(date("2023-08-14 10:00 +0200", "2006-01-02 15:04 -0700", "Europe/Zurich"))'
+expect = "2023-08-14 10:00:00 +0200 CEST"
+
+[[case]]
+name = "date in a zone with another offset"
+expr = 'string(date("2023-08-14 10:00 +0900", "2006-01-02 15:04 -0700", "Europe/Zurich"))'
+expect = "2023-08-14 10:00:00 +0900 +0900"
+
+[[case]]
+name = "date in an unknown zone"
+expr = 'date("2023-08-14", "2006-01-02", "Nowhere/City")'
+error = "E0309"
+
+[[case]]
+name = "date in a skipped hour"
+expr = 'string(date("2023-03-12 02:30", "2006-01-02 15:04", "America/New_York"))'
+expect = "2023-03-12 01:30:00 -0500 EST"
+
+[[case]]
+name = "date in a repeated hour"
+expr = 'string(date("2023-11-05 01:30", "2006-01-02 15:04", "America/New_York"))'
+expect = "2023-11-05 01:30:00 -0400 EDT"
+
+[[case]]
+name = "date after a location"
+expr = 'string(date(timezone("Asia/Tokyo"), "2023-08-14 09:00:00"))'
+expect = "2023-08-14 09:00:00 +0900 JST"
+
+[[case]]
+name = "date after a location with a layout"
+expr = 'string(date(timezone("Asia/Tokyo"), "14/08/2023", "02/01/2006"))'
+expect = "2023-08-14 00:00:00 +0900 JST"
+
+[[case]]
+name = "a zone name after a location wins"
+expr = 'string(date(timezone("Asia/Tokyo"), "14/08/2023", "02/01/2006", "UTC"))'
+expect = "2023-08-14 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date of a number"
+expr = "date(1)"
+error = "E0201"
+
+[[case]]
+name = "date with a number layout"
+expr = 'date("2023", 2006)'
+error = "E0201"
+
+[[case]]
+name = "date takes at most three strings"
+expr = 'date("a", "b", "c", "d")'
+error = "E0201"
+
+[[case]]
+name = "date with too many arguments"
+expr = 'date(timezone("UTC"), "a", "b", "c", "d")'
+error = "E0205"
+
+[[case]]
+name = "date of an any value"
+expr = 'string(date(["2023-08-14", 1][0]))'
+expect = "2023-08-14 00:00:00 +0000 UTC"
+
+[[case]]
+name = "date of a pipe"
+expr = '"2023-08-14" | date() | string()'
+expect = "2023-08-14 00:00:00 +0000 UTC"

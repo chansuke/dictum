@@ -228,6 +228,7 @@ pub fn method(receiver: Tag, name: &str, args: &[Tag]) -> Option<(Intrinsic, Tag
 pub const fn arity(b: Builtin) -> (usize, usize) {
     match b {
         Builtin::Now => (0, 1),
+        Builtin::Date => (1, 4),
         Builtin::Upper
         | Builtin::Lower
         | Builtin::Abs
@@ -256,7 +257,6 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::ToBase64
         | Builtin::FromBase64
         | Builtin::Duration
-        | Builtin::Date
         | Builtin::Timezone => (1, 1),
         Builtin::Repeat
         | Builtin::HasPrefix
@@ -387,7 +387,15 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
         (Builtin::Now, [] | [T::Location]) => ok(Intrinsic::Now, T::Time),
         (Builtin::Timezone, [T::String]) => ok(Intrinsic::LoadLocation, T::Location),
         (Builtin::Duration, [T::String]) => ok(Intrinsic::ParseDuration, T::Duration),
-        (Builtin::Date, [T::String]) => ok(Intrinsic::ParseDate, T::Time),
+        (Builtin::Date, [T::String] | [T::String, T::String] | [T::String, T::String, T::String]) => {
+            ok(Intrinsic::ParseDate, T::Time)
+        }
+        (
+            Builtin::Date,
+            [T::Location, T::String]
+            | [T::Location, T::String, T::String]
+            | [T::Location, T::String, T::String, T::String],
+        ) => ok(Intrinsic::ParseDate, T::Time),
         (Builtin::Get, [T::Array, T::Int]) => ok(Intrinsic::GetArray, T::Array),
         (Builtin::Get, [T::Map, T::String]) => ok(Intrinsic::GetMap, T::Map),
         // Typed by the checker (predicates), or no matching overload.

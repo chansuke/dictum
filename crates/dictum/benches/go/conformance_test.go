@@ -25,6 +25,11 @@ type conformanceCase struct {
 
 var sampleNow = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
+// dictum has no local zone: date() reads a time without an offset as UTC. Go reads it
+// in time.Local, so the oracle sets that to UTC. expr.Timezone would do the same for
+// date(s) but also prepends a location to calls that already pass one.
+func init() { time.Local = time.UTC }
+
 func runGo(src string) (any, error) {
 	p, err := expr.Compile(src,
 		expr.Env(Facts{}),
@@ -34,8 +39,6 @@ func runGo(src string) (any, error) {
 			}
 			return sampleNow, nil
 		}, new(func() time.Time), new(func(*time.Location) time.Time)),
-		// dictum has no local timezone; without this date() parses in time.Local.
-		expr.Timezone("UTC"),
 	)
 	if err != nil {
 		return nil, err

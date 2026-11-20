@@ -913,7 +913,8 @@ pub enum Intrinsic {
     LoadLocation,
     /// `duration(string)`: Go duration syntax (`1h30m`, `-1.5h`, `300ms`).
     ParseDuration,
-    /// `date(string)`: RFC 3339, or a date / naive date-time read as UTC.
+    /// `date(s)`, `date(s, layout)`, `date(s, layout, zone)`, each optionally after a
+    /// location: Go's layouts, read in the location (UTC by default).
     ParseDate,
     /// `get(array, int)` → `Option<T>`
     GetArray,
