@@ -25,6 +25,17 @@ name = "any with the wrong runtime type"
 expr = 'user.Attrs + "x"'
 error = "E0307"
 
+# Go also resolves a method on an `any` value at run time and fails there.
+[[case]]
+name = "method on an any receiver fails at run time"
+expr = "user.Attrs.Year()"
+error = "E0307"
+
+[[case]]
+name = "method on an any receiver through ?."
+expr = "user.Attrs?.Year()"
+error = "E0307"
+
 [[case]]
 name = "type"
 expr = 'type(1) + type("a") + type(nil)'

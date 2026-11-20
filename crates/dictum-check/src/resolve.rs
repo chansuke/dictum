@@ -213,6 +213,17 @@ pub fn membership(needle: Tag, haystack: Tag) -> Option<InOp> {
     }
 }
 
+/// Resolve `receiver.name(args)`. There are no user methods, so a receiver type that
+/// has no method of that name is E0214; nothing resolves yet, because no type has
+/// methods until the time builtins land.
+///
+/// The checker calls this with the receiver's static type, and the evaluator with the
+/// tag of the actual value when the receiver is `any` ([`Intrinsic::DynMethod`]).
+pub fn method(receiver: Tag, name: &str, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
+    let _ = (receiver, name, args);
+    None
+}
+
 /// How many arguments a builtin takes, as an inclusive range, counting a piped value.
 pub const fn arity(b: Builtin) -> (usize, usize) {
     match b {

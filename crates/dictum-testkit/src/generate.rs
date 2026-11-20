@@ -263,7 +263,8 @@ const BINARY_OPS: &[&str] = &[
     "and",
     "or",
 ];
-const POSTFIXES: &[&str] = &[" .b", " ?.c", " [0]", " ?.[x]", " [1:]", " [:2]", " [:]", " [a:b]"];
+const POSTFIXES: &[&str] =
+    &[" .b", " ?.c", " [0]", " ?.[x]", " [1:]", " [:2]", " [:]", " [a:b]", " .m ( )", " .m ( a )", " ?.m ( a , b )"];
 
 fn paren(wrap: bool, s: String) -> String {
     if wrap { format!("( {s} )") } else { s }

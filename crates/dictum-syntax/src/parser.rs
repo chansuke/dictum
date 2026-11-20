@@ -516,10 +516,11 @@ impl<'src> Parser<'src> {
         self.node(kind, self.span_from(start), operand.height, Bare::No)
     }
 
-    /// `postfix = primary { "." ident | "?." ident | "[" index "]" | "?.[" index "]" }`
+    /// `postfix = primary { "." ident [ call ] | "?." ident [ call ] | "[" index "]" | "?.[" index "]" }`
     ///
-    /// `(` is accepted only directly after an identifier primary (a call). After any
-    /// other postfix (`x.f(`, `x[0](`, `(f)(`) it is E0108.
+    /// `(` is accepted after an identifier primary (a call) and after a member name
+    /// (a method call). After any other postfix (`x[0](`, `(f)(`, `f(x)(`) it is
+    /// E0108, as in Go's parser.
     fn postfix(&mut self, ctx: Context) -> Parsed<'src> {
         let start = self.span;
         let mut e = self.primary(ctx);
@@ -531,9 +532,18 @@ impl<'src> Parser<'src> {
                     self.unexpected("a field name");
                     return e;
                 };
-                let key = MemberKey::Field(Ident { name, span: self.span });
+                let name = Ident { name, span: self.span };
                 self.bump();
-                let kind = ExprKind::Member { obj: Box::new(e.expr), key, optional };
+                if self.at("(") {
+                    self.bump();
+                    let args = self.args(")", None, 0, ctx);
+                    let h = args.iter().map(|p| p.height).max().unwrap_or(0).max(e.height);
+                    let args = args.into_iter().map(|p| p.expr).collect();
+                    let kind = ExprKind::Method { obj: Box::new(e.expr), name, args, optional };
+                    e = self.node(kind, self.span_from(start), h, Bare::No);
+                    continue;
+                }
+                let kind = ExprKind::Member { obj: Box::new(e.expr), key: MemberKey::Field(name), optional };
                 e = self.node(kind, self.span_from(start), e.height, Bare::No);
             } else if self.at("[") || self.at("?.[") {
                 self.bump();
@@ -613,7 +623,14 @@ impl<'src> Parser<'src> {
                 }
                 ExprKind::Pointer(p)
             }
-            Token::Punct(".") => return self.field_shorthand(ctx),
+            // `.Field` inside a predicate is `#.Field`: the pointer alone, with the
+            // postfix loop reading the member (or the method call) itself.
+            Token::Punct(".") => {
+                if !ctx.in_predicate {
+                    self.outside_predicate(".Field");
+                }
+                return Self::leaf(ExprKind::Pointer(Pointer::Current), start);
+            }
             Token::Punct("(") => {
                 self.bump();
                 let inner = self.expr(ctx);
@@ -643,24 +660,6 @@ impl<'src> Parser<'src> {
     fn outside_predicate(&mut self, name: &str) {
         let d = Diagnostic::new(ErrorCode::PointerOutsidePredicate, self.span, vec![Arg::Name(name.into())]);
         self.diags.push(d);
-    }
-
-    /// `.Field` inside a predicate is `#.Field`.
-    fn field_shorthand(&mut self, ctx: Context) -> Parsed<'src> {
-        let start = self.span;
-        if !ctx.in_predicate {
-            self.outside_predicate(".Field");
-        }
-        self.bump();
-        let Token::Ident(name) = self.tok else {
-            self.unexpected("a field name");
-            return self.recover(start);
-        };
-        let key = MemberKey::Field(Ident { name, span: self.span });
-        self.bump();
-        let current = Expr { kind: ExprKind::Pointer(Pointer::Current), span: start };
-        let kind = ExprKind::Member { obj: Box::new(current), key, optional: false };
-        self.node(kind, self.span_from(start), 1, Bare::No)
     }
 
     /// `name(args)`, the current token being `(`. A piped value is argument 0.

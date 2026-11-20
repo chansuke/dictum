@@ -85,6 +85,10 @@ pub enum ExprKind<'src> {
     Member { obj: Box<Expr<'src>>, key: MemberKey<'src>, optional: bool },
     /// `x[a:b]`, `x?.[a:b]`
     Slice { obj: Box<Expr<'src>>, from: Option<Box<Expr<'src>>>, to: Option<Box<Expr<'src>>>, optional: bool },
+    /// `x.Name(args)`, `x?.Name(args)`. Only the built-in types have methods, so the
+    /// checker resolves the name from the receiver's type; there are no user methods
+    /// and no method values.
+    Method { obj: Box<Expr<'src>>, name: Ident<'src>, args: Vec<Expr<'src>>, optional: bool },
     /// `name(args)`. Pipes are already folded in as the first argument.
     Call { callee: Callee<'src>, callee_span: Span, args: Vec<Expr<'src>> },
     /// A predicate argument (`{ ... }` or the bare form). Only the parser creates it,

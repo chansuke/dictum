@@ -281,6 +281,7 @@ impl<'e, P> Checker<'e, P> {
             K::Slice { obj, from, to, optional } => {
                 self.slice(span, obj, from.as_deref(), to.as_deref(), *optional, lets)
             }
+            K::Method { obj, name, args, optional } => self.method(span, obj, name, args, *optional, lets),
             K::Call { callee: Callee::Builtin(b), callee_span, args } => {
                 self.builtin(span, *b, *callee_span, args, lets)
             }
@@ -690,6 +691,51 @@ impl<'e, P> Checker<'e, P> {
                 None
             }
         }
+    }
+
+    /// `x.Name(args)`: the receiver's type and the name resolve to one intrinsic
+    /// ([`resolve::method`]), which no type has yet. `?.` unwraps an optional receiver
+    /// and makes the result optional, as it does for a field.
+    fn method(
+        &mut self,
+        span: Span,
+        obj: &ast::Expr<'_>,
+        name: &ast::Ident<'_>,
+        args: &[ast::Expr<'_>],
+        optional: bool,
+        lets: &LetScope<'_>,
+    ) -> Inferred {
+        let base = self.expr(obj, lets);
+        let args = self.all(args, lets);
+        let (base, args) = (base?, args?);
+        let (inner, through) = match base.ty() {
+            Type::Option(o) if optional => (o.inner().clone(), true),
+            Type::Option(_) => {
+                let d = Diagnostic::new(ErrorCode::OptionalAccess, obj.span, vec![ty_arg(base.ty())]);
+                self.diags.push(d.with_help(Help::UseSafeNavigation));
+                return None;
+            }
+            t => (t.clone(), false),
+        };
+        // A receiver or argument of type `any`: the same table resolves the call at
+        // run time, from the name the IR carries as its first argument.
+        if inner == Type::Any || args.iter().any(|a| *a.ty() == Type::Any) {
+            let name = self.mk(name.span, Type::String, ExprKind::Const(Const::Str(Arc::from(name.name))));
+            let mut all = vec![name, base];
+            all.extend(args);
+            return Some(self.mk(span, Type::Any, ExprKind::Intrinsic { op: Intrinsic::DynMethod, args: all }));
+        }
+        let tags: Option<Vec<Tag>> = args.iter().map(|a| a.ty().tag()).collect();
+        let resolved = inner.tag().zip(tags).and_then(|(recv, args)| resolve::method(recv, name.name, &args));
+        let Some((op, result)) = resolved else {
+            self.error(ErrorCode::UnknownMethod, name.span, vec![ty_arg(&inner), name_arg(name.name)]);
+            return None;
+        };
+        let result = scalar(result)?;
+        let ty = if through { Type::option(result) } else { result };
+        let mut all = vec![base];
+        all.extend(args);
+        Some(self.mk(span, ty, ExprKind::Intrinsic { op, args: all }))
     }
 
     fn slice(

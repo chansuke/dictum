@@ -93,6 +93,8 @@ inductive Ast where
   | logic (op : String) (xs : List Ast)
   | cmp (first : Ast) (rest : List (String × Ast))
   | member (opt : Bool) (a : Ast) (field : String)
+  /-- `a.name(args)`, `a?.name(args)`. -/
+  | method (opt : Bool) (a : Ast) (name : String) (args : List Ast)
   | index (opt : Bool) (a i : Ast)
   | slice (opt : Bool) (a : Ast) (lo hi : Option Ast)
   | call (f : String) (args : List Ast)
@@ -108,6 +110,9 @@ partial def Ast.sexpr : Ast → String
   | .logic op xs => s!"({op} {" ".intercalate (xs.map Ast.sexpr)})"
   | .cmp f rest => s!"(cmp {f.sexpr}{String.join (rest.map fun (op, e) => s!" {op} {e.sexpr}")})"
   | .member opt a f => s!"({if opt then "?" else ""}. {a.sexpr} {f})"
+  | .method opt a name args =>
+    let xs := String.join (args.map fun x => s!" {x.sexpr}")
+    s!"({if opt then "?" else ""}.call {a.sexpr} {name}{xs})"
   | .index opt a i => s!"({if opt then "?" else ""}[] {a.sexpr} {i.sexpr})"
   | .slice opt a lo hi =>
     let b := fun (x : Option Ast) => (x.map Ast.sexpr).getD "_"
@@ -314,9 +319,17 @@ partial def parsePostfix : P Ast := do
   postfixLoop p
 where
   postfixLoop (e : Ast) : P Ast := do
-    match ← peek with
-    | .sym "." => advance; postfixLoop (.member false e (← expectIdent))
-    | .sym "?." => advance; postfixLoop (.member true e (← expectIdent))
+    let tok ← peek
+    match tok with
+    -- A `(` after the name makes it a method call; a `(` anywhere else is E0108.
+    | .sym "." | .sym "?." =>
+      advance
+      let name ← expectIdent
+      let opt := tok == .sym "?."
+      if (← peek) == .sym "(" then
+        advance
+        postfixLoop (.method opt e name (← parseArgs ")"))
+      else postfixLoop (.member opt e name)
     | .sym "[" => advance; postfixLoop (← parseIndex false e)
     | .sym "?.[" => advance; postfixLoop (← parseIndex true e)
     | .sym "(" => fail "E0108"
@@ -453,6 +466,15 @@ def run (src : String) : String :=
 #guard run "a.b?.c[0]" == "([] (?. (. a b) c) 0)"
 #guard run "x[1:]" == "([:] x 1 _)"
 #guard run "x?.[:2]" == "(?[:] x _ 2)"
+-- Method calls: a member name followed by `(`.
+#guard run "a.b(c)" == "(.call a b c)"
+#guard run "a.b()" == "(.call a b)"
+#guard run "a?.b(c, d)" == "(?.call a b c d)"
+#guard run "a.b().c()" == "(.call (.call a b) c)"
+#guard run "a[0].b(1)" == "(.call ([] a 0) b 1)"
+#guard run "a.b(c).d" == "(. (.call a b c) d)"
+#guard run "-a.b(c)" == "(neg (.call a b c))"
+#guard run "a.b(c) + 1" == "(+ (.call a b c) 1)"
 -- Desugarings.
 #guard run "a | f(b)" == "(call f a b)"
 #guard run "a ?: b" == "(|| a b)"
@@ -469,7 +491,12 @@ def run (src : String) : String :=
 #guard run "a + b ?? c" == "!E0107"
 #guard run "(a ?? 0) + 1" == "(+ (?? a 0) 1)"
 #guard run "f(x)(y)" == "!E0108"
-#guard run "a.b(c)" == "!E0108"
+#guard run "(a)(b)" == "!E0108"
+#guard run "a[0](b)" == "!E0108"
+#guard run "a[b](c)" == "!E0108"
+-- The pipe takes a bare name and a `(`, as in Go's parser.
+#guard run "a | b.f()" == "!E0101"
+#guard run "a | f().g()" == "!E0101"
 #guard run "# > 1" == "!E0109"
 #guard run "9223372036854775808" == "!E0104"
 #guard run "1..2..3" == "!E0101"

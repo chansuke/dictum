@@ -92,6 +92,11 @@ pub fn sexpr(e: &Expr<'_>) -> String {
             let b = |x: &Option<Box<Expr<'_>>>| x.as_deref().map(sexpr).unwrap_or_else(|| "_".into());
             format!("({}[:] {} {} {})", if *optional { "?" } else { "" }, sexpr(obj), b(from), b(to))
         }
+        ExprKind::Method { obj, name, args, optional } => {
+            let q = if *optional { "?" } else { "" };
+            let args: String = args.iter().map(|a| format!(" {}", sexpr(a))).collect();
+            format!("({q}.call {} {}{})", sexpr(obj), name.name, args)
+        }
         ExprKind::Call { callee, args, .. } => {
             let name = match callee {
                 Callee::Builtin(b) => b.name(),
@@ -158,6 +163,11 @@ fn expr_spans(e: &Expr<'_>, out: &mut Vec<Span>) {
                 MemberKey::Field(f) => out.push(f.span),
                 MemberKey::Index(i) => expr_spans(i, out),
             }
+        }
+        ExprKind::Method { obj, name, args, .. } => {
+            expr_spans(obj, out);
+            out.push(name.span);
+            args.iter().for_each(|x| expr_spans(x, out));
         }
         ExprKind::Slice { obj, from, to, .. } => {
             expr_spans(obj, out);
