@@ -15,12 +15,13 @@
 //! - one step per element a predicate visits, before its body runs;
 //! - `len` steps for `x in array`, before scanning (so a sorted constant set costs
 //!   what a scan does), and one per entry for `keys`, `values`, `sum`, `join`,
-//!   `max`/`min`/`mean`/`median` of an array, structural `==`, and the deep check
-//!   of `any`;
+//!   `max`/`min`/`mean`/`median` of an array, `concat`, `flatten`, `take`,
+//!   `reverse`, structural `==`, and the deep check of `any`; for `uniq`, one per
+//!   element and one per element kept before it; for `sort`, `n * (log2(n) + 1)`;
 //! - one alloc per element of a built array or map (literals, `filter`, `map`,
-//!   `split`, `keys`, `values`, `+` of arrays, the numbers `median` sorts) and one
-//!   per byte of a built string, before building it. Constants are part of the rule
-//!   and cost nothing.
+//!   `split`, `keys`, `values`, `+` of arrays, `concat`, `flatten`, `uniq`, `take`,
+//!   `reverse`, `sort`, the numbers `median` sorts) and one per byte of a built
+//!   string, before building it. Constants are part of the rule and cost nothing.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -953,6 +954,77 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             }
             built(f, out, span)
         }
+        Intrinsic::Concat => {
+            let mut out = Vec::new();
+            for xs in args {
+                let xs = seq(xs, span)?;
+                steps(f, xs.len(), span)?;
+                alloc(f, xs.len(), span)?;
+                out.extend(xs.iter());
+            }
+            Ok(Value::array(out))
+        }
+        Intrinsic::Flatten => {
+            let mut out = Vec::new();
+            flatten(seq(arg(0)?, span)?, &mut out, f, span)?;
+            Ok(Value::array(out))
+        }
+        Intrinsic::Uniq(kind) => {
+            let xs = seq(arg(0)?, span)?;
+            steps(f, xs.len(), span)?;
+            let mut out: Vec<Value<'a>> = Vec::new();
+            for x in xs.iter() {
+                steps(f, out.len(), span)?;
+                let mut seen = false;
+                for y in &out {
+                    if equal(kind, &x, y, f, span)? {
+                        seen = true;
+                        break;
+                    }
+                }
+                if !seen {
+                    alloc(f, 1, span)?;
+                    out.push(x);
+                }
+            }
+            Ok(Value::array(out))
+        }
+        Intrinsic::Take => {
+            let (xs, n) = (seq(arg(0)?, span)?, int(arg(1)?, span)?);
+            let n = usize::try_from(n).map_err(|_| invalid("count", &alloc::format!("{n}")))?.min(xs.len());
+            steps(f, n, span)?;
+            alloc(f, n, span)?;
+            Ok(Value::array(xs.iter().take(n).collect()))
+        }
+        Intrinsic::Reverse => {
+            let xs = seq(arg(0)?, span)?;
+            steps(f, xs.len(), span)?;
+            alloc(f, xs.len(), span)?;
+            let mut out: Vec<Value<'a>> = xs.iter().collect();
+            out.reverse();
+            Ok(Value::array(out))
+        }
+        Intrinsic::Sort(kind) => {
+            let xs = seq(arg(0)?, span)?;
+            let desc = match args.get(1) {
+                None => false,
+                Some(o) => match string(o, span)? {
+                    "asc" => false,
+                    "desc" => true,
+                    other => return Err(invalid("sort order", other)),
+                },
+            };
+            let n = xs.len();
+            let log = usize::try_from(n.checked_ilog2().unwrap_or(0)).unwrap_or(usize::MAX);
+            steps(f, n.saturating_mul(log.saturating_add(1)), span)?;
+            alloc(f, n, span)?;
+            let nan = |v: &Value<'_>| v.as_float().is_some_and(f64::is_nan);
+            let mut cmp = |a: &Value<'a>, b: &Value<'a>| -> Result<Ordering, Fault> {
+                let o = order(kind, a, b, span)?.unwrap_or_else(|| nan(b).cmp(&nan(a)));
+                Ok(if desc { o.reverse() } else { o })
+            };
+            Ok(Value::array(builtins::sort_by(xs.iter().collect(), &mut cmp)?))
+        }
         Intrinsic::Keys | Intrinsic::Values => {
             let m = map(arg(0)?, span)?;
             steps(f, m.len(), span)?;
@@ -1059,6 +1131,21 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             intrinsic(op, &args, f, span)
         }
     }
+}
+
+/// `flatten`: the elements of `xs`, with every nested array spliced in, to any depth.
+fn flatten<'a>(xs: &Seq<'a>, out: &mut Vec<Value<'a>>, f: &mut Frame<'a>, span: Span) -> Result<(), Fault> {
+    steps(f, xs.len(), span)?;
+    for x in xs.iter() {
+        match x.as_seq() {
+            Some(inner) => flatten(inner, out, f, span)?,
+            None => {
+                alloc(f, 1, span)?;
+                out.push(x);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// An int or float as a float, for `mean` and `median`.

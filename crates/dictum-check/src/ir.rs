@@ -822,6 +822,18 @@ pub enum Intrinsic {
     SumFloat,
     /// `join`
     Join,
+    /// `concat` of one or more arrays.
+    Concat,
+    /// `flatten`: every nested array, to any depth, spliced into one array.
+    Flatten,
+    /// `uniq`: each element not equal to an earlier one, by the element's equality.
+    Uniq(EqKind),
+    /// `take(xs, n)`: the first `n` elements, all of them when there are fewer.
+    Take,
+    /// `reverse`
+    Reverse,
+    /// `sort(xs[, order])`: stable, by the element's ordering, NaN first.
+    Sort(CompareKind),
     /// `keys` (insertion or container order)
     Keys,
     /// `values`
