@@ -38,7 +38,8 @@ dictumは[expr-lang](https://expr-lang.org/)（Go）の構文を引き継いだR
 | `a == b == c` | `(a == b) == c` | 構文エラー |
 | マップの順序 | 不定 | マップリテラルは書いた順、事実データの `BTreeMap` はキー順。`HashMap` は事実データに使えない |
 | `now()` | 実時刻 | `Ctx::with_now` で渡した時刻。渡さずに呼ぶと実行時エラー |
-| 日時の型 | Goの `time` | `jiff` の `Timestamp` と `SignedDuration` |
+| 日時の型 | Goの `time` | `jiff` の `Timestamp` とタイムゾーン、`SignedDuration`、`jiff::tz::TimeZone`。メソッドはGo版と同じ名前と意味 |
+| ローカルタイムゾーン | `time.Local`（実行するマシンのタイムゾーン） | ない。オフセットのない日時はUTCとして読み、`timezone("Local")` はエラー |
 | 実行時エラー | `error` と panic が混在 | すべて `Result` |
 
 次の2点は差分と誤解しやすいが、両者で同じである。`len` はどちらも文字数を返し、比較できない型同士の `==` はどちらもコンパイルエラーになる。
@@ -83,7 +84,7 @@ MSRVはRust 1.85。edition 2024 は1.85以上を要求するので、これよ�
 | 依存 | `no_std` での使い方 |
 | --- | --- |
 | `regex` | `default-features = false` で `alloc` のみ（1.13.1のソースで確認）。`std` がないと内部でスピンロックを使う |
-| `jiff` | `alloc` のみ。タイムゾーンDBは使わない（`timezone()` を提供しない理由の1つ） |
+| `jiff` | `alloc` のみ。`tzdb` feature（既定で有効）では `tzdb-bundle-always` でIANAのタイムゾーンDB（約200 KB）をバイナリに埋め込む。DBの埋め込みも `alloc` だけで動くので、`no_std` でも `timezone("Asia/Tokyo")` が使え、どのマシンでも同じタイムゾーンになる |
 | `libm` | `floor` `ceil` `round` `pow` は `core` にないので、`std` の有無にかかわらず常に `libm` を使う。ターゲット間で結果がビット単位で一致する |
 | `rust_decimal` | `default-features = false` |
 
@@ -129,7 +130,7 @@ pairs       = key ":" expr { "," key ":" expr } [ "," ] ;
 key         = ident | string | "(" expr ")" ;
 ```
 
-`a | f(b)` はパース時に `f(a, b)` へ脱糖する。述語内の `.Field` は `#.Field` に変換する。関数を呼べるのは `名前(引数)` の形だけで、関数は値として扱えない。`f(x)(y)` や `user.Name()` のように名前以外の式に `(` を続けるとE0108になる。メソッド呼び出しはv0.1では扱わない。
+`a | f(b)` はパース時に `f(a, b)` へ脱糖する。述語内の `.Field` は `#.Field` に変換する。関数を呼べるのは `名前(引数)` の形と、メンバーの後ろに引数を続けたメソッド呼び出し `x.Name(引数)`、`x?.Name(引数)` だけで、関数は値として扱えない。`f(x)(y)` や `(a)(b)` のように、名前でもメンバーでもない式に `(` を続けるとE0108になる。メソッドを持つのは時刻、期間、タイムゾーンだけで、どのメソッドを呼ぶかはCheckerが受け手の型から1つの表で決める。表にないメソッドはE0214になる。
 
 ### 演算子の優先順位（低い→高い）
 
@@ -212,7 +213,7 @@ CheckerはASTと `Schema` から、型を確定しフィールドを番号に解
 
 ```rust
 pub enum Type {
-    Any, Nil, Bool, Int, Float, String, Bytes, Time, Duration,
+    Any, Nil, Bool, Int, Float, String, Bytes, Time, Duration, Location,
     #[cfg(feature = "decimal")]
     Decimal,
     Array(Arc<Type>),
@@ -226,6 +227,7 @@ pub struct FieldDesc { name: &'static str, ty: fn() -> Type }
 ```
 
 - `Type` に関数の型とエラー用の型はない。関数は値でないので関数の型は要らず、型エラーの箇所はChecker内部の型で印を付けるので、型付きIRに入る `Type` は常に実際の型になる。
+- `Time` はGoの `time.Time` と同じく、瞬間と、それを表示するタイムゾーンを持つ。`==` や `<` は瞬間だけを比べ、タイムゾーンは `Year()` などのメソッド、`Format`、`string()`、`toJSON` の結果に効く。`Location` はタイムゾーンで、`==` では比べられない（Goはポインタを比べるので、同じ名前でも別に読み込むと等しくならない）。
 - `OptionType` の中身は非公開で、`Option<Option<T>>` や `Option<Nil>` は作れない。
 - `StructDesc` は `static` に置くので、アドレスの同一性が型の同一性になる。`FieldDesc::ty` を関数にしているのは、`static` の初期化式で `Arc` を作れず、また再帰的な構造体（`children: Vec<Node>`）を遅延初期化なしで表すためである。
 
@@ -293,7 +295,7 @@ let schema: Schema<F> = Schema::<F>::builder()
 | `i8` `i16` `i32` `i64` `u8` `u16` `u32` | `Int` |
 | `f32` `f64` | `Float` |
 | `String` `&str` `Box<str>` | `String` |
-| `jiff::Timestamp`、`jiff::SignedDuration` | `Time`、`Duration` |
+| `jiff::Timestamp`（UTCで表示）、`jiff::Zoned`（そのタイムゾーンで表示）、`jiff::SignedDuration`、`jiff::tz::TimeZone` | `Time`、`Time`、`Duration`、`Location` |
 | `Option<T>` | `Option` |
 | `Vec<T>` `Box<[T]>` `&[T]` | `Array` |
 | `BTreeMap<String, T>` | `Map` |
@@ -323,8 +325,9 @@ enum Repr<'a> {
     Decimal(rust_decimal::Decimal),
     Str(Str<'a>),               // Borrowed(&'a str) | Shared(Arc<str>)
     Bytes(Bytes<'a>),
-    Time(jiff::Timestamp),
+    Time(jiff::Timestamp, jiff::tz::TimeZone),   // TimeZone は8バイトなので Value は32バイトのまま
     Duration(jiff::SignedDuration),
+    Location(jiff::tz::TimeZone),
     Array(Seq<'a>),             // Borrowed(&'a dyn SeqView) | Owned(Arc<[Value]>) | Range { from, to }
     Map(MapRef<'a>),            // Borrowed(&'a dyn MapView) | Owned(Arc<[(Arc<str>, Value)]>)
     Object(&'a dyn Object),     // derive済みの構造体を借用
@@ -339,7 +342,7 @@ pub trait Object {
 事実データのうち、何を借用し何をコピーするかは次のとおり。
 
 - 借用する：文字列の中身、入れ子の構造体、配列、マップ。配列とマップは `SeqView` と `MapView` を通して要素を読むときに値を作るので、`Vec<String>` のフィールドを `Vec<Value>` に変換することはない。
-- コピーする：スカラー（`bool`、整数、浮動小数、日時、期間）。
+- コピーする：スカラー（`bool`、整数、浮動小数、日時、期間）。日時とタイムゾーンが持つタイムゾーンは、参照カウントを増やして共有する。
 - `Arc` で持つ：評価中に作った値（`filter` や `map` の結果、文字列の連結など）。
 - `1..n` は配列を作らず、反復するときに要素を数える。
 
@@ -391,7 +394,7 @@ pub struct Limits {
 
 ## 組み込み関数
 
-expr-langの組み込み関数を `timezone` を除いてすべて提供する。各関数はシグネチャを持ち、Checkerが引数の型を検査する。組み込み関数の名前は `dictum-syntax` の一覧1つで管理し、Checkerと評価エンジンはその一覧を網羅的に照合する。関数を一覧に足すと、型付けと実装の両方を書くまでビルドが通らない。
+expr-langの組み込み関数をすべて提供する。各関数はシグネチャを持ち、Checkerが引数の型を検査する。組み込み関数の名前は `dictum-syntax` の一覧1つで管理し、Checkerと評価エンジンはその一覧を網羅的に照合する。関数を一覧に足すと、型付けと実装の両方を書くまでビルドが通らない。
 
 | カテゴリ | 関数 |
 | --- | --- |
@@ -401,17 +404,32 @@ expr-langの組み込み関数を `timezone` を除いてすべて提供する�
 | 配列の操作 | `first` `last` `sum` `len` `join` `concat` `flatten` `uniq` `take` `reverse` `sort` |
 | マップ | `keys` `values` |
 | 型変換 | `int` `float` `string` `type` `decimal` `toJSON` `fromJSON` `toBase64` `fromBase64` `toPairs` `fromPairs` |
-| 日時 | `now` `duration` `date` |
+| 日時 | `now` `duration` `date` `timezone` |
 | ビット演算 | `bitand` `bitor` `bitxor` `bitnand` `bitnot` `bitshl` `bitshr` `bitushr` |
 | その他 | `get` |
 
-`timezone` は提供しない。タイムゾーンを表す値の型と、`no_std` では使えないタイムゾーンDBが要るうえ、`date(s, layout, tz)` やメソッド呼び出しと組み合わせないと使い道がないためである。`date` もGo版の書式を指定する形（`date(s, layout)`、`date(s, layout, tz)`）はまだ提供せず、`date(s)` だけを受け付ける。
+`timezone(name)` はIANAの名前（`"Asia/Tokyo"`）からタイムゾーンを返す。名前は大文字と小文字を区別する（Linux上のGoと同じ）。`""` と `"UTC"` は `tzdb` featureがなくても使える。`"Local"` は、ルールの結果が実行するマシンで変わらないようにエラーにする。
 
 型の付く言語にしたため、Go版と結果が変わる関数がある。`groupBy` のキーと `fromPairs` のキーは文字列に限る（マップのキーが常に文字列なので）。`reduce` の `#acc` は初期値の型、初期値がなければ要素の型を持ち、本体はその型でなければならない。`findIndex` と `findLastIndex` は見つからないときGo版のnilではなく `-1` を返す。`sort` は順序のある要素の配列なら何でも並べ、等しい要素の順を保つ。差分はそれぞれ適合テストの `deviation` に書き、`just conformance-go` が残りのケースをGo版で実行して結果が一致することを確かめる。
 
 `indexOf` は添字と同じくバイト位置を返すので、`s[indexOf(s, "x"):]` がそのまま使える。一方、`len` は文字数を返すので、ASCII以外を含む文字列では `len` の値を添字の計算に使えない。誤って文字の途中を指した場合は `CharBoundary`（E0304）になり、エラーには添字がバイト位置であることを説明するヘルプが付く。
 
-`duration(s)` はGo版と同じ書式（`1h30m`、`-1.5h`、`300ms`）を受け付ける。`date(s)` はRFC 3339を受け付け、オフセットのない日付や日時はUTCとして読む。
+`duration(s)` はGo版と同じ書式（`1h30m`、`-1.5h`、`300ms`）を受け付ける。`date` の書式はGoの `time` パッケージの書式（基準時刻 `Mon Jan 2 15:04:05 MST 2006` を書きたい形で書いたもの）で、Goの `time/format.go` を移植して、解析と出力でGoと同じ文字列を受け付け、同じ文字列を出す。
+
+- `date(s)`：Goと同じ順に `2006-01-02`、`15:04:05`、`2006-01-02 15:04:05`、RFC 3339、RFC 822、RFC 850、RFC 1123 を試す。
+- `date(s, layout)`：書式を指定する。`date(s, layout, zone)`：オフセットのない日時をそのタイムゾーンで読む。どの形も先頭にタイムゾーンを置ける（`date(timezone("Asia/Tokyo"), s)`）。
+- オフセットのない日時はUTC（または指定したタイムゾーン）として読み、オフセットがあればそのオフセットを保つ。夏時間で存在しない時刻や重なる時刻は、Goの `time.Date` と同じ規則で決める。
+- `now(loc)` は `now()` と同じ瞬間を、そのタイムゾーンで返す。
+
+時刻、期間、タイムゾーンのメソッドはGo版と同じ名前で、Goと同じ値を返す。
+
+| 受け手 | メソッド |
+| --- | --- |
+| 時刻 | `Year` `Month` `Day` `Hour` `Minute` `Second` `Nanosecond` `Weekday` `YearDay` `Unix` `UnixMilli` `UnixMicro` `UnixNano` `Add` `Sub` `AddDate` `Before` `After` `Equal` `Compare` `Format` `In` `UTC` `Location` `Truncate` `Round` `IsZero` `String` |
+| 期間 | `Hours` `Minutes` `Seconds` `Milliseconds` `Microseconds` `Nanoseconds` `Truncate` `Round` `Abs` `String` |
+| タイムゾーン | `String` |
+
+`Month()` と `Weekday()` は整数を返す（Goでは `"August"` と表示される専用の型）。`Local()` はローカルタイムゾーンがないので提供せず、戻り値が2つの `Zone()` と `ISOWeek()` も提供しない。Optionの値には `?.` を毎回付ける（Goの `?.` は残りの連鎖を丸ごと飛ばす）。
 
 ### ユーザー定義関数
 
@@ -422,7 +440,7 @@ let schema = Schema::<F>::builder()
     .build()?;
 ```
 
-引数と戻り値のRust型からシグネチャを作るので、型を手で書く必要はない。ただし、クロージャの引数には型注釈が要る。引数に使える型は `bool` `i64` `f64` `&str` `Timestamp`、戻り値は `bool` `i64` `f64` `String` と、それらの `Result<_, E>`（`E: core::error::Error + Send + Sync`）である。`Err` を返すと `EvalErrorKind::Function` になる。
+引数と戻り値のRust型からシグネチャを作るので、型を手で書く必要はない。ただし、クロージャの引数には型注釈が要る。引数に使える型は `bool` `i64` `f64` `&str` `Timestamp`（瞬間だけを渡す）、戻り値は `bool` `i64` `f64` `String` と、それらの `Result<_, E>`（`E: core::error::Error + Send + Sync`）である。`Err` を返すと `EvalErrorKind::Function` になる。
 
 関数には副作用がないことを前提とし、純粋かどうかは登録するメソッドで区別する。
 
@@ -465,7 +483,7 @@ let matched: Vec<&str> = outcomes.matched().collect();
 - `RuleSetBuilder::insert` はその場でパースと型チェックを行い、エラーをルールごとに返す。エラーになったルールは追加されず、同じ名前のルールの追加はE0001になる。多数のルールを読み込むときは `insert` をループで呼び、必要なエラーを集める。
 - `build()` で全ルールのクロージャ木と共通部分式のスロットを一度に決める。できた `RuleSet` は変更できない。
 - `RuleSet::eval` はルールを追加した順に評価し、最初のエラーで止まる。エラーの `EvalError::rule()` が失敗したルールの名前を返す。
-- 戻り値型 `T` に使えるのは `bool` `i64` `f64` `String` `Timestamp` `SignedDuration`、`decimal` featureの `Decimal`、それらの `Option<T>` と `Vec<T>`、どの型でも受け取れる `Dynamic` である。この一覧は `Output` トレイトで決まり、外部から型を足すことはできない。
+- 戻り値型 `T` に使えるのは `bool` `i64` `f64` `String` `Timestamp` `Zoned` `SignedDuration` `TimeZone`、`decimal` featureの `Decimal`、それらの `Option<T>` と `Vec<T>`、どの型でも受け取れる `Dynamic` である。この一覧は `Output` トレイトで決まり、外部から型を足すことはできない。
 
 ### Ctx
 
@@ -617,7 +635,8 @@ pub struct Diagnostic {
 | --- | --- | --- |
 | pipe・三項演算子・`??` の優先順位 | Go版のパーサで確認し、`not` の順位と `??` の混在禁止を含めてすべてGo版に合わせる | 構文仕様 |
 | 比較の連鎖 | `<` `>` `<=` `>=` は連鎖可。中央の式は1回だけ評価。`==` などは連鎖不可 | 構文仕様、Go版との差分 |
-| 関数呼び出し | `名前(引数)` の形だけ。関数は値でない | 構文仕様、型システム |
+| 関数呼び出し | `名前(引数)` とメソッド呼び出し `x.Name(引数)` だけ。関数は値でない。メソッドは時刻、期間、タイムゾーンだけが持ち、1つの表で決める | 構文仕様、型システム、組み込み関数 |
+| 時刻とタイムゾーン | 時刻はタイムゾーンを持ち、比較は瞬間で行う。タイムゾーンDBは `tzdb` featureで埋め込み、ローカルタイムゾーンは持たない | 型システム、組み込み関数、`no_std` |
 | 文字列の添字 | バイト単位。文字境界でなければエラー。`len` は文字数のまま | Go版との差分、型システム |
 | `Decimal` 型 | `decimal` featureで提供。`Float` との暗黙の混在は禁止 | 型システム、評価エンジン |
 | 事実データとスキーマ | derive済みの根の構造体1つ。そのフィールドが変数。`Schema<F>`、`Rule<T, F>` で事実データの型を固定する | 型システムとSchema、ルールエンジンAPI |
