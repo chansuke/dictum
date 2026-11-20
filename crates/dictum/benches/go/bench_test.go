@@ -40,6 +40,8 @@ type Facts struct {
 	Order Order   `expr:"order"`
 	Nums  []int64 `expr:"nums"`
 	Limit int64   `expr:"limit"`
+	Level uint8   `expr:"level"`
+	Delta int8    `expr:"delta"`
 }
 
 // sample is dictum_testkit::sample().
@@ -60,6 +62,8 @@ func sample() Facts {
 		},
 		Nums:  []int64{3, 1, 4, 1, 5, 9, 2, 6},
 		Limit: 10,
+		Level: 200,
+		Delta: -100,
 	}
 }
 

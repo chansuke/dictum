@@ -20,5 +20,7 @@
     "Discount": 0.1
   },
   "nums": [3, 1, 4, 1, 5, 9, 2, 6],
-  "limit": 10
+  "limit": 10,
+  "level": 200,
+  "delta": -100
 }

@@ -6,6 +6,8 @@ user = "User"
 order = "Order"
 nums = "array<int>"
 limit = "int"
+level = "int"
+delta = "int"
 
 [types.User]
 Name = "string"
