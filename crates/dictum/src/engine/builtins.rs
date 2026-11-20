@@ -262,7 +262,7 @@ pub(crate) fn parse_go_duration(s: &str) -> Result<jiff::SignedDuration, EvalErr
 
 /// `date(s)`: RFC 3339 with offset, or `YYYY-MM-DD` / `YYYY-MM-DDTHH:MM:SS` read as
 /// UTC (no time zone database is needed, so this works in `no_std`). Go layouts and
-/// time zones (`date(s, layout, tz)`) are post-MVP.
+/// time zones (`date(s, layout, tz)`) are not provided.
 pub(crate) fn parse_date(s: &str) -> Result<jiff::Timestamp, EvalErrorKind> {
     if let Ok(t) = s.parse::<jiff::Timestamp>() {
         return Ok(t);
