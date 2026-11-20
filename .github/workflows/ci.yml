@@ -99,6 +99,20 @@ jobs:
           tool: just
       - run: just nostd
 
+  # The tests on wasm32-wasip1 (a 32-bit target), with the wasmtime
+  # version the Nix shell has.
+  wasm:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+        with:
+          tool: just,wasmtime@50.0.1
+      - run: just wasm
+
   # Benchmarks and fuzz targets must keep compiling even before they run.
   build-extras:
     needs: lint
