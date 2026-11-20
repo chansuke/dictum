@@ -11,7 +11,8 @@
 //! - `a ?: b` is desugared to `a || b` (it is `a ? a : b` with `a: bool`);
 //! - `&&`/`||` chains are flattened into one n-ary `Logic` node;
 //! - `<`/`>`/`<=`/`>=` chains are one `Compare` node (`a == b == c` is rejected);
-//! - `#`, `#index`, `#acc` and `.Field` appear only inside a predicate argument;
+//! - `#`, `#index` and `.Field` appear only inside a predicate argument, and `#acc`
+//!   only inside `reduce`'s, not in a predicate nested in it;
 //! - `(` follows only a plain identifier (no method or computed calls);
 //! - tree depth is at most [`MAX_DEPTH`], so every later recursive pass is bounded.
 #![no_std]

@@ -65,12 +65,17 @@ func normalize(v any) any {
 		}
 		return out
 	case reflect.Map:
-		if rv.Type().Key().Kind() != reflect.String {
-			return v
-		}
+		// groupBy builds a map[any][]any; its keys are strings when dictum's are.
 		out := make(map[string]any, rv.Len())
 		for it := rv.MapRange(); it.Next(); {
-			out[it.Key().String()] = normalize(it.Value().Interface())
+			key := it.Key()
+			if key.Kind() == reflect.Interface {
+				key = key.Elem()
+			}
+			if key.Kind() != reflect.String {
+				return v
+			}
+			out[key.String()] = normalize(it.Value().Interface())
 		}
 		return out
 	}

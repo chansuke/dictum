@@ -32,12 +32,20 @@ struct LetScope<'src> {
     names: Vec<(&'src str, SlotId, Option<Type>)>,
 }
 
+/// The types a predicate body's pointers have.
+struct PredicateScope {
+    /// `#`
+    elem: Type,
+    /// `#acc`, in `reduce` only
+    acc: Option<Type>,
+}
+
 pub(crate) struct Checker<'e, P> {
     env: &'e Env<P>,
     diags: Diagnostics,
     next_id: u32,
-    /// Element types of enclosing predicates, innermost last. `#` is the last entry.
-    predicates: Vec<Type>,
+    /// Enclosing predicates, innermost last. `#` and `#acc` refer to the last entry.
+    predicates: Vec<PredicateScope>,
     max_predicate_depth: u16,
 }
 
@@ -386,10 +394,11 @@ impl<'e, P> Checker<'e, P> {
     }
 
     fn pointer(&mut self, span: Span, p: Pointer) -> Inferred {
-        let ty = match (p, self.predicates.last()) {
-            (Pointer::Current, Some(t)) => t.clone(),
+        let scope = self.predicates.last();
+        let ty = match (p, scope) {
+            (Pointer::Current, Some(s)) => s.elem.clone(),
             (Pointer::Index, Some(_)) => Type::Int,
-            // `#acc` exists only in `reduce`, which is not an MVP builtin.
+            (Pointer::Acc, Some(PredicateScope { acc: Some(t), .. })) => t.clone(),
             (Pointer::Acc, _) | (_, None) => {
                 let name = match p {
                     Pointer::Current => "#",
@@ -918,21 +927,44 @@ impl<'e, P> Checker<'e, P> {
             Builtin::Map => PredicateOp::Map,
             Builtin::Count => PredicateOp::Count,
             Builtin::Find => PredicateOp::Find,
+            Builtin::FindLast => PredicateOp::FindLast,
+            Builtin::FindLastIndex => PredicateOp::FindLastIndex,
+            Builtin::GroupBy => PredicateOp::GroupBy,
+            // The key's ordering is set once the body is typed.
+            Builtin::SortBy => PredicateOp::SortBy(CompareKind::Dyn),
+            Builtin::Reduce => PredicateOp::Reduce,
             _ => PredicateOp::FindIndex,
         };
+        // The third argument is outside the body's scope: `#` there is the enclosing
+        // predicate's.
+        let arg = match rest.get(1) {
+            Some(a) => {
+                let a = self.expr(a, lets)?;
+                Some(if op == PredicateOp::Reduce { a } else { self.assign(a, &Type::String)? })
+            }
+            None => None,
+        };
+        // `#acc` starts as `init`, or as the first element without one, and every
+        // step's body must keep that type.
+        let acc = (op == PredicateOp::Reduce).then(|| arg.as_ref().map_or_else(|| elem.clone(), |a| a.ty().clone()));
         let body = match rest.first() {
             Some(arg) => {
                 let body = match &arg.kind {
                     ast::ExprKind::Predicate(body) => body,
                     _ => arg,
                 };
-                self.predicates.push(elem.clone());
+                self.predicates.push(PredicateScope { elem: elem.clone(), acc: acc.clone() });
                 let depth = u16::try_from(self.predicates.len()).unwrap_or(u16::MAX);
                 self.max_predicate_depth = self.max_predicate_depth.max(depth);
                 let body = self.expr(body, lets);
                 self.predicates.pop();
                 let body = body?;
-                Some(if op == PredicateOp::Map { body } else { self.assign(body, &Type::Bool)? })
+                Some(match (op, &acc) {
+                    (PredicateOp::Map | PredicateOp::SortBy(_), _) => body,
+                    (PredicateOp::GroupBy, _) => self.assign(body, &Type::String)?,
+                    (PredicateOp::Reduce, Some(acc)) => self.assign(body, acc)?,
+                    _ => self.assign(body, &Type::Bool)?,
+                })
             }
             // `count(xs)` counts the `true` elements.
             None => {
@@ -943,14 +975,29 @@ impl<'e, P> Checker<'e, P> {
                 None
             }
         };
+        let op = match (op, &body) {
+            (PredicateOp::SortBy(_), Some(key)) => match key.ty() {
+                Type::Any => PredicateOp::SortBy(CompareKind::Dyn),
+                t => match t.tag().and_then(|tag| resolve::ordering(tag, tag)) {
+                    Some((kind, ..)) => PredicateOp::SortBy(kind),
+                    None => {
+                        self.error(ErrorCode::TypeMismatch, key.span(), vec![name_arg("an ordered key"), ty_arg(t)]);
+                        return None;
+                    }
+                },
+            },
+            (op, _) => op,
+        };
         let ty = match op {
             PredicateOp::All | PredicateOp::Any | PredicateOp::None | PredicateOp::One => Type::Bool,
-            PredicateOp::Filter => Type::array(elem),
+            PredicateOp::Filter | PredicateOp::SortBy(_) => Type::array(elem),
             PredicateOp::Map => Type::array(body.as_ref().map_or(Type::Any, |b| b.ty().clone())),
-            PredicateOp::Count | PredicateOp::FindIndex => Type::Int,
-            PredicateOp::Find => Type::option(elem),
+            PredicateOp::Count | PredicateOp::FindIndex | PredicateOp::FindLastIndex => Type::Int,
+            PredicateOp::Find | PredicateOp::FindLast => Type::option(elem),
+            PredicateOp::GroupBy => Type::map(Type::array(elem)),
+            PredicateOp::Reduce => acc.unwrap_or(Type::Any),
         };
-        let kind = ExprKind::Predicate { op, seq: Box::new(seq), body: body.map(Box::new) };
+        let kind = ExprKind::Predicate { op, seq: Box::new(seq), arg: arg.map(Box::new), body: body.map(Box::new) };
         Some(self.mk(span, ty, kind))
     }
 

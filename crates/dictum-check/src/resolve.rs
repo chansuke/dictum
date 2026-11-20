@@ -261,11 +261,14 @@ pub const fn arity(b: Builtin) -> (usize, usize) {
         | Builtin::Filter
         | Builtin::Map
         | Builtin::Find
-        | Builtin::FindIndex => (2, 2),
+        | Builtin::FindIndex
+        | Builtin::FindLast
+        | Builtin::FindLastIndex
+        | Builtin::GroupBy => (2, 2),
         Builtin::Trim | Builtin::TrimPrefix | Builtin::TrimSuffix | Builtin::Count | Builtin::Join | Builtin::Sort => {
             (1, 2)
         }
-        Builtin::Split | Builtin::SplitAfter => (2, 3),
+        Builtin::Split | Builtin::SplitAfter | Builtin::SortBy | Builtin::Reduce => (2, 3),
         Builtin::Replace => (3, 3),
         Builtin::Max | Builtin::Min | Builtin::Mean | Builtin::Median | Builtin::Concat => (1, usize::MAX),
     }
@@ -372,6 +375,11 @@ pub fn builtin(b: Builtin, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
             | Builtin::Count
             | Builtin::Find
             | Builtin::FindIndex
+            | Builtin::FindLast
+            | Builtin::FindLastIndex
+            | Builtin::GroupBy
+            | Builtin::SortBy
+            | Builtin::Reduce
             | Builtin::Trim
             | Builtin::TrimPrefix
             | Builtin::TrimSuffix

@@ -7,8 +7,8 @@
 //!
 //! What it covers: arithmetic with overflow and division by zero, int-to-float
 //! promotion, short-circuit logic, comparison chains, `in`, string builtins, field
-//! reads (including optional ones through `??`), `let`, and the `all`/`any`/`count`
-//! predicates. Errors are expected outcomes: a property compares two evaluations, so
+//! reads (including optional ones through `??`), `let`, and the predicates `all`,
+//! `any`, `count`, `findLast`, `findLastIndex`, `groupBy`, `sortBy` and `reduce`. Errors are expected outcomes: a property compares two evaluations, so
 //! a case that fails must fail the same way on both sides.
 
 use proptest::prelude::*;
@@ -70,10 +70,41 @@ fn leaf(ty: Ty) -> BoxedStrategy<String> {
 /// Each `prop_oneof!` lists the leaf twice so leaves weigh double and most trees stay
 /// shallower than `depth`.
 pub fn expr(ty: Ty, depth: u32) -> BoxedStrategy<String> {
-    if depth == 0 {
-        return leaf(ty);
+    let mut level = Level::of(leaf);
+    for _ in 0..depth {
+        level = Level::of(|t| composite(t, &level));
     }
-    let sub = move |t: Ty| expr(t, depth - 1);
+    level.get(ty)
+}
+
+/// One strategy per type at one depth. Each depth is built once from the one below
+/// and shared, so building `expr(ty, depth)` (which `any_rule` does for every case)
+/// is linear in `depth`.
+struct Level {
+    bool: BoxedStrategy<String>,
+    int: BoxedStrategy<String>,
+    float: BoxedStrategy<String>,
+    str: BoxedStrategy<String>,
+}
+
+impl Level {
+    fn of(f: impl Fn(Ty) -> BoxedStrategy<String>) -> Self {
+        Level { bool: f(Ty::Bool), int: f(Ty::Int), float: f(Ty::Float), str: f(Ty::Str) }
+    }
+
+    fn get(&self, ty: Ty) -> BoxedStrategy<String> {
+        match ty {
+            Ty::Bool => self.bool.clone(),
+            Ty::Int => self.int.clone(),
+            Ty::Float => self.float.clone(),
+            Ty::Str => self.str.clone(),
+        }
+    }
+}
+
+/// An expression of type `ty` whose operands come from `below`.
+fn composite(ty: Ty, below: &Level) -> BoxedStrategy<String> {
+    let sub = |t: Ty| below.get(t);
     let cond = (sub(Ty::Bool), sub(ty), sub(ty)).prop_map(|(c, a, b)| format!("({c} ? {a} : {b})"));
     match ty {
         Ty::Int => prop_oneof![
@@ -86,6 +117,13 @@ pub fn expr(ty: Ty, depth: u32) -> BoxedStrategy<String> {
             (sub(Ty::Int), sub(Ty::Int)).prop_map(|(a, b)| format!("max({a}, {b})")),
             sub(Ty::Str).prop_map(|s| format!("len({s})")),
             sub(Ty::Bool).prop_map(|p| format!("count(nums, {p} && # > 2)")),
+            sub(Ty::Bool).prop_map(|p| format!("findLastIndex(nums, {p} && # > 2)")),
+            (sub(Ty::Int), sub(Ty::Int)).prop_map(|(k, d)| format!("(findLast(nums, # > {k}) ?? {d})")),
+            sub(Ty::Int).prop_map(|k| format!("len(groupBy(nums, string(# % {k})))")),
+            (sub(Ty::Int), sort_order(sub(Ty::Str)))
+                .prop_map(|(k, o)| format!("(get(sortBy(nums, # % {k}, {o}), 0) ?? 0)")),
+            (sub(Ty::Int), sub(Ty::Int)).prop_map(|(k, init)| format!("reduce(nums, #acc + # * {k}, {init})")),
+            sub(Ty::Int).prop_map(|k| format!("reduce(nums, #acc - #index * {k})")),
             cond,
         ]
         .boxed(),
@@ -98,6 +136,7 @@ pub fn expr(ty: Ty, depth: u32) -> BoxedStrategy<String> {
             (sub(Ty::Float), sub(Ty::Int)).prop_map(|(a, b)| format!("({a} + {b})")),
             (sub(Ty::Int), sub(Ty::Int)).prop_map(|(a, b)| format!("({a} / {b})")),
             sub(Ty::Float).prop_map(|a| format!("floor({a})")),
+            sub(Ty::Float).prop_map(|init| format!("reduce(order.Items, #acc + .Price * .Qty, {init})")),
             cond,
         ]
         .boxed(),
@@ -129,10 +168,19 @@ pub fn expr(ty: Ty, depth: u32) -> BoxedStrategy<String> {
             sub(Ty::Str).prop_map(|a| format!("trim({a})")),
             sub(Ty::Int).prop_map(|a| format!("string({a})")),
             (sub(Ty::Str), sub(Ty::Int)).prop_map(|(s, i)| format!("{s}[{i}:]")),
+            (sub(Ty::Str), sort_order(sub(Ty::Str)))
+                .prop_map(|(s, o)| format!("join(sortBy(user.Tags, {s} + #, {o}))")),
+            sub(Ty::Str).prop_map(|init| format!("reduce(user.Tags, #acc + #, {init})")),
+            (sub(Ty::Str), sub(Ty::Str)).prop_map(|(s, d)| format!("(findLast(user.Tags, # != {s}) ?? {d})")),
             cond,
         ]
         .boxed(),
     }
+}
+
+/// A `sortBy` order: mostly a valid one, sometimes any string (usually invalid).
+fn sort_order(s: BoxedStrategy<String>) -> BoxedStrategy<String> {
+    prop_oneof![Just("\"asc\"".to_owned()), Just("\"desc\"".to_owned()), s].boxed()
 }
 
 /// A whole rule: zero to two `let` bindings, then a body of type `ty`.

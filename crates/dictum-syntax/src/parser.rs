@@ -43,8 +43,11 @@ use crate::{Arg, Builtin, Diagnostic, Diagnostics, ErrorCode, Help, MAX_DEPTH, S
 /// Where the parser is, for rules that depend on context.
 #[derive(Clone, Copy, Default)]
 struct Context {
-    /// Inside a predicate argument: `#`, `#index`, `#acc`, `.Field` are allowed.
+    /// Inside a predicate argument: `#`, `#index`, `.Field` are allowed.
     in_predicate: bool,
+    /// Inside `reduce`'s predicate and not in a predicate nested in it: `#acc` is
+    /// allowed.
+    in_reduce: bool,
     /// Current recursion depth; exceeding `MAX_DEPTH` is E0105.
     depth: u32,
 }
@@ -599,7 +602,8 @@ impl<'src> Parser<'src> {
             Token::Punct("nil") => ExprKind::Nil,
             Token::Pointer(p) => {
                 let p = *p;
-                if !ctx.in_predicate {
+                let allowed = if p == Pointer::Acc { ctx.in_reduce } else { ctx.in_predicate };
+                if !allowed {
                     let name = match p {
                         Pointer::Current => "#",
                         Pointer::Index => "#index",
@@ -673,7 +677,7 @@ impl<'src> Parser<'src> {
         self.bump();
         let first = usize::from(piped.is_some());
         let mut args: Vec<Parsed<'src>> = piped.into_iter().collect();
-        args.extend(self.args(")", builtin.and_then(Builtin::predicate_arg), first, ctx));
+        args.extend(self.args(")", builtin, first, ctx));
         let h = args.iter().map(|p| p.height).max().unwrap_or(0);
         let kind = ExprKind::Call { callee, callee_span, args: args.into_iter().map(|p| p.expr).collect() };
         self.node(kind, self.span_from(start), h, Bare::No)
@@ -683,13 +687,8 @@ impl<'src> Parser<'src> {
     /// If `callee` is a builtin with a predicate position and this is that position,
     /// parse with `in_predicate = true`; a leading `{` there opens predicate braces (a
     /// map literal as a predicate body is `{{a: #}}`).
-    fn args(
-        &mut self,
-        close: &str,
-        predicate_at: Option<usize>,
-        first_index: usize,
-        ctx: Context,
-    ) -> Vec<Parsed<'src>> {
+    fn args(&mut self, close: &str, callee: Option<Builtin>, first_index: usize, ctx: Context) -> Vec<Parsed<'src>> {
+        let predicate_at = callee.and_then(Builtin::predicate_arg);
         let mut out = Vec::new();
         loop {
             if self.eat(close) {
@@ -698,7 +697,7 @@ impl<'src> Parser<'src> {
             let index = first_index.saturating_add(out.len());
             let arg = if predicate_at == Some(index) {
                 let start = self.span;
-                let inner = Context { in_predicate: true, ..ctx };
+                let inner = Context { in_predicate: true, in_reduce: callee == Some(Builtin::Reduce), ..ctx };
                 let body = if self.eat("{") {
                     let b = self.expr(inner);
                     self.expect_closing("}");

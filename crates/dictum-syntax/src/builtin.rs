@@ -93,6 +93,11 @@ builtins! {
     Count = "count", predicate = 1;
     Find = "find", predicate = 1;
     FindIndex = "findIndex", predicate = 1;
+    FindLast = "findLast", predicate = 1;
+    FindLastIndex = "findLastIndex", predicate = 1;
+    GroupBy = "groupBy", predicate = 1;
+    SortBy = "sortBy", predicate = 1;
+    Reduce = "reduce", predicate = 1;
     // arrays
     First = "first";
     Last = "last";
@@ -120,6 +125,6 @@ builtins! {
     Date = "date";
     // misc
     Get = "get";
-    // Post-MVP builtins (reduce, sortBy, toJSON, timezone, ...) are added
+    // Post-MVP builtins (toJSON, timezone, ...) are added
     // here when implemented; until then they are unknown functions (E0203).
 }

@@ -12,16 +12,19 @@
 //!
 //! Budget charges (the closure tree makes the same ones by calling these functions;
 //! only a constant it folded at compile time costs it nothing):
-//! - one step per element a predicate visits, before its body runs;
+//! - one step per element a predicate visits, before its body runs (the first
+//!   element of a `reduce` without an initial value included);
 //! - `len` steps for `x in array`, before scanning (so a sorted constant set costs
 //!   what a scan does), and one per entry for `keys`, `values`, `sum`, `join`,
 //!   `max`/`min`/`mean`/`median` of an array, `concat`, `flatten`, `take`,
 //!   `reverse`, structural `==`, and the deep check of `any`; for `uniq`, one per
-//!   element and one per element kept before it; for `sort`, `n * (log2(n) + 1)`;
+//!   element and one per element kept before it; for `sort` and the sorting of
+//!   `sortBy`, `n * (log2(n) + 1)`;
 //! - one alloc per element of a built array or map (literals, `filter`, `map`,
 //!   `split`, `keys`, `values`, `+` of arrays, `concat`, `flatten`, `uniq`, `take`,
-//!   `reverse`, `sort`, the numbers `median` sorts) and one per byte of a built
-//!   string, before building it. Constants are part of the rule and cost nothing.
+//!   `reverse`, `sort`, `sortBy`, the numbers `median` sorts, and for `groupBy` one
+//!   per element and one per group) and one per byte of a built string, before
+//!   building it. Constants are part of the rule and cost nothing.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -276,12 +279,13 @@ impl<'a> Walk<'_, '_, 'a> {
                 let b = self.expr(to, f)?;
                 Ok(Value(Repr::Array(Seq::Range { from: int(&a, from.span())?, to: int(&b, to.span())? })))
             }
-            ExprKind::Predicate { op, seq, body } => {
+            ExprKind::Predicate { op, seq, arg, body } => {
                 let s = self.expr(seq, f)?;
                 let s = s.as_seq().cloned().ok_or_else(|| mismatch("an array", &s, seq.span()))?;
+                let arg = arg.as_deref().map(|a| self.expr(a, f)).transpose()?;
                 match body.as_deref() {
-                    Some(b) => predicate(*op, &s, Some(&mut |f: &mut Frame<'a>| self.expr(b, f)), f, span),
-                    None => predicate(*op, &s, None, f, span),
+                    Some(b) => predicate(*op, &s, arg, Some(&mut |f: &mut Frame<'a>| self.expr(b, f)), f, span),
+                    None => predicate(*op, &s, arg, None, f, span),
                 }
             }
             ExprKind::Intrinsic { op, args } => {
@@ -441,29 +445,128 @@ pub(super) fn binary<'a>(
     }
 }
 
-/// A predicate over `s`. `body` runs once per visited element with that element's
-/// scope pushed; without one (`all(bools)`) the element itself is the outcome.
-pub(super) fn predicate<'a>(
-    op: PredicateOp,
+/// The element at `i` of a sequence being iterated.
+fn nth<'a>(s: &Seq<'a>, i: usize, span: Span) -> Res<'a> {
+    s.get(i).ok_or_else(|| internal("sequence shorter than its length", span))
+}
+
+/// `i` as an `#index`.
+fn position(i: usize, span: Span) -> Result<i64, Fault> {
+    i64::try_from(i).map_err(|_| internal("index past i64", span))
+}
+
+/// The body of a predicate, run with one element's scope pushed.
+pub(super) type Body<'b, 'a> = &'b mut dyn FnMut(&mut Frame<'a>) -> Res<'a>;
+
+/// Run `body` for the element at `index`, with `#acc` set to `acc`.
+fn visit<'a>(
+    body: &mut Body<'_, 'a>,
     s: &Seq<'a>,
-    mut body: Option<&mut dyn FnMut(&mut Frame<'a>) -> Res<'a>>,
+    i: usize,
+    acc: Option<Value<'a>>,
     f: &mut Frame<'a>,
     span: Span,
 ) -> Res<'a> {
+    steps(f, 1, span)?;
+    let current = nth(s, i, span)?;
+    f.scopes.push(Scope { current, index: position(i, span)?, acc });
+    let r = body(f);
+    f.scopes.pop();
+    r
+}
+
+/// A predicate over `s`. `body` runs once per visited element with that element's
+/// scope pushed; without one (`all(bools)`) the element itself is the outcome. `arg`
+/// is `sortBy`'s order or `reduce`'s initial `#acc`.
+pub(super) fn predicate<'a>(
+    op: PredicateOp,
+    s: &Seq<'a>,
+    arg: Option<Value<'a>>,
+    body: Option<Body<'_, 'a>>,
+    f: &mut Frame<'a>,
+    span: Span,
+) -> Res<'a> {
+    let Some(mut body) = body else { return scan(op, s, None, f, span) };
+    match op {
+        PredicateOp::FindLast | PredicateOp::FindLastIndex => {
+            for i in (0..s.len()).rev() {
+                if boolean(&visit(&mut body, s, i, None, f, span)?, span)? {
+                    return match op {
+                        PredicateOp::FindLast => nth(s, i, span),
+                        _ => Ok(Value::int(position(i, span)?)),
+                    };
+                }
+            }
+            Ok(if op == PredicateOp::FindLast { Value::NIL } else { Value::int(-1) })
+        }
+        PredicateOp::GroupBy => {
+            let mut groups: Vec<(Arc<str>, Vec<Value<'a>>)> = Vec::new();
+            let mut index: BTreeMap<Arc<str>, usize> = BTreeMap::new();
+            for i in 0..s.len() {
+                let key = visit(&mut body, s, i, None, f, span)?;
+                let key = string(&key, span)?;
+                let elem = nth(s, i, span)?;
+                alloc(f, 1, span)?;
+                match index.get(key).and_then(|&g| groups.get_mut(g)) {
+                    Some((_, group)) => group.push(elem),
+                    None => {
+                        alloc(f, 1, span)?;
+                        let key: Arc<str> = key.into();
+                        index.insert(key.clone(), groups.len());
+                        groups.push((key, alloc::vec![elem]));
+                    }
+                }
+            }
+            let groups: Vec<(Arc<str>, Value<'a>)> = groups.into_iter().map(|(k, xs)| (k, Value::array(xs))).collect();
+            Ok(Value(Repr::Map(MapRef::Owned(groups.into()))))
+        }
+        PredicateOp::SortBy(kind) => {
+            let desc = descending(arg.as_ref(), span)?;
+            let mut keyed: Vec<(Value<'a>, Value<'a>)> = Vec::with_capacity(s.len());
+            for i in 0..s.len() {
+                let key = visit(&mut body, s, i, None, f, span)?;
+                keyed.push((key, nth(s, i, span)?));
+            }
+            let keyed = sorted(keyed, |(key, _)| key, kind, desc, f, span)?;
+            Ok(Value::array(keyed.into_iter().map(|(_, x)| x).collect()))
+        }
+        PredicateOp::Reduce => {
+            let (mut acc, start) = match arg {
+                Some(init) => (init, 0),
+                None => {
+                    steps(f, 1, span)?;
+                    let first = s.get(0).ok_or_else(|| {
+                        Frame::fault(
+                            EvalErrorKind::InvalidArgument {
+                                what: "array for reduce without an initial value",
+                                value: "[]".into(),
+                            },
+                            span,
+                        )
+                    })?;
+                    (first, 1)
+                }
+            };
+            for i in start..s.len() {
+                acc = visit(&mut body, s, i, Some(acc), f, span)?;
+            }
+            Ok(acc)
+        }
+        op => scan(op, s, Some(body), f, span),
+    }
+}
+
+/// The predicates that scan from the start and may stop early.
+fn scan<'a>(op: PredicateOp, s: &Seq<'a>, mut body: Option<Body<'_, 'a>>, f: &mut Frame<'a>, span: Span) -> Res<'a> {
     let mut kept: Vec<Value<'a>> = Vec::new();
     let mut hits: i64 = 0;
     for i in 0..s.len() {
-        steps(f, 1, span)?;
-        let elem = s.get(i).ok_or_else(|| internal("sequence shorter than its length", span))?;
-        let index = i64::try_from(i).map_err(|_| internal("index past i64", span))?;
-        let out = match body.as_deref_mut() {
-            Some(b) => {
-                f.scopes.push(Scope { current: elem.clone(), index, acc: None });
-                let r = b(f);
-                f.scopes.pop();
-                r?
+        let out = match body.as_mut() {
+            Some(b) => visit(b, s, i, None, f, span)?,
+            None => {
+                steps(f, 1, span)?;
+                nth(s, i, span)?
             }
-            None => elem.clone(),
         };
         if op == PredicateOp::Map {
             alloc(f, 1, span)?;
@@ -484,14 +587,21 @@ pub(super) fn predicate<'a>(
         match op {
             PredicateOp::Any => return Ok(Value::bool(true)),
             PredicateOp::None => return Ok(Value::bool(false)),
-            PredicateOp::Find => return Ok(elem),
-            PredicateOp::FindIndex => return Ok(Value::int(index)),
+            PredicateOp::Find => return nth(s, i, span),
+            PredicateOp::FindIndex => {
+                return Ok(Value::int(position(i, span)?));
+            }
             PredicateOp::Filter => {
                 alloc(f, 1, span)?;
-                kept.push(elem);
+                kept.push(nth(s, i, span)?);
             }
             PredicateOp::One if hits == 1 => return Ok(Value::bool(false)),
             PredicateOp::All | PredicateOp::One | PredicateOp::Count | PredicateOp::Map => {}
+            PredicateOp::FindLast
+            | PredicateOp::FindLastIndex
+            | PredicateOp::GroupBy
+            | PredicateOp::SortBy(_)
+            | PredicateOp::Reduce => return Err(internal("predicate without a body", span)),
         }
         hits = hits.saturating_add(1);
     }
@@ -501,8 +611,11 @@ pub(super) fn predicate<'a>(
         PredicateOp::One => Value::bool(hits == 1),
         PredicateOp::Filter | PredicateOp::Map => Value::array(kept),
         PredicateOp::Count => Value::int(hits),
-        PredicateOp::Find => Value::NIL,
-        PredicateOp::FindIndex => Value::int(-1),
+        PredicateOp::Find | PredicateOp::FindLast => Value::NIL,
+        PredicateOp::FindIndex | PredicateOp::FindLastIndex => Value::int(-1),
+        PredicateOp::GroupBy | PredicateOp::SortBy(_) | PredicateOp::Reduce => {
+            return Err(internal("predicate without a body", span));
+        }
     })
 }
 
@@ -1006,24 +1119,8 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         }
         Intrinsic::Sort(kind) => {
             let xs = seq(arg(0)?, span)?;
-            let desc = match args.get(1) {
-                None => false,
-                Some(o) => match string(o, span)? {
-                    "asc" => false,
-                    "desc" => true,
-                    other => return Err(invalid("sort order", other)),
-                },
-            };
-            let n = xs.len();
-            let log = usize::try_from(n.checked_ilog2().unwrap_or(0)).unwrap_or(usize::MAX);
-            steps(f, n.saturating_mul(log.saturating_add(1)), span)?;
-            alloc(f, n, span)?;
-            let nan = |v: &Value<'_>| v.as_float().is_some_and(f64::is_nan);
-            let mut cmp = |a: &Value<'a>, b: &Value<'a>| -> Result<Ordering, Fault> {
-                let o = order(kind, a, b, span)?.unwrap_or_else(|| nan(b).cmp(&nan(a)));
-                Ok(if desc { o.reverse() } else { o })
-            };
-            Ok(Value::array(builtins::sort_by(xs.iter().collect(), &mut cmp)?))
+            let desc = descending(args.get(1), span)?;
+            Ok(Value::array(sorted(xs.iter().collect(), |x| x, kind, desc, f, span)?))
         }
         Intrinsic::Keys | Intrinsic::Values => {
             let m = map(arg(0)?, span)?;
@@ -1131,6 +1228,40 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             intrinsic(op, &args, f, span)
         }
     }
+}
+
+/// Whether the order argument of `sort` or `sortBy` asks for descending order.
+fn descending(order: Option<&Value<'_>>, span: Span) -> Result<bool, Fault> {
+    match order.map(|o| string(o, span)).transpose()? {
+        None | Some("asc") => Ok(false),
+        Some("desc") => Ok(true),
+        Some(other) => {
+            Err(Frame::fault(EvalErrorKind::InvalidArgument { what: "sort order", value: other.into() }, span))
+        }
+    }
+}
+
+/// `xs` sorted stably by `key` under `kind`'s ordering, NaN first (last when
+/// descending), charged as `sort`.
+fn sorted<'a, T>(
+    xs: Vec<T>,
+    key: fn(&T) -> &Value<'a>,
+    kind: CompareKind,
+    desc: bool,
+    f: &mut Frame<'a>,
+    span: Span,
+) -> Result<Vec<T>, Fault> {
+    let n = xs.len();
+    let log = usize::try_from(n.checked_ilog2().unwrap_or(0)).unwrap_or(usize::MAX);
+    steps(f, n.saturating_mul(log.saturating_add(1)), span)?;
+    alloc(f, n, span)?;
+    let nan = |v: &Value<'_>| v.as_float().is_some_and(f64::is_nan);
+    let mut cmp = |a: &T, b: &T| -> Result<Ordering, Fault> {
+        let (a, b) = (key(a), key(b));
+        let o = order(kind, a, b, span)?.unwrap_or_else(|| nan(b).cmp(&nan(a)));
+        Ok(if desc { o.reverse() } else { o })
+    };
+    builtins::sort_by(xs, &mut cmp)
 }
 
 /// `flatten`: the elements of `xs`, with every nested array spliced in, to any depth.

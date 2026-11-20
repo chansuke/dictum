@@ -406,15 +406,17 @@ impl<'c> Compiler<'c> {
                     Ok(Value(Repr::Array(Seq::Range { from, to: b(f)? })))
                 }))
             }
-            ExprKind::Predicate { op, seq, body } => {
+            ExprKind::Predicate { op, seq, arg, body } => {
                 let (s, op, seq_span) = (self.value(seq)?, *op, seq.span());
+                let arg = arg.as_deref().map(|a| self.value(a)).transpose()?;
                 let body = body.as_deref().map(|b| self.value(b)).transpose()?;
                 Compiled::Value(value_node(move |f| {
                     let v = s(f)?;
                     let s = v.as_seq().cloned().ok_or_else(|| interp::mismatch("an array", &v, seq_span))?;
+                    let arg = arg.as_ref().map(|a| a(f)).transpose()?;
                     match &body {
-                        Some(b) => interp::predicate(op, &s, Some(&mut |f| b(f)), f, span),
-                        None => interp::predicate(op, &s, None, f, span),
+                        Some(b) => interp::predicate(op, &s, arg, Some(&mut |f| b(f)), f, span),
+                        None => interp::predicate(op, &s, arg, None, f, span),
                     }
                 }))
             }
