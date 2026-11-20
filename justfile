@@ -16,7 +16,7 @@ default:
 verify: fmt lint test
 
 # Everything CI runs.
-ci: fmt lint deny conformance-go test msrv nostd bench-build fuzz-build lean tla drt
+ci: fmt lint deny conformance-go test msrv nostd wasm bench-build fuzz-build lean tla drt
 
 # rustfmt and taplo, check only.
 fmt:
@@ -68,6 +68,18 @@ nostd:
     cargo build -p dictum --no-default-features --target thumbv7em-none-eabihf
     cargo build -p dictum --no-default-features --features decimal --target thumbv7em-none-eabihf
     cargo build -p dictum --no-default-features --features tzdb --target thumbv7em-none-eabihf
+
+# The tests on wasm32-wasip1 (a 32-bit target), run by wasmtime. Test files are read
+# by the paths compiled in, so the repository is mapped into the guest at the same
+# path; insta is told where the workspace is, since it cannot ask cargo. WASI has no
+# threads or processes: tests run one at a time, and the ones that need a thread or a
+# process (trybuild, the Lean oracle) report themselves as ignored.
+wasm:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime run --dir={{justfile_directory()}} --env INSTA_WORKSPACE_ROOT={{justfile_directory()}} --env INSTA_UPDATE=no"
+    cargo test --workspace --all-features --target wasm32-wasip1 -- --test-threads=1
+    cargo test --workspace --no-default-features --target wasm32-wasip1 -- --test-threads=1
 
 # Benchmarks compile.
 bench-build:
