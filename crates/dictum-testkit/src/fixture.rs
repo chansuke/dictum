@@ -52,6 +52,9 @@ pub struct Facts {
     pub order: Order,
     pub nums: Vec<i64>,
     pub limit: i64,
+    /// Narrow integers, so the interval analysis has ranges to work with.
+    pub level: u8,
+    pub delta: i8,
 }
 
 /// The facts the conformance cases are written against. Changing a value here
@@ -83,6 +86,8 @@ pub fn sample() -> Facts {
         },
         nums: vec![3, 1, 4, 1, 5, 9, 2, 6],
         limit: 10,
+        level: 200,
+        delta: -100,
     }
 }
 
@@ -131,6 +136,8 @@ mod arbitrary_impl {
                 },
                 nums: u.arbitrary()?,
                 limit: u.arbitrary()?,
+                level: u.arbitrary()?,
+                delta: u.arbitrary()?,
             })
         }
     }
