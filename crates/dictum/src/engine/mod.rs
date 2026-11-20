@@ -191,11 +191,12 @@ impl Prepared {
         (r, trace.into_report_tree(&self.checked.ir))
     }
 
-    /// A range in the result is materialized when it is copied out, so it is charged
-    /// to the allocation budget here, before the copy.
+    /// A range in the result is materialized, and a shared value duplicated, when
+    /// it is copied out, so the copy is charged to the allocation budget here, first.
     fn charge_result<'a>(&self, v: Value<'a>, frame: &mut Frame<'a>) -> Result<Value<'a>, Fault> {
         let span = self.checked.ir.body().span();
-        frame.budget.alloc(v.range_elements()).map_err(|kind| Fault { kind, span })?;
+        let copied = v.copied_elements(frame.budget.alloc_left());
+        frame.budget.alloc(copied).map_err(|kind| Fault { kind, span })?;
         Ok(v)
     }
 

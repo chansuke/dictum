@@ -53,7 +53,7 @@ use crate::engine::json;
 use crate::engine::methods;
 use crate::engine::ops;
 use crate::engine::trace::{Recorded, Trace};
-use crate::engine::value::{Bytes, MapRef, Repr, Seq, Str, Value};
+use crate::engine::value::{Bytes, MAX_VALUE_DEPTH, MapRef, Repr, Seq, Str, Value};
 use crate::func::CallError;
 
 /// Evaluate `program` in `frame`. When `trace` is given, record every node's outcome
@@ -282,7 +282,7 @@ impl<'a> Walk<'_, '_, 'a> {
                     }
                     out.push((key, value));
                 }
-                Ok(Value(Repr::Map(MapRef::Owned(out.into()))))
+                Ok(Value::map(out))
             }
             ExprKind::Range { from, to } => {
                 let a = self.expr(from, f)?;
@@ -528,7 +528,7 @@ pub(super) fn predicate<'a>(
                 }
             }
             let groups: Vec<(Arc<str>, Value<'a>)> = groups.into_iter().map(|(k, xs)| (k, Value::array(xs))).collect();
-            Ok(Value(Repr::Map(MapRef::Owned(groups.into()))))
+            Ok(Value::map(groups))
         }
         PredicateOp::SortBy(kind) => {
             let desc = descending(arg.as_ref(), span)?;
@@ -562,6 +562,10 @@ pub(super) fn predicate<'a>(
             };
             for i in start..s.len() {
                 acc = visit(&mut body, s, i, Some(acc), f, span)?;
+                // The one place a value can nest without bound: `[#acc]` each step.
+                if acc.depth() > MAX_VALUE_DEPTH {
+                    return Err(Frame::fault(EvalErrorKind::DepthLimit, span));
+                }
             }
             Ok(acc)
         }
@@ -926,7 +930,7 @@ pub(super) fn check<'a>(v: Value<'a>, ty: &Type, f: &mut Frame<'a>, span: Span) 
             }
             if changed {
                 alloc(f, out.len(), span)?;
-                Ok(Value(Repr::Map(MapRef::Owned(out.into()))))
+                Ok(Value::map(out))
             } else {
                 Ok(v)
             }
@@ -1179,7 +1183,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 out.insert(k.into(), v);
             }
             let entries: Vec<(Arc<str>, Value<'a>)> = out.into_iter().collect();
-            Ok(Value(Repr::Map(MapRef::Owned(entries.into()))))
+            Ok(Value::map(entries))
         }
         Intrinsic::ToInt(_) => {
             let v = arg(0)?;

@@ -19,7 +19,7 @@ use dictum_syntax::{MAX_DEPTH, Span};
 use crate::EvalErrorKind;
 use crate::engine::frame::{Fault, Frame};
 use crate::engine::interp::{Res, alloc, internal, steps};
-use crate::engine::value::{MapRef, Repr, Str, Value};
+use crate::engine::value::{Repr, Str, Value};
 use crate::engine::{builtins, layout};
 
 fn invalid(what: &'static str, value: &str, span: Span) -> Fault {
@@ -427,7 +427,7 @@ impl<'a> Decoder<'_, '_, 'a> {
         let mut out: BTreeMap<Arc<str>, Value<'a>> = BTreeMap::new();
         if self.peek() == Some(b'}') {
             self.bump();
-            return Ok(Value(Repr::Map(MapRef::Owned(Arc::from([])))));
+            return Ok(Value::map(Vec::new()));
         }
         loop {
             self.space();
@@ -445,7 +445,7 @@ impl<'a> Decoder<'_, '_, 'a> {
                 Some(b'}') => {
                     self.bump();
                     let entries: Vec<(Arc<str>, Value<'a>)> = out.into_iter().collect();
-                    return Ok(Value(Repr::Map(MapRef::Owned(entries.into()))));
+                    return Ok(Value::map(entries));
                 }
                 None => return Err(self.fail("JSON, unexpected end")),
                 Some(_) => return Err(self.fail("JSON, unexpected text")),

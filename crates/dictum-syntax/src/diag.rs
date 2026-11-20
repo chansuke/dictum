@@ -83,6 +83,7 @@ error_codes! {
     InvalidArgument = "E0309", "invalid {0}: `{1}`";
     RuntimeDuplicateKey = "E0310", "duplicate map key `{0}`";
     ClockUnset = "E0311", "`now()` needs a time; pass one with `Ctx::with_now`";
+    DepthLimit = "E0312", "a value is nested deeper than {0} levels";
     // E09xx: a dictum bug. Never expected; reported instead of panicking.
     Internal = "E0900", "internal error: {0}";
 }
