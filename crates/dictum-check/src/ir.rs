@@ -135,6 +135,14 @@ fn max_predicates<'a>(roots: impl Iterator<Item = &'a Expr>) -> u16 {
     roots.map(go).max().unwrap_or(0)
 }
 
+/// Depth of an IR tree, counted as [`Program::validate`] counts it:
+/// the root is 1 and each level down adds one. Called by the checker on
+/// freshly built programs, whose depth is bounded by the parser's AST
+/// limit plus the conversions checking adds, so the recursion is shallow.
+pub(crate) fn expr_depth(e: &Expr) -> u32 {
+    1 + e.children().map(expr_depth).max().unwrap_or(0)
+}
+
 /// Walks a program for [`Program::validate`].
 struct Validator {
     env_root: &'static crate::StructDesc,

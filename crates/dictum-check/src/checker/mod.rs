@@ -8,7 +8,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use dictum_syntax::ast::{self, Callee, MapKey, MemberKey, Pointer};
-use dictum_syntax::{Arg, Builtin, Diagnostic, Diagnostics, ErrorCode, Help, Span};
+use dictum_syntax::{Arg, Builtin, Diagnostic, Diagnostics, ErrorCode, Help, MAX_DEPTH, Span};
 
 use crate::ir::{
     self, CompareKind, Const, Conversion, EqKind, ExprKind, InOp, IndexOp, Intrinsic, NodeId, PredicateOp, SliceOp,
@@ -148,6 +148,19 @@ impl<'e, P> Checker<'e, P> {
         });
         match body {
             Some(body) if self.diags.is_empty() => {
+                // The parser bounds the AST's height, but checking adds
+                // conversions the parser cannot foresee — operand
+                // promotions, the result's `Erase` — and each one is an
+                // IR level. Hold the finished program to the same
+                // MAX_DEPTH `Program::validate` asserts: past it the
+                // rule is E0105, as if the nesting had been written.
+                for e in lets.iter().chain(core::iter::once(&body)) {
+                    if ir::expr_depth(e) > MAX_DEPTH {
+                        let span = e.span();
+                        self.error(ErrorCode::TooDeep, span, vec![Arg::Int(i64::from(MAX_DEPTH))]);
+                        return Err(self.diags);
+                    }
+                }
                 Ok(ir::Program::new(lets, body, self.next_id, self.max_predicate_depth))
             }
             _ => Err(self.diags),
