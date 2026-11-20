@@ -1,0 +1,389 @@
+# mean, median and the bit operations.
+
+[[case]]
+name = "mean of an array"
+expr = "mean([1, 2, 3, 4])"
+expect = 2.5
+
+[[case]]
+name = "mean of a fact"
+expr = "mean(nums)"
+expect = 3.875
+
+[[case]]
+name = "mean of numbers"
+expr = "mean(1, 2)"
+expect = 1.5
+
+[[case]]
+name = "mean of one number"
+expr = "mean(5)"
+expect = 5.0
+
+[[case]]
+name = "mean of ints and floats"
+expr = "mean(2.5, 1)"
+expect = 1.75
+
+[[case]]
+name = "mean of an array of ints and floats"
+expr = "mean([1, 2.5])"
+expect = 1.75
+
+[[case]]
+name = "mean of an array of floats"
+expr = "mean(order.Items | map(.Price))"
+expect = 55.125
+
+[[case]]
+name = "mean of an empty array"
+expr = "mean([])"
+expect = 0.0
+
+[[case]]
+name = "mean of an empty filtered array"
+expr = "mean(filter(nums, # > 100))"
+expect = 0.0
+
+[[case]]
+name = "mean of an any"
+expr = "mean(user.Attrs)"
+expect = 7.0
+
+[[case]]
+name = "mean of an any and a number"
+expr = "mean(user.Attrs, 1)"
+expect = 4.0
+
+[[case]]
+name = "mean of an array with an any"
+expr = "mean([user.Attrs, 1])"
+expect = 4.0
+
+[[case]]
+name = "mean piped"
+expr = "nums | mean()"
+expect = 3.875
+
+[[case]]
+name = "mean of a string"
+expr = 'mean("a")'
+error = "E0201"
+
+[[case]]
+name = "mean of a bool"
+expr = "mean(true)"
+error = "E0201"
+
+[[case]]
+name = "mean of an array of strings"
+expr = 'mean(["a"])'
+error = "E0201"
+
+[[case]]
+name = "mean of an array with a string"
+expr = 'mean([user.Attrs, "a"])'
+error = "E0307"
+
+[[case]]
+name = "mean without arguments"
+expr = "mean()"
+error = "E0205"
+
+[[case]]
+name = "mean of nested arrays"
+expr = "mean([[1, 2], [3]])"
+error = "E0201"
+deviation = "Go flattens nested arrays; dictum takes one array of numbers, as max and min"
+
+[[case]]
+name = "mean of a number and an array"
+expr = "mean(1, [2, 3])"
+error = "E0201"
+deviation = "Go flattens array arguments among numbers; dictum takes one array or numbers, as max and min"
+
+[[case]]
+name = "median of an odd array"
+expr = "median([1, 3, 2])"
+expect = 2.0
+
+[[case]]
+name = "median of a fact"
+expr = "median(nums)"
+expect = 3.5
+
+[[case]]
+name = "median of numbers"
+expr = "median(1, 2)"
+expect = 1.5
+
+[[case]]
+name = "median of one number"
+expr = "median(5)"
+expect = 5.0
+
+[[case]]
+name = "median of negative numbers"
+expr = "median(-1, -5, 3)"
+expect = -1.0
+
+[[case]]
+name = "median of ints and floats"
+expr = "median([2.5, 1])"
+expect = 1.75
+
+[[case]]
+name = "median of an empty array"
+expr = "median([])"
+expect = 0.0
+
+[[case]]
+name = "median of an empty filtered array"
+expr = "median(filter(nums, # > 100))"
+expect = 0.0
+
+[[case]]
+name = "median sorts NaN first"
+expr = "median([0 / 0, 1, 2])"
+expect = 1.0
+
+[[case]]
+name = "median of an any"
+expr = "median(user.Attrs)"
+expect = 7.0
+
+[[case]]
+name = "median of an array with an any"
+expr = "median([user.Attrs, 1, 100])"
+expect = 7.0
+
+[[case]]
+name = "median piped"
+expr = "nums | median()"
+expect = 3.5
+
+[[case]]
+name = "median of a string"
+expr = 'median("a")'
+error = "E0201"
+
+[[case]]
+name = "median of an array of strings"
+expr = 'median(["a"])'
+error = "E0201"
+
+[[case]]
+name = "median of an array with a string"
+expr = 'median([user.Attrs, "a"])'
+error = "E0307"
+
+[[case]]
+name = "median without arguments"
+expr = "median()"
+error = "E0205"
+
+[[case]]
+name = "median of nested arrays"
+expr = "median([[1, 2], [3]])"
+error = "E0201"
+deviation = "Go flattens nested arrays; dictum takes one array of numbers, as max and min"
+
+[[case]]
+name = "bitand"
+expr = "bitand(12, 10)"
+expect = 8
+
+[[case]]
+name = "bitor"
+expr = "bitor(12, 10)"
+expect = 14
+
+[[case]]
+name = "bitxor"
+expr = "bitxor(12, 10)"
+expect = 6
+
+[[case]]
+name = "bitnand"
+expr = "bitnand(12, 10)"
+expect = 4
+
+[[case]]
+name = "bitnot"
+expr = "bitnot(12)"
+expect = -13
+
+[[case]]
+name = "bitnot of -1"
+expr = "bitnot(-1)"
+expect = 0
+
+[[case]]
+name = "bitand of negative numbers"
+expr = "bitand(-6, -3)"
+expect = -8
+
+[[case]]
+name = "bitand of facts"
+expr = "bitand(user.Age, limit)"
+expect = 0
+
+[[case]]
+name = "bitand piped"
+expr = "12 | bitand(10)"
+expect = 8
+
+[[case]]
+name = "bitand of an any"
+expr = "bitand(user.Attrs, 3)"
+expect = 3
+
+[[case]]
+name = "bitor of an any piped"
+expr = "user.Attrs | bitor(8)"
+expect = 15
+
+[[case]]
+name = "bitnot of an any"
+expr = "bitnot(user.Attrs)"
+expect = -8
+
+[[case]]
+name = "bitshl"
+expr = "bitshl(1, 3)"
+expect = 8
+
+[[case]]
+name = "bitshl by 0"
+expr = "bitshl(5, 0)"
+expect = 5
+
+[[case]]
+name = "bitshl by 63"
+expr = "bitshl(1, 63)"
+expect = -9223372036854775808
+
+[[case]]
+name = "bitshl wraps"
+expr = "bitshl(3, 63)"
+expect = -9223372036854775808
+
+[[case]]
+name = "bitshl by 64"
+expr = "bitshl(1, 64)"
+expect = 0
+
+[[case]]
+name = "bitshl by 65"
+expr = "bitshl(1, 65)"
+expect = 0
+
+[[case]]
+name = "bitshl by the largest int"
+expr = "bitshl(1, 9223372036854775807)"
+expect = 0
+
+[[case]]
+name = "bitshl by a negative count"
+expr = "bitshl(1, -1)"
+error = "E0309"
+
+[[case]]
+name = "bitshl of an any"
+expr = "bitshl(user.Attrs, 1)"
+expect = 14
+
+[[case]]
+name = "bitshl of an any by a negative count"
+expr = "bitshl(1, user.Attrs - 8)"
+error = "E0309"
+
+[[case]]
+name = "bitshr"
+expr = "bitshr(-8, 1)"
+expect = -4
+
+[[case]]
+name = "bitshr by 63"
+expr = "bitshr(-9223372036854775807 - 1, 63)"
+expect = -1
+
+[[case]]
+name = "bitshr of -1 by 64"
+expr = "bitshr(-1, 64)"
+expect = -1
+
+[[case]]
+name = "bitshr of a negative number by 65"
+expr = "bitshr(-8, 65)"
+expect = -1
+
+[[case]]
+name = "bitshr of a positive number by 64"
+expr = "bitshr(8, 64)"
+expect = 0
+
+[[case]]
+name = "bitshr by a negative count"
+expr = "bitshr(1, -1)"
+error = "E0309"
+
+[[case]]
+name = "bitushr"
+expr = "bitushr(-8, 1)"
+expect = 9223372036854775804
+
+[[case]]
+name = "bitushr by 63"
+expr = "bitushr(-1, 63)"
+expect = 1
+
+[[case]]
+name = "bitushr by 64"
+expr = "bitushr(-1, 64)"
+expect = 0
+
+[[case]]
+name = "bitushr by 65"
+expr = "bitushr(-1, 65)"
+expect = 0
+
+[[case]]
+name = "bitushr by a negative count"
+expr = "bitushr(1, -1)"
+error = "E0309"
+
+[[case]]
+name = "bitand of a float"
+expr = "bitand(2.0, 1)"
+error = "E0201"
+
+[[case]]
+name = "bitand of a float fact"
+expr = "bitand(user.Score, 1)"
+error = "E0201"
+
+[[case]]
+name = "bitnot of a float"
+expr = "bitnot(1.5)"
+error = "E0201"
+
+[[case]]
+name = "bitand of an any holding a float"
+expr = "bitand([user.Attrs, 1.5][1], 1)"
+error = "E0307"
+
+[[case]]
+name = "bitand with one argument"
+expr = "bitand(1)"
+error = "E0205"
+
+[[case]]
+name = "bitnot with two arguments"
+expr = "bitnot(1, 2)"
+error = "E0205"
+
+[[case]]
+name = "bitshl with three arguments"
+expr = "bitshl(1, 2, 3)"
+error = "E0205"
