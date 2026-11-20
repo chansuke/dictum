@@ -17,14 +17,16 @@
 //! - `len` steps for `x in array`, before scanning (so a sorted constant set costs
 //!   what a scan does), and one per entry for `keys`, `values`, `sum`, `join`,
 //!   `max`/`min`/`mean`/`median` of an array, `concat`, `flatten`, `take`,
-//!   `reverse`, structural `==`, and the deep check of `any`; for `uniq`, one per
+//!   `reverse`, `toPairs`, `fromPairs`, structural `==`, and the deep check of
+//!   `any`; one per value `toJSON` writes or `fromJSON` reads; for `uniq`, one per
 //!   element and one per element kept before it; for `sort` and the sorting of
 //!   `sortBy`, `n * (log2(n) + 1)`;
 //! - one alloc per element of a built array or map (literals, `filter`, `map`,
 //!   `split`, `keys`, `values`, `+` of arrays, `concat`, `flatten`, `uniq`, `take`,
-//!   `reverse`, `sort`, `sortBy`, the numbers `median` sorts, and for `groupBy` one
-//!   per element and one per group) and one per byte of a built string, before
-//!   building it. Constants are part of the rule and cost nothing.
+//!   `reverse`, `sort`, `sortBy`, `fromPairs`, `fromJSON`, the numbers `median`
+//!   sorts, for `groupBy` one per element and one per group, and for `toPairs` three
+//!   per entry) and one per byte of a built string, before building it. Constants
+//!   are part of the rule and cost nothing.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -47,6 +49,7 @@ use crate::EvalErrorKind;
 use crate::engine::SchemaCore;
 use crate::engine::builtins;
 use crate::engine::frame::{Fault, Frame, Scope};
+use crate::engine::json;
 use crate::engine::ops;
 use crate::engine::trace::{Recorded, Trace};
 use crate::engine::value::{Bytes, MapRef, Repr, Seq, Str, Value};
@@ -1133,6 +1136,40 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             });
             Ok(Value::array(out))
         }
+        Intrinsic::ToPairs => {
+            let m = map(arg(0)?, span)?;
+            steps(f, m.len(), span)?;
+            alloc(f, m.len().saturating_mul(3), span)?;
+            let mut out = Vec::with_capacity(m.len());
+            m.for_each(&mut |k, v| {
+                out.push(Value::array(alloc::vec![Value(Repr::Str(Str::Shared(k.into()))), v]));
+                ControlFlow::Continue(())
+            });
+            Ok(Value::array(out))
+        }
+        Intrinsic::FromPairs => {
+            let xs = seq(arg(0)?, span)?;
+            steps(f, xs.len(), span)?;
+            alloc(f, xs.len(), span)?;
+            let mut out: BTreeMap<Arc<str>, Value<'a>> = BTreeMap::new();
+            for x in xs.iter() {
+                let text = |f: &mut Frame<'a>, v: &Value<'_>| -> Result<String, Fault> {
+                    let mut out = String::new();
+                    go_string(v, &mut out, f, span)?;
+                    Ok(out)
+                };
+                let Some((k, v)) = x.as_seq().filter(|p| p.len() == 2).and_then(|p| Some((p.get(0)?, p.get(1)?)))
+                else {
+                    return Err(invalid("pair", &text(f, &x)?));
+                };
+                let Some(k) = k.as_str() else {
+                    return Err(invalid("pair key, not a string", &text(f, &k)?));
+                };
+                out.insert(k.into(), v);
+            }
+            let entries: Vec<(Arc<str>, Value<'a>)> = out.into_iter().collect();
+            Ok(Value(Repr::Map(MapRef::Owned(entries.into()))))
+        }
         Intrinsic::ToInt(_) => {
             let v = arg(0)?;
             match &v.0 {
@@ -1180,6 +1217,25 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 _ => return Err(mismatch("int, float, string or decimal", v, span)),
             };
             Ok(Value(Repr::Decimal(d)))
+        }
+        Intrinsic::ToJson => {
+            let out = json::encode(arg(0)?, f, span)?;
+            built(f, out, span)
+        }
+        Intrinsic::FromJson => json::decode(s(0)?, f, span),
+        Intrinsic::ToBase64 => {
+            let text = s(0)?;
+            alloc(f, text.len().div_ceil(3).saturating_mul(4), span)?;
+            let mut out = String::new();
+            builtins::base64_encode(text.as_bytes(), &mut out);
+            Ok(Value::string(out))
+        }
+        Intrinsic::FromBase64 => {
+            let text = s(0)?;
+            let bytes = builtins::base64_decode(text.as_bytes())
+                .map_err(|at| invalid("base64", builtins::excerpt(text, at)))?;
+            let decoded = String::from_utf8(bytes).map_err(|_| invalid("base64, not UTF-8 text", text))?;
+            built(f, decoded, span)
         }
         Intrinsic::TypeName => Ok(Value(Repr::Str(Str::Shared(arg(0)?.tag().name().into())))),
         Intrinsic::Now => {

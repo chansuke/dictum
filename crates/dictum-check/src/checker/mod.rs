@@ -785,8 +785,14 @@ impl<'e, P> Checker<'e, P> {
         } else {
             args
         };
-        if b == Builtin::Type {
-            return Some(self.mk(span, Type::String, ExprKind::Intrinsic { op: Intrinsic::TypeName, args }));
+        // Defined on every type, options and `any` included.
+        let any_type = match b {
+            Builtin::Type => Some(Intrinsic::TypeName),
+            Builtin::ToJson => Some(Intrinsic::ToJson),
+            _ => None,
+        };
+        if let Some(op) = any_type {
+            return Some(self.mk(span, Type::String, ExprKind::Intrinsic { op, args }));
         }
         if args.iter().any(|a| *a.ty() == Type::Any) {
             return Some(self.mk(span, Type::Any, ExprKind::Intrinsic { op: Intrinsic::Dyn(b), args }));
@@ -809,6 +815,20 @@ impl<'e, P> Checker<'e, P> {
                 (op, Type::option(t), args)
             }
             Intrinsic::Keys => (op, Type::array(Type::String), args),
+            Intrinsic::ToPairs => (op, Type::array(Type::array(Type::Any)), args),
+            Intrinsic::FromPairs => {
+                let pair = args.first().map(elem).unwrap_or(Type::Any);
+                let key = match &pair {
+                    Type::Array(t) => t.tag(),
+                    t if t.tag().is_some() => return self.element_error(span, "an array of pairs", &args),
+                    _ => None,
+                };
+                if key.is_some_and(|k| k != Tag::String) {
+                    return self.element_error(span, "an array of pairs with string keys", &args);
+                }
+                (op, Type::map(Type::Any), args)
+            }
+            Intrinsic::FromJson => (op, Type::Any, args),
             Intrinsic::Values => {
                 let t = args.first().map(elem).unwrap_or(Type::Any);
                 (op, Type::array(t), args)

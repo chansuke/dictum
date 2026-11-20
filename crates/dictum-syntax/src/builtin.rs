@@ -113,18 +113,24 @@ builtins! {
     // maps
     Keys = "keys";
     Values = "values";
+    ToPairs = "toPairs";
+    FromPairs = "fromPairs";
     // conversions
     Int = "int";
     Float = "float";
     String = "string";
     Type = "type";
     Decimal = "decimal";
+    ToJson = "toJSON";
+    FromJson = "fromJSON";
+    ToBase64 = "toBase64";
+    FromBase64 = "fromBase64";
     // time
     Now = "now";
     Duration = "duration";
     Date = "date";
     // misc
     Get = "get";
-    // Post-MVP builtins (toJSON, timezone, ...) are added
+    // Post-MVP builtins (timezone, ...) are added
     // here when implemented; until then they are unknown functions (E0203).
 }

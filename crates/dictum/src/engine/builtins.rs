@@ -70,6 +70,82 @@ pub(crate) fn bit(op: BitOp, x: i64, y: i64) -> Result<i64, EvalErrorKind> {
     })
 }
 
+const BASE64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// Standard base64 with padding, as Go's `base64.StdEncoding.EncodeToString`.
+pub(crate) fn base64_encode(bytes: &[u8], out: &mut String) {
+    for chunk in bytes.chunks(3) {
+        let byte = |i: usize| u32::from(chunk.get(i).copied().unwrap_or(0));
+        let n = byte(0).wrapping_shl(16) | byte(1).wrapping_shl(8) | byte(2);
+        for i in 0..4u32 {
+            if usize::try_from(i).is_ok_and(|i| i <= chunk.len()) {
+                let six = n.wrapping_shr(18_u32.wrapping_sub(i.wrapping_mul(6))) & 0x3f;
+                out.push(char::from(BASE64.get(usize::try_from(six).unwrap_or(0)).copied().unwrap_or(b'=')));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+}
+
+/// Go's `base64.StdEncoding.DecodeString`: padding is required, `\r` and `\n` are
+/// skipped anywhere, and the unused bits of the last character may be set. The error
+/// is the byte offset where the input stops being valid.
+pub(crate) fn base64_decode(text: &[u8]) -> Result<Vec<u8>, usize> {
+    let sextet = |c: u8| match c {
+        b'A'..=b'Z' => Some(c.wrapping_sub(b'A')),
+        b'a'..=b'z' => Some(c.wrapping_sub(b'a').wrapping_add(26)),
+        b'0'..=b'9' => Some(c.wrapping_sub(b'0').wrapping_add(52)),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let mut out = Vec::with_capacity((text.len() / 4).saturating_mul(3));
+    let mut quantum: Vec<u8> = Vec::with_capacity(4);
+    let (mut pads, mut done) = (0usize, false);
+    let flush = |quantum: &[u8], out: &mut Vec<u8>| {
+        let n = quantum.iter().enumerate().fold(0u32, |n, (i, &six)| {
+            n | u32::from(six).wrapping_shl(18_u32.wrapping_sub(u32::try_from(i).unwrap_or(0).wrapping_mul(6)))
+        });
+        let bytes = [n.wrapping_shr(16), n.wrapping_shr(8), n].map(|b| (b & 0xff) as u8);
+        out.extend(bytes.iter().take(quantum.len().saturating_sub(1)));
+    };
+    for (i, &c) in text.iter().enumerate() {
+        if c == b'\n' || c == b'\r' {
+            continue;
+        }
+        if done {
+            return Err(i);
+        }
+        match sextet(c) {
+            Some(six) if pads == 0 => {
+                quantum.push(six);
+                if quantum.len() == 4 {
+                    flush(&quantum, &mut out);
+                    quantum.clear();
+                }
+            }
+            None if c == b'=' && quantum.len() >= 2 => {
+                pads = pads.saturating_add(1);
+                done = quantum.len().saturating_add(pads) == 4;
+            }
+            _ => return Err(i),
+        }
+    }
+    if !quantum.is_empty() && !done {
+        return Err(text.len());
+    }
+    flush(&quantum, &mut out);
+    Ok(out)
+}
+
+/// At most 16 characters of `text` from byte `at`, to show where an argument stopped
+/// being valid.
+pub(crate) fn excerpt(text: &str, at: usize) -> &str {
+    let rest = text.get(at..).unwrap_or("");
+    rest.char_indices().nth(16).map_or(rest, |(end, _)| rest.get(..end).unwrap_or(rest))
+}
+
 /// Go's `strings.SplitN` (or `SplitAfterN` when `after`, which keeps each separator
 /// on the part before it). `n < 0` splits at every separator, `n == 0` gives no
 /// parts, and otherwise the last of at most `n` parts is the unsplit rest. An empty
@@ -400,5 +476,17 @@ mod tests {
         let mut s = String::new();
         go_time(jiff::Timestamp::from_second(1_767_225_600).unwrap(), &mut s);
         assert_eq!(s, "2026-01-01 00:00:00 +0000 UTC");
+    }
+
+    #[test]
+    fn base64_round_trips_any_bytes() {
+        let bytes: Vec<u8> = (0..=255).rev().collect();
+        for len in 0..=bytes.len() {
+            let prefix = bytes.get(..len).unwrap();
+            let mut text = String::new();
+            base64_encode(prefix, &mut text);
+            assert_eq!(text.len(), len.div_ceil(3).saturating_mul(4));
+            assert_eq!(base64_decode(text.as_bytes()), Ok(prefix.to_vec()), "{text}");
+        }
     }
 }

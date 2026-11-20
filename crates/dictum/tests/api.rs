@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use dictum::{Ctx, Dynamic, EvalErrorKind, Limits, NodeStatus, Rule, RuleSet, Schema};
+use dictum::{Ctx, Dynamic, ErrorCode, EvalErrorKind, Limits, NodeStatus, Rule, RuleSet, Schema};
 use dictum_testkit::{Facts, sample, sample_now};
 
 fn schema() -> Schema<Facts> {
@@ -114,6 +114,35 @@ fn step_limit_is_enforced() {
     let tight = Ctx::new(&facts).with_limits(Limits::default().with_max_steps(3));
     assert!(matches!(rule.eval(&tight).unwrap_err().kind(), EvalErrorKind::StepLimit));
     assert_eq!(rule.eval(&Ctx::new(&facts)).unwrap(), 8);
+}
+
+#[test]
+fn json_conversions_are_charged_to_the_budget() {
+    let facts = sample();
+    let run = |src: &str, limits: Limits| {
+        let rule = Rule::<i64, Facts>::compile(src, &schema()).unwrap();
+        let ctx = Ctx::new(&facts).with_limits(limits);
+        let (fast, spec) =
+            (rule.eval(&ctx).map_err(|e| e.code()), rule.explain(&ctx).into_result().map_err(|e| e.code()));
+        assert_eq!(fast, spec, "{src}");
+        fast
+    };
+    let min = |src: &str, limits: fn(u64) -> Limits| (0..1000).find(|&n| run(src, limits(n)).is_ok()).unwrap();
+    let steps = |n| Limits::default().with_max_steps(n);
+    let alloc = |n| Limits::default().with_max_alloc(n);
+    // toJSON: one step per value (the array and its 8 ints), one alloc per byte of text.
+    // fromJSON: one more step per value read, and one alloc per element built.
+    let encode = "len(toJSON(nums))";
+    let decode = "len(fromJSON(toJSON(nums)))";
+    assert_eq!(run(encode, Limits::default()), Ok(42));
+    assert_eq!(min(encode, steps), 9);
+    assert_eq!(min(encode, alloc), 42);
+    assert_eq!(min(decode, steps), min(encode, steps) + 9);
+    assert_eq!(min(decode, alloc), min(encode, alloc) + 8);
+    assert_eq!(run(encode, alloc(min(encode, alloc) - 1)), Err(ErrorCode::AllocLimit));
+    assert_eq!(run(encode, steps(min(encode, steps) - 1)), Err(ErrorCode::StepLimit));
+    assert_eq!(run(decode, steps(min(decode, steps) - 1)), Err(ErrorCode::StepLimit));
+    assert_eq!(run(decode, alloc(min(decode, alloc) - 1)), Err(ErrorCode::AllocLimit));
 }
 
 #[test]

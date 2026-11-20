@@ -1,0 +1,1027 @@
+# toJSON, fromJSON, toBase64, fromBase64, toPairs and fromPairs over the sample facts.
+
+# toJSON
+
+[[case]]
+name = "toJSON of a map literal"
+expr = "toJSON({foo: 1, bar: 2})"
+expect = '''
+{
+  "bar": 2,
+  "foo": 1
+}'''
+
+[[case]]
+name = "toJSON of an array"
+expr = "toJSON([1, 2, 3])"
+expect = '''
+[
+  1,
+  2,
+  3
+]'''
+
+[[case]]
+name = "toJSON of the user"
+expr = "toJSON(user)"
+expect = '''
+{
+  "Name": "Ada",
+  "Age": 36,
+  "Score": 4.5,
+  "Active": true,
+  "Email": null,
+  "Tags": [
+    "admin",
+    "beta"
+  ],
+  "Created": "2023-11-14T22:13:20Z",
+  "Attrs": 7,
+  "Manager": null
+}'''
+
+[[case]]
+name = "toJSON of the order"
+expr = "toJSON(order)"
+expect = '''
+{
+  "Total": 120.5,
+  "Items": [
+    {
+      "Sku": "A-1",
+      "Price": 100,
+      "Qty": 1
+    },
+    {
+      "Sku": "B-2",
+      "Price": 10.25,
+      "Qty": 2
+    }
+  ],
+  "Notes": {
+    "gift": "yes",
+    "note": "leave at door"
+  },
+  "Discount": 0.1
+}'''
+
+[[case]]
+name = "toJSON of nums"
+expr = "toJSON(nums)"
+expect = '''
+[
+  3,
+  1,
+  4,
+  1,
+  5,
+  9,
+  2,
+  6
+]'''
+
+[[case]]
+name = "toJSON of nested containers"
+expr = "toJSON({a: [1, {b: [], c: {}}], d: [[true], [nil]]})"
+expect = '''
+{
+  "a": [
+    1,
+    {
+      "b": [],
+      "c": {}
+    }
+  ],
+  "d": [
+    [
+      true
+    ],
+    [
+      null
+    ]
+  ]
+}'''
+
+[[case]]
+name = "toJSON of an empty array"
+expr = "toJSON([])"
+expect = "[]"
+
+[[case]]
+name = "toJSON of an empty map"
+expr = "toJSON({})"
+expect = "{}"
+
+[[case]]
+name = "toJSON of nil"
+expr = "toJSON(nil)"
+expect = "null"
+
+[[case]]
+name = "toJSON of a none field"
+expr = "toJSON(user.Email)"
+expect = "null"
+
+[[case]]
+name = "toJSON of a some field"
+expr = "toJSON(order.Discount)"
+expect = "0.1"
+
+[[case]]
+name = "toJSON of a bool"
+expr = "toJSON(false)"
+expect = "false"
+
+[[case]]
+name = "toJSON of a negative int"
+expr = "toJSON(-42)"
+expect = "-42"
+
+[[case]]
+name = "toJSON of the largest int"
+expr = "toJSON(9223372036854775807)"
+expect = "9223372036854775807"
+
+[[case]]
+name = "toJSON of a string"
+expr = 'toJSON("Ada")'
+expect = '"Ada"'
+
+[[case]]
+name = "toJSON escapes quotes, backslashes and control characters"
+expr = 'toJSON("a\"b\\c\n\t\r" + "\u0001\u001f")'
+expect = '"a\"b\\c\n\t\r\u0001\u001f"'
+
+[[case]]
+name = "toJSON escapes backspace and form feed"
+expr = 'toJSON("\u0008\u000c")'
+expect = '"\b\f"'
+
+[[case]]
+name = "toJSON escapes HTML characters"
+expr = 'toJSON("<a href=\"x\">&</a>")'
+expect = '"\u003ca href=\"x\"\u003e\u0026\u003c/a\u003e"'
+
+[[case]]
+name = "toJSON escapes the line and paragraph separators"
+expr = 'toJSON("a\u2028b\u2029c")'
+expect = '"a\u2028b\u2029c"'
+
+[[case]]
+name = "toJSON keeps other unicode"
+expr = 'toJSON("héllo 日本 🎉 \u007f")'
+expect = "\"héllo 日本 🎉 \u007f\""
+
+[[case]]
+name = "toJSON escapes map keys"
+expr = 'toJSON({"<k>": 1})'
+expect = '''
+{
+  "\u003ck\u003e": 1
+}'''
+
+[[case]]
+name = "toJSON sorts map keys by bytes"
+expr = 'toJSON({b: 1, B: 2, a: 3, "é": 4, "": 5})'
+expect = '''
+{
+  "": 5,
+  "B": 2,
+  "a": 3,
+  "b": 1,
+  "é": 4
+}'''
+
+[[case]]
+name = "toJSON of a float with no fraction"
+expr = "toJSON(100.0)"
+expect = "100"
+
+[[case]]
+name = "toJSON of 0.1"
+expr = "toJSON(0.1)"
+expect = "0.1"
+
+[[case]]
+name = "toJSON of a float sum"
+expr = "toJSON(0.1 + 0.2)"
+expect = "0.30000000000000004"
+
+[[case]]
+name = "toJSON of zero"
+expr = "toJSON(0.0)"
+expect = "0"
+
+[[case]]
+name = "toJSON of negative zero"
+expr = "toJSON(-0.0)"
+expect = "-0"
+
+[[case]]
+name = "toJSON of 1e21"
+expr = "toJSON(1e21)"
+expect = "1e+21"
+
+[[case]]
+name = "toJSON just below 1e21"
+expr = "toJSON(1e20)"
+expect = "100000000000000000000"
+
+[[case]]
+name = "toJSON of a large float with digits"
+expr = "toJSON(-1.5e300)"
+expect = "-1.5e+300"
+
+[[case]]
+name = "toJSON of 1e-7"
+expr = "toJSON(1e-7)"
+expect = "1e-7"
+
+[[case]]
+name = "toJSON of 1e-6"
+expr = "toJSON(1e-6)"
+expect = "0.000001"
+
+[[case]]
+name = "toJSON of a small float with digits"
+expr = "toJSON(1.25e-10)"
+expect = "1.25e-10"
+
+[[case]]
+name = "toJSON of a float of an int"
+expr = "toJSON(float(1) / 3)"
+expect = "0.3333333333333333"
+
+[[case]]
+name = "toJSON of NaN"
+expr = "toJSON(0.0 / 0.0)"
+error = "E0309"
+
+[[case]]
+name = "toJSON of infinity"
+expr = "toJSON([1.0 / 0.0])"
+error = "E0309"
+
+[[case]]
+name = "toJSON of a time"
+expr = "toJSON(user.Created)"
+expect = '"2023-11-14T22:13:20Z"'
+
+[[case]]
+name = "toJSON of a time with nanoseconds"
+expr = 'toJSON(user.Created + duration("1.5s") + duration("20ns"))'
+expect = '"2023-11-14T22:13:21.50000002Z"'
+
+[[case]]
+name = "toJSON of now"
+expr = "toJSON(now())"
+expect = '"2026-01-01T00:00:00Z"'
+
+[[case]]
+name = "toJSON of a parsed date"
+expr = 'toJSON(date("2024-02-29"))'
+expect = '"2024-02-29T00:00:00Z"'
+
+[[case]]
+name = "toJSON of a date with an offset"
+expr = 'toJSON(date("2024-01-01T09:00:00+09:00"))'
+expect = '"2024-01-01T00:00:00Z"'
+deviation = "Go keeps the parsed offset in the time; dictum times are instants, so they encode in UTC"
+
+[[case]]
+name = "toJSON of a time before year 0"
+expr = 'toJSON(date("0000-01-01") - duration("1h"))'
+error = "E0309"
+
+[[case]]
+name = "toJSON of a duration"
+expr = 'toJSON(duration("1h30m"))'
+expect = "5400000000000"
+
+[[case]]
+name = "toJSON of a negative duration"
+expr = 'toJSON(duration("-1.5us"))'
+expect = "-1500"
+
+[[case]]
+name = "toJSON of any"
+expr = "toJSON(user.Attrs)"
+expect = "7"
+
+[[case]]
+name = "toJSON piped"
+expr = "user.Tags | toJSON()"
+expect = '''
+[
+  "admin",
+  "beta"
+]'''
+
+[[case]]
+name = "toJSON of a predicate result"
+expr = "toJSON(map(order.Items, .Qty * 2))"
+expect = '''
+[
+  2,
+  4
+]'''
+
+[[case]]
+name = "toJSON of a range"
+expr = "toJSON(1..3)"
+expect = '''
+[
+  1,
+  2,
+  3
+]'''
+
+[[case]]
+name = "toJSON is a string"
+expr = "len(toJSON(user.Tags))"
+expect = 23
+
+[[case]]
+name = "toJSON arity"
+expr = "toJSON(1, 2)"
+error = "E0205"
+
+[[case]]
+name = "toJSON of nothing"
+expr = "toJSON()"
+error = "E0205"
+
+# fromJSON
+
+[[case]]
+name = "fromJSON of an array"
+expr = 'fromJSON("[1, 2, 3]")'
+expect = [1.0, 2.0, 3.0]
+
+[[case]]
+name = "fromJSON of an object"
+expr = '''fromJSON(`{"name": "Ada", "age": 36, "tags": ["a"], "ok": true, "none": null}`) | toJSON()'''
+expect = '''
+{
+  "age": 36,
+  "name": "Ada",
+  "none": null,
+  "ok": true,
+  "tags": [
+    "a"
+  ]
+}'''
+
+[[case]]
+name = "fromJSON field access"
+expr = '''fromJSON(`{"a": {"b": [10, 20]}}`).a.b[1]'''
+expect = 20.0
+
+[[case]]
+name = "fromJSON numbers are floats"
+expr = '''type(fromJSON("1"))'''
+expect = "float"
+
+[[case]]
+name = "fromJSON of an object is a map"
+expr = '''type(fromJSON("{}"))'''
+expect = "map"
+
+[[case]]
+name = "fromJSON of an empty array"
+expr = 'fromJSON("[]")'
+expect = []
+
+[[case]]
+name = "fromJSON of an empty object"
+expr = 'len(fromJSON("{}"))'
+expect = 0
+
+[[case]]
+name = "fromJSON of null"
+expr = 'fromJSON("null")'
+nil = true
+
+[[case]]
+name = "fromJSON of a string"
+expr = '''fromJSON(`"a\"b\\c\/\n\t\u00e9\u65e5"`)'''
+expect = "a\"b\\c/\n\té日"
+
+[[case]]
+name = "fromJSON of a surrogate pair"
+expr = '''fromJSON(`"\ud83c\udf89"`)'''
+expect = "🎉"
+
+[[case]]
+name = "fromJSON of a lone high surrogate"
+expr = '''fromJSON(`"\ud83cx"`)'''
+expect = "�x"
+
+[[case]]
+name = "fromJSON of a lone low surrogate"
+expr = '''fromJSON(`"\udf89"`)'''
+expect = "�"
+
+[[case]]
+name = "fromJSON of a high surrogate before a non-surrogate escape"
+expr = '''fromJSON(`"\ud83c\u0041"`)'''
+expect = "�A"
+
+[[case]]
+name = "fromJSON of unicode text"
+expr = '''fromJSON(`["héllo", "日本"]`)'''
+expect = ["héllo", "日本"]
+
+[[case]]
+name = "fromJSON of number forms"
+expr = '''fromJSON("[0, -0.5, 1.5e3, 2E-2, 1e+2, -12]")'''
+expect = [0.0, -0.5, 1500.0, 0.02, 100.0, -12.0]
+
+[[case]]
+name = "fromJSON of a large int loses precision"
+expr = '''fromJSON("9007199254740993")'''
+expect = 9007199254740992.0
+
+[[case]]
+name = "fromJSON of an underflowing number"
+expr = '''fromJSON("1e-400")'''
+expect = 0.0
+
+[[case]]
+name = "fromJSON of an overflowing number"
+expr = '''fromJSON("5e2482")'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON keeps the last duplicate key"
+expr = '''fromJSON(`{"a": 1, "b": 2, "a": 3}`)'''
+expect = { a = 3.0, b = 2.0 }
+
+[[case]]
+name = "fromJSON with whitespace"
+expr = '''fromJSON(" \t\r\n[ 1 ,\n 2 ] \n")'''
+expect = [1.0, 2.0]
+
+[[case]]
+name = "fromJSON of nested values"
+expr = '''fromJSON(`[[[["deep"]]], {"x": [{"y": {}}]}]`)[0][0][0][0]'''
+expect = "deep"
+
+[[case]]
+name = "fromJSON of trailing data"
+expr = '''fromJSON("[1] [2]")'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a trailing comma"
+expr = '''fromJSON("[1, 2,]")'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of an empty string"
+expr = 'fromJSON("")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of only whitespace"
+expr = 'fromJSON("  ")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of an unclosed array"
+expr = 'fromJSON("[1, 2")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of an unclosed string"
+expr = '''fromJSON(`"abc`)'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a single-quoted string"
+expr = '''fromJSON("'a'")'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of an invalid escape"
+expr = '''fromJSON(`"\x"`)'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of an escaped single quote"
+expr = '''fromJSON(`"\'"`)'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a short unicode escape"
+expr = '''fromJSON(`"\u12"`)'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a raw control character"
+expr = '''fromJSON("\"a\tb\"")'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a leading zero"
+expr = 'fromJSON("01")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a bare fraction"
+expr = 'fromJSON(".5")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a number without fraction digits"
+expr = 'fromJSON("1.")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a number without exponent digits"
+expr = 'fromJSON("1e")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a plus sign"
+expr = 'fromJSON("+1")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of NaN"
+expr = 'fromJSON("NaN")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a misspelled literal"
+expr = 'fromJSON("nul")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a literal with trailing letters"
+expr = 'fromJSON("truex")'
+error = "E0309"
+
+[[case]]
+name = "fromJSON of an unquoted key"
+expr = '''fromJSON("{a: 1}")'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of a missing colon"
+expr = '''fromJSON(`{"a" 1}`)'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON of 128 nested arrays"
+expr = '''len(fromJSON(repeat("[", 128) + repeat("]", 128)))'''
+expect = 1
+
+[[case]]
+name = "fromJSON of 129 nested arrays"
+expr = '''len(fromJSON(repeat("[", 129) + repeat("]", 129)))'''
+error = "E0309"
+deviation = "Go nests JSON up to 10000 levels; dictum stops at 128, its limit for a rule's own nesting, so walks over the value stay bounded"
+
+[[case]]
+name = "fromJSON of 10001 nested arrays"
+expr = '''fromJSON(repeat("[", 10001) + repeat("]", 10001))'''
+error = "E0309"
+
+[[case]]
+name = "fromJSON piped"
+expr = '''"[true]" | fromJSON()'''
+expect = [true]
+
+[[case]]
+name = "fromJSON of any"
+expr = '''fromJSON(toJSON(user.Attrs))'''
+expect = 7.0
+
+[[case]]
+name = "fromJSON of an any that is not a string"
+expr = "fromJSON(user.Attrs)"
+error = "E0307"
+
+[[case]]
+name = "fromJSON of a non-string"
+expr = "fromJSON(1)"
+error = "E0201"
+
+[[case]]
+name = "fromJSON arity"
+expr = 'fromJSON("1", "2")'
+error = "E0205"
+
+[[case]]
+name = "fromJSON result used as a number"
+expr = 'fromJSON("2") * 3'
+expect = 6.0
+
+# round trips
+
+[[case]]
+name = "round trip of a map"
+expr = "fromJSON(toJSON({a: 1, b: [true, 'x']}))"
+expect = { a = 1.0, b = [true, "x"] }
+
+[[case]]
+name = "round trip of a map with nil through toJSON"
+expr = "toJSON(fromJSON(toJSON({a: 1, b: [true, nil, 'x']})))"
+expect = '''
+{
+  "a": 1,
+  "b": [
+    true,
+    null,
+    "x"
+  ]
+}'''
+
+[[case]]
+name = "round trip of the order"
+expr = "fromJSON(toJSON(order)).Items[1].Sku"
+expect = "B-2"
+
+[[case]]
+name = "round trip of the order sorts the struct fields"
+expr = "toJSON(fromJSON(toJSON(order)))"
+expect = '''
+{
+  "Discount": 0.1,
+  "Items": [
+    {
+      "Price": 100,
+      "Qty": 1,
+      "Sku": "A-1"
+    },
+    {
+      "Price": 10.25,
+      "Qty": 2,
+      "Sku": "B-2"
+    }
+  ],
+  "Notes": {
+    "gift": "yes",
+    "note": "leave at door"
+  },
+  "Total": 120.5
+}'''
+
+[[case]]
+name = "round trip of an escaped string"
+expr = '''fromJSON(toJSON("<\"é\u2028\n>"))'''
+expect = "<\"é \n>"
+
+[[case]]
+name = "round trip of floats"
+expr = "fromJSON(toJSON([1e21, 1e-7, 0.1, -0.0, 123.456]))"
+expect = [1e21, 1e-7, 0.1, -0.0, 123.456]
+
+[[case]]
+name = "round trip of nums"
+expr = "map(fromJSON(toJSON(nums)), int(#)) == nums"
+expect = true
+
+# toBase64 and fromBase64
+
+[[case]]
+name = "toBase64"
+expr = 'toBase64("hello")'
+expect = "aGVsbG8="
+
+[[case]]
+name = "toBase64 with no padding"
+expr = 'toBase64("abc")'
+expect = "YWJj"
+
+[[case]]
+name = "toBase64 with two pad characters"
+expr = 'toBase64("abcd")'
+expect = "YWJjZA=="
+
+[[case]]
+name = "toBase64 of an empty string"
+expr = 'toBase64("")'
+expect = ""
+
+[[case]]
+name = "toBase64 uses + and /"
+expr = 'toBase64("ûï¿")'
+expect = "w7vDr8K/"
+
+[[case]]
+name = "toBase64 of unicode"
+expr = 'toBase64("日本🎉")'
+expect = "5pel5pys8J+OiQ=="
+
+[[case]]
+name = "toBase64 piped"
+expr = "user.Name | toBase64()"
+expect = "QWRh"
+
+[[case]]
+name = "toBase64 of any"
+expr = "toBase64(user.Attrs)"
+error = "E0307"
+
+[[case]]
+name = "toBase64 of a non-string"
+expr = "toBase64(1)"
+error = "E0201"
+
+[[case]]
+name = "toBase64 arity"
+expr = "toBase64()"
+error = "E0205"
+
+[[case]]
+name = "fromBase64"
+expr = 'fromBase64("aGVsbG8=")'
+expect = "hello"
+
+[[case]]
+name = "fromBase64 with two pad characters"
+expr = 'fromBase64("YWJjZA==")'
+expect = "abcd"
+
+[[case]]
+name = "fromBase64 of an empty string"
+expr = 'fromBase64("")'
+expect = ""
+
+[[case]]
+name = "fromBase64 skips newlines"
+expr = 'fromBase64("aGVs\r\nbG8\n=\n")'
+expect = "hello"
+
+[[case]]
+name = "fromBase64 between pad characters"
+expr = 'fromBase64("YWJjZA=\n=")'
+expect = "abcd"
+
+[[case]]
+name = "fromBase64 of only newlines"
+expr = 'fromBase64("\n\r\n")'
+expect = ""
+
+[[case]]
+name = "fromBase64 accepts set trailing bits"
+expr = 'fromBase64("aGVsbG9=")'
+expect = "hello"
+
+[[case]]
+name = "fromBase64 accepts set trailing bits before two pad characters"
+expr = 'fromBase64("YWJjZB==")'
+expect = "abcd"
+
+[[case]]
+name = "fromBase64 without padding"
+expr = 'fromBase64("aGVsbG8")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 with one of two pad characters"
+expr = 'fromBase64("YWJjZA=")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 with too much padding"
+expr = 'fromBase64("aGVsbG8==")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 with a pad character too early"
+expr = 'fromBase64("YQ=Q")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 of a lone character"
+expr = 'fromBase64("YWJjZ")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 of only padding"
+expr = 'fromBase64("====")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 with data after padding"
+expr = 'fromBase64("YQ==YQ==")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 of a URL alphabet character"
+expr = 'fromBase64("w7vDr8K_")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 with a space"
+expr = 'fromBase64("aGVs bG8=")'
+error = "E0309"
+
+[[case]]
+name = "fromBase64 of bytes that are not UTF-8"
+expr = 'fromBase64("/w==")'
+error = "E0309"
+deviation = "Go strings hold any bytes; dictum strings are UTF-8, so bytes that are not are an invalid argument"
+
+[[case]]
+name = "fromBase64 of unicode"
+expr = 'fromBase64("5pel5pys8J+OiQ==")'
+expect = "日本🎉"
+
+[[case]]
+name = "base64 round trip"
+expr = 'fromBase64(toBase64(user.Name + " 日本 " + toJSON(nums)))'
+expect = "Ada 日本 [\n  3,\n  1,\n  4,\n  1,\n  5,\n  9,\n  2,\n  6\n]"
+
+[[case]]
+name = "fromBase64 piped"
+expr = '"QWRh" | fromBase64()'
+expect = "Ada"
+
+[[case]]
+name = "fromBase64 of any"
+expr = 'fromBase64(fromJSON(`"QWRh"`))'
+expect = "Ada"
+
+[[case]]
+name = "fromBase64 of a non-string"
+expr = "fromBase64(user.Tags)"
+error = "E0201"
+
+[[case]]
+name = "fromBase64 arity"
+expr = 'fromBase64("a", "b")'
+error = "E0205"
+
+# toPairs and fromPairs
+
+[[case]]
+name = "toPairs of the notes"
+expr = "toPairs(order.Notes)"
+expect = [["gift", "yes"], ["note", "leave at door"]]
+deviation = "Go's map has no order, so its pairs come in random order; dictum keeps the map's order"
+
+[[case]]
+name = "toPairs of the notes, sorted"
+expr = "sortBy(toPairs(order.Notes), #[0])"
+expect = [["gift", "yes"], ["note", "leave at door"]]
+
+[[case]]
+name = "toPairs of a map literal, sorted"
+expr = "sortBy(toPairs({foo: 1, bar: [2]}), #[0])"
+expect = [["bar", [2]], ["foo", 1]]
+
+[[case]]
+name = "toPairs count"
+expr = "len(toPairs({foo: 1, bar: 2}))"
+expect = 2
+
+[[case]]
+name = "toPairs of an empty map"
+expr = "toPairs({})"
+expect = []
+
+[[case]]
+name = "toPairs of one entry"
+expr = 'toPairs({"k": nil})[0][0]'
+expect = "k"
+
+[[case]]
+name = "toPairs piped"
+expr = "order.Notes | toPairs() | map(#[1]) | sort()"
+expect = ["leave at door", "yes"]
+
+[[case]]
+name = "toPairs of any"
+expr = '''toPairs(fromJSON(`{"a": 1}`))'''
+expect = [["a", 1.0]]
+
+[[case]]
+name = "toPairs of an any that is not a map"
+expr = "toPairs(user.Attrs)"
+error = "E0307"
+
+[[case]]
+name = "toPairs of an array"
+expr = "toPairs([1, 2])"
+error = "E0201"
+
+[[case]]
+name = "toPairs of a struct"
+expr = "toPairs(user)"
+error = "E0201"
+
+[[case]]
+name = "toPairs arity"
+expr = "toPairs()"
+error = "E0205"
+
+[[case]]
+name = "fromPairs"
+expr = 'fromPairs([["foo", 1], ["bar", 2]])'
+expect = { foo = 1, bar = 2 }
+
+[[case]]
+name = "fromPairs of toPairs"
+expr = "fromPairs(toPairs({foo: 1, bar: 2}))"
+expect = { foo = 1, bar = 2 }
+
+[[case]]
+name = "fromPairs of toPairs of the notes"
+expr = "fromPairs(toPairs(order.Notes))"
+expect = { gift = "yes", note = "leave at door" }
+
+[[case]]
+name = "fromPairs keeps the last duplicate key"
+expr = 'fromPairs([["a", 1], ["b", 2], ["a", 3]])'
+expect = { a = 3, b = 2 }
+
+[[case]]
+name = "fromPairs of an empty array"
+expr = "len(fromPairs([]))"
+expect = 0
+
+[[case]]
+name = "fromPairs of nested values"
+expr = 'fromPairs([["a", [1, {b: 2}]]]).a[1].b'
+expect = 2
+
+[[case]]
+name = "fromPairs with a string value type"
+expr = 'fromPairs([["a", "x"]]).a'
+expect = "x"
+
+[[case]]
+name = "fromPairs piped"
+expr = 'map(user.Tags, [#, len(#)]) | fromPairs()'
+expect = { admin = 5, beta = 4 }
+
+[[case]]
+name = "fromPairs of any"
+expr = '''fromPairs(fromJSON(`[["a", 1]]`))'''
+expect = { a = 1.0 }
+
+[[case]]
+name = "fromPairs of a short pair"
+expr = 'fromPairs([["a"]])'
+error = "E0309"
+
+[[case]]
+name = "fromPairs of a long pair"
+expr = 'fromPairs([["a", 1, 2]])'
+error = "E0309"
+
+[[case]]
+name = "fromPairs of a non-pair element of any"
+expr = '''fromPairs(fromJSON(`["a"]`))'''
+error = "E0309"
+
+[[case]]
+name = "fromPairs of a non-array element"
+expr = "fromPairs([1, 2])"
+error = "E0201"
+
+[[case]]
+name = "fromPairs of int keys"
+expr = "fromPairs([[1, 2]])"
+error = "E0201"
+deviation = "Go builds a map with keys of any type; dictum maps have string keys, so convert the key with string()"
+
+[[case]]
+name = "fromPairs of a non-string key of any"
+expr = '''fromPairs(fromJSON("[[1, 2]]"))'''
+error = "E0309"
+deviation = "Go builds a map with keys of any type; dictum maps have string keys, so convert the key with string()"
+
+[[case]]
+name = "fromPairs of a mixed pair with a non-string key"
+expr = 'fromPairs([[1, "a"]])'
+error = "E0309"
+deviation = "Go builds a map with keys of any type; dictum maps have string keys, so convert the key with string()"
+
+[[case]]
+name = "fromPairs of a non-array"
+expr = "fromPairs(1)"
+error = "E0201"
+
+[[case]]
+name = "fromPairs of a map"
+expr = "fromPairs(order.Notes)"
+error = "E0201"
+
+[[case]]
+name = "fromPairs arity"
+expr = "fromPairs([], [])"
+error = "E0205"
+
+[[case]]
+name = "toJSON of fromPairs"
+expr = 'toJSON(fromPairs([["b", 1], ["a", 2]]))'
+expect = '''
+{
+  "a": 2,
+  "b": 1
+}'''
