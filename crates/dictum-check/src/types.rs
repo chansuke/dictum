@@ -234,6 +234,8 @@ impl PartialEq for StructDesc {
 pub struct FieldDesc {
     name: &'static str,
     ty: FieldType,
+    /// For an integer field, the values its Rust type can hold (`u8`: `0..=255`).
+    range: Option<(i64, i64)>,
 }
 
 /// How a field's type is produced. A function rather than a `Type` so the
@@ -256,12 +258,25 @@ impl core::fmt::Debug for FieldDesc {
 impl FieldDesc {
     /// Used by the derive.
     pub const fn new(name: &'static str, ty: fn() -> Type) -> Self {
-        FieldDesc { name, ty: FieldType::Derived(ty) }
+        FieldDesc { name, ty: FieldType::Derived(ty), range: None }
+    }
+
+    /// The values an integer field can hold, from its Rust type. Used by the derive;
+    /// the interval analysis that skips overflow checks starts from these.
+    pub const fn with_range(mut self, range: Option<(i64, i64)>) -> Self {
+        self.range = range;
+        self
+    }
+
+    /// See [`FieldDesc::with_range`]. `None` for fields of other types, or whose
+    /// values the schema does not bound.
+    pub const fn range(&self) -> Option<(i64, i64)> {
+        self.range
     }
 
     /// A field of a struct described at run time (`dictum::runtime`).
     pub const fn described(name: &'static str, ty: &'static (dyn Fn() -> Type + Send + Sync)) -> Self {
-        FieldDesc { name, ty: FieldType::Described(ty) }
+        FieldDesc { name, ty: FieldType::Described(ty), range: None }
     }
 
     /// The rule-visible name (after `rename`).

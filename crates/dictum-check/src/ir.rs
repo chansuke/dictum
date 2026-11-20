@@ -7,8 +7,9 @@
 //! the checker used.
 //!
 //! `Expr` fields are private, so only this crate creates nodes. The evaluator reads
-//! them and may only replace a node by a constant of the same type
-//! ([`Expr::replace_with_const`]), so constant folding cannot make the IR ill-typed.
+//! them and may only replace a node by a constant or a child of the same type
+//! ([`Expr::replace_with_const`], [`Expr::replace_with_child`]) or reorder and drop
+//! `&&`/`||` operands, so folding and simplification cannot make the IR ill-typed.
 
 use alloc::boxed::Box;
 use alloc::format;
@@ -432,6 +433,29 @@ impl Expr {
             ExprKind::Intrinsic { args, .. } | ExprKind::Call { args, .. } => out.extend(args),
         }
         out.into_iter()
+    }
+
+    /// Replace this node by its `i`th child (in [`Expr::children`] order), for a
+    /// rewrite such as `x + 0` to `x`. Refused (`false`) unless the child has this
+    /// node's type.
+    pub fn replace_with_child(&mut self, i: usize) -> bool {
+        let ty = self.ty.clone();
+        let Some(child) = self.children_mut().nth(i) else { return false };
+        if *child.ty() != ty {
+            return false;
+        }
+        let placeholder = Expr::new(child.id(), child.span(), ty, ExprKind::Root);
+        *self = core::mem::replace(child, placeholder);
+        true
+    }
+
+    /// The operands of a `&&`/`||` node, for reordering or dropping some. Every
+    /// operand is a `bool`; a caller that leaves one should replace the node by it.
+    pub fn logic_operands_mut(&mut self) -> Option<&mut Vec<Expr>> {
+        match &mut self.kind {
+            ExprKind::Logic { operands, .. } => Some(operands),
+            _ => None,
+        }
     }
 
     /// Replace this node by a constant, keeping id, span and type.
