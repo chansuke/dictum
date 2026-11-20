@@ -7,6 +7,7 @@
 //! bump and review the diff.
 
 #[test]
+#[cfg_attr(target_os = "wasi", ignore = "trybuild runs cargo, and WASI cannot start a process")]
 fn derive_and_api_compile_time_checks() {
     let t = trybuild::TestCases::new();
     t.pass("tests/ui/pass/*.rs");
