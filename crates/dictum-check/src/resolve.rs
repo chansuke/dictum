@@ -12,7 +12,7 @@ use dictum_syntax::ast::{BinaryOp as AstBinary, UnaryOp as AstUnary};
 use crate::Tag;
 #[cfg(feature = "decimal")]
 use crate::ir::DecimalOp;
-use crate::ir::{BinaryOp, BitOp, CompareKind, EqKind, FloatOp, InOp, IntOp, Intrinsic, UnaryOp};
+use crate::ir::{BinaryOp, BitOp, CompareKind, EqKind, FloatOp, InOp, IntOp, Intrinsic, Method, UnaryOp};
 
 /// Numeric promotion applied to an operand before the operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -213,15 +213,65 @@ pub fn membership(needle: Tag, haystack: Tag) -> Option<InOp> {
     }
 }
 
-/// Resolve `receiver.name(args)`. There are no user methods, so a receiver type that
-/// has no method of that name is E0214; nothing resolves yet, because no type has
-/// methods until the time builtins land.
+/// Every method: receiver, name, argument types, the method and its result. Only
+/// times, durations and locations have methods.
+const METHODS: &[(Tag, &str, &[Tag], Method, Tag)] = {
+    use Method as M;
+    use Tag as T;
+    &[
+        (T::Time, "Year", &[], M::Year, T::Int),
+        (T::Time, "Month", &[], M::Month, T::Int),
+        (T::Time, "Day", &[], M::Day, T::Int),
+        (T::Time, "Hour", &[], M::Hour, T::Int),
+        (T::Time, "Minute", &[], M::Minute, T::Int),
+        (T::Time, "Second", &[], M::Second, T::Int),
+        (T::Time, "Nanosecond", &[], M::Nanosecond, T::Int),
+        (T::Time, "Weekday", &[], M::Weekday, T::Int),
+        (T::Time, "YearDay", &[], M::YearDay, T::Int),
+        (T::Time, "Unix", &[], M::Unix, T::Int),
+        (T::Time, "UnixMilli", &[], M::UnixMilli, T::Int),
+        (T::Time, "UnixMicro", &[], M::UnixMicro, T::Int),
+        (T::Time, "UnixNano", &[], M::UnixNano, T::Int),
+        (T::Time, "Add", &[T::Duration], M::Add, T::Time),
+        (T::Time, "Sub", &[T::Time], M::Sub, T::Duration),
+        (T::Time, "AddDate", &[T::Int, T::Int, T::Int], M::AddDate, T::Time),
+        (T::Time, "Before", &[T::Time], M::Before, T::Bool),
+        (T::Time, "After", &[T::Time], M::After, T::Bool),
+        (T::Time, "Equal", &[T::Time], M::Equal, T::Bool),
+        (T::Time, "Compare", &[T::Time], M::Compare, T::Int),
+        (T::Time, "Format", &[T::String], M::Format, T::String),
+        (T::Time, "In", &[T::Location], M::In, T::Time),
+        (T::Time, "UTC", &[], M::Utc, T::Time),
+        (T::Time, "Location", &[], M::Location, T::Location),
+        (T::Time, "Truncate", &[T::Duration], M::Truncate, T::Time),
+        (T::Time, "Round", &[T::Duration], M::Round, T::Time),
+        (T::Time, "IsZero", &[], M::IsZero, T::Bool),
+        (T::Duration, "Hours", &[], M::Hours, T::Float),
+        (T::Duration, "Minutes", &[], M::Minutes, T::Float),
+        (T::Duration, "Seconds", &[], M::Seconds, T::Float),
+        (T::Duration, "Milliseconds", &[], M::Milliseconds, T::Int),
+        (T::Duration, "Microseconds", &[], M::Microseconds, T::Int),
+        (T::Duration, "Nanoseconds", &[], M::Nanoseconds, T::Int),
+        (T::Duration, "Truncate", &[T::Duration], M::TruncateDuration, T::Duration),
+        (T::Duration, "Round", &[T::Duration], M::RoundDuration, T::Duration),
+        (T::Duration, "Abs", &[], M::Abs, T::Duration),
+        (T::Time, "String", &[], M::String, T::String),
+        (T::Duration, "String", &[], M::String, T::String),
+        (T::Location, "String", &[], M::String, T::String),
+    ]
+};
+
+/// Resolve `receiver.name(args)` from the table of methods.
 ///
 /// The checker calls this with the receiver's static type, and the evaluator with the
 /// tag of the actual value when the receiver is `any` ([`Intrinsic::DynMethod`]).
-pub fn method(receiver: Tag, name: &str, args: &[Tag]) -> Option<(Intrinsic, Tag)> {
-    let _ = (receiver, name, args);
-    None
+pub fn method(receiver: Tag, name: &str, args: &[Tag]) -> Option<(Method, Tag)> {
+    METHODS.iter().find(|(r, n, a, ..)| *r == receiver && *n == name && *a == args).map(|&(.., m, t)| (m, t))
+}
+
+/// Whether `receiver` has a method called `name`, with whatever arguments.
+pub fn has_method(receiver: Tag, name: &str) -> bool {
+    METHODS.iter().any(|(r, n, ..)| *r == receiver && *n == name)
 }
 
 /// How many arguments a builtin takes, as an inclusive range, counting a piped value.

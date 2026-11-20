@@ -42,12 +42,21 @@ const INT_LEAVES: &[&str] = &[
     "len(user.Name)",
     "len(order.Items)",
     "get(nums, 0) ?? 0",
+    "user.Created.Year()",
+    "user.Created.In(timezone(\"Asia/Tokyo\")).Hour()",
     "9223372036854775807",
     "-9223372036854775807",
 ];
 const FLOAT_LEAVES: &[&str] = &["user.Score", "order.Total", "order.Discount ?? 0.0", "0.5", "1e300", "-0.0"];
 const BOOL_LEAVES: &[&str] = &["user.Active", "true", "false", "user.Email == nil"];
-const STR_LEAVES: &[&str] = &["user.Name", "user.Email ?? \"\"", "\"\"", "\"é\"", "order.Notes[\"gift\"] ?? \"no\""];
+const STR_LEAVES: &[&str] = &[
+    "user.Name",
+    "user.Email ?? \"\"",
+    "\"\"",
+    "\"é\"",
+    "order.Notes[\"gift\"] ?? \"no\"",
+    "user.Created.Format(\"Jan _2 15:04 MST\")",
+];
 
 fn leaf(ty: Ty) -> BoxedStrategy<String> {
     let literals: BoxedStrategy<String> = match ty {
@@ -116,6 +125,7 @@ fn composite(ty: Ty, below: &Level) -> BoxedStrategy<String> {
             sub(Ty::Int).prop_map(|a| format!("abs({a})")),
             (sub(Ty::Int), sub(Ty::Int)).prop_map(|(a, b)| format!("max({a}, {b})")),
             sub(Ty::Str).prop_map(|s| format!("len({s})")),
+            sub(Ty::Int).prop_map(|d| format!("user.Created.AddDate(0, {d}, {d}).YearDay()")),
             sub(Ty::Bool).prop_map(|p| format!("count(nums, {p} && # > 2)")),
             sub(Ty::Bool).prop_map(|p| format!("findLastIndex(nums, {p} && # > 2)")),
             (sub(Ty::Int), sub(Ty::Int)).prop_map(|(k, d)| format!("(findLast(nums, # > {k}) ?? {d})")),

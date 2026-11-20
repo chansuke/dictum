@@ -694,9 +694,9 @@ impl<'e, P> Checker<'e, P> {
         }
     }
 
-    /// `x.Name(args)`: the receiver's type and the name resolve to one intrinsic
-    /// ([`resolve::method`]), which no type has yet. `?.` unwraps an optional receiver
-    /// and makes the result optional, as it does for a field.
+    /// `x.Name(args)`: the receiver's type, the name and the argument types resolve to
+    /// one method ([`resolve::method`]). `?.` unwraps an optional receiver and makes
+    /// the result optional, as it does for a field.
     fn method(
         &mut self,
         span: Span,
@@ -724,18 +724,26 @@ impl<'e, P> Checker<'e, P> {
             let name = self.mk(name.span, Type::String, ExprKind::Const(Const::Str(Arc::from(name.name))));
             let mut all = vec![name, base];
             all.extend(args);
-            return Some(self.mk(span, Type::Any, ExprKind::Intrinsic { op: Intrinsic::DynMethod, args: all }));
+            let op = Intrinsic::DynMethod { optional };
+            return Some(self.mk(span, Type::Any, ExprKind::Intrinsic { op, args: all }));
         }
         let tags: Option<Vec<Tag>> = args.iter().map(|a| a.ty().tag()).collect();
         let resolved = inner.tag().zip(tags).and_then(|(recv, args)| resolve::method(recv, name.name, &args));
-        let Some((op, result)) = resolved else {
-            self.error(ErrorCode::UnknownMethod, name.span, vec![ty_arg(&inner), name_arg(name.name)]);
+        let Some((method, result)) = resolved else {
+            if inner.tag().is_some_and(|recv| resolve::has_method(recv, name.name)) {
+                let found: Vec<String> = args.iter().map(|a| format!("{}", a.ty())).collect();
+                let what = name_arg(&format!("arguments of `{}`", name.name));
+                self.error(ErrorCode::TypeMismatch, span, vec![what, name_arg(&found.join(", "))]);
+            } else {
+                self.error(ErrorCode::UnknownMethod, name.span, vec![ty_arg(&inner), name_arg(name.name)]);
+            }
             return None;
         };
         let result = scalar(result)?;
         let ty = if through { Type::option(result) } else { result };
         let mut all = vec![base];
         all.extend(args);
+        let op = Intrinsic::Method { method, optional: through };
         Some(self.mk(span, ty, ExprKind::Intrinsic { op, args: all }))
     }
 

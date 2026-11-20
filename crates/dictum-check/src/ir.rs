@@ -715,6 +715,86 @@ pub enum BitOp {
     Ushr,
 }
 
+/// A method of a built-in type, with Go's name and meaning. Calendar methods read
+/// the time in its own zone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Method {
+    /// `t.Year()`
+    Year,
+    /// `t.Month()`: 1 to 12
+    Month,
+    /// `t.Day()`
+    Day,
+    /// `t.Hour()`
+    Hour,
+    /// `t.Minute()`
+    Minute,
+    /// `t.Second()`
+    Second,
+    /// `t.Nanosecond()`: 0 to 999999999
+    Nanosecond,
+    /// `t.Weekday()`: 0 for Sunday
+    Weekday,
+    /// `t.YearDay()`: 1 to 366
+    YearDay,
+    /// `t.Unix()`: seconds since 1970, rounded down
+    Unix,
+    /// `t.UnixMilli()`
+    UnixMilli,
+    /// `t.UnixMicro()`
+    UnixMicro,
+    /// `t.UnixNano()`
+    UnixNano,
+    /// `t.Add(d)`
+    Add,
+    /// `t.Sub(u)`: as `t - u`
+    Sub,
+    /// `t.AddDate(years, months, days)`, normalized as Go's `time.Date`
+    AddDate,
+    /// `t.Before(u)`
+    Before,
+    /// `t.After(u)`
+    After,
+    /// `t.Equal(u)`
+    Equal,
+    /// `t.Compare(u)`: -1, 0 or 1
+    Compare,
+    /// `t.Format(layout)`
+    Format,
+    /// `t.In(loc)`
+    In,
+    /// `t.UTC()`
+    Utc,
+    /// `t.Location()`
+    Location,
+    /// `t.Truncate(d)`: down to a multiple of `d` since year 1
+    Truncate,
+    /// `t.Round(d)`: to the nearest multiple of `d` since year 1, halves up
+    Round,
+    /// `t.IsZero()`: the instant is January 1, year 1, 00:00 UTC
+    IsZero,
+    /// `d.Hours()`
+    Hours,
+    /// `d.Minutes()`
+    Minutes,
+    /// `d.Seconds()`
+    Seconds,
+    /// `d.Milliseconds()`
+    Milliseconds,
+    /// `d.Microseconds()`
+    Microseconds,
+    /// `d.Nanoseconds()`
+    Nanoseconds,
+    /// `d.Truncate(m)`: toward zero to a multiple of `m`
+    TruncateDuration,
+    /// `d.Round(m)`: to the nearest multiple of `m`, halves away from zero
+    RoundDuration,
+    /// `d.Abs()`
+    Abs,
+    /// `x.String()` of a time, a duration or a location: as `string(x)`
+    String,
+}
+
 /// Membership.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum InOp {
@@ -914,11 +994,14 @@ pub enum Intrinsic {
     GetMap,
     /// An argument is `any`: resolve at run time with [`crate::resolve::builtin`].
     Dyn(dictum_syntax::Builtin),
+    /// `x.Name(args)`: the receiver, then the arguments. `optional` (`x?.Name()` on
+    /// an option) gives nil for a nil receiver without calling the method.
+    Method { method: Method, optional: bool },
     /// A method whose receiver or argument is `any`: resolve at run time with
     /// [`crate::resolve::method`]. The arguments are the method's name as a constant
     /// string, then the receiver, then the call's arguments; the name is a node so
     /// that two calls on one receiver stay different expressions.
-    DynMethod,
+    DynMethod { optional: bool },
 }
 
 /// Implicit conversions made explicit by the checker.
