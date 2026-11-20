@@ -31,6 +31,8 @@ fn type_errors() {
     insta::assert_snapshot!("type_mismatch", compile_error(r#"user.Age + "x""#));
     insta::assert_snapshot!("optional_access_help", compile_error("user.Manager.Name"));
     insta::assert_snapshot!("unknown_field_after_multibyte", compile_error(r#""héllo" + user.Nickname"#));
+    // `?.` looks the method up on `User`, not on `Option<User>`.
+    insta::assert_snapshot!("unknown_method", compile_error("user.Manager?.Name()"));
     insta::assert_snapshot!("multi_line", compile_error("let a = 1;\nlet b = \"x\";\na + b"));
     let many = (0..25).map(|i| format!("x{i}")).collect::<Vec<_>>().join(" + ");
     insta::assert_snapshot!("capped_with_tail", compile_error(&many));

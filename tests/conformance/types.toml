@@ -66,3 +66,35 @@ error = "E0211"
 name = "struct field named by a computed key"
 expr = "user[user.Name]"
 error = "E0213"
+
+[[case]]
+name = "unknown method on a string"
+expr = "user.Name.Upper()"
+error = "E0214"
+
+[[case]]
+name = "unknown method on an int"
+expr = "user.Age.Abs()"
+error = "E0214"
+
+[[case]]
+name = "unknown method after an index"
+expr = "nums[0].Abs()"
+error = "E0214"
+
+[[case]]
+name = "a method chain reports the first unknown method"
+expr = "user.Name.Upper().Lower()"
+error = "E0214"
+
+[[case]]
+name = "?. resolves the method on the inner type"
+expr = "user.Manager?.Name()"
+error = "E0214"
+
+# `.` on an optional receiver is rejected as it is for a field, so the `?.` case
+# above proves the method was looked up on `User` and not on `Option<User>`.
+[[case]]
+name = "a method on an optional receiver needs ?."
+expr = "user.Manager.Name()"
+error = "E0206"

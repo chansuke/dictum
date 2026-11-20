@@ -149,9 +149,25 @@ error = "E0104"
 
 [[case]]
 name = "only names can be called"
-expr = "user.Name()"
+expr = "f(x)(y)"
 error = "E0108"
-deviation = "dictum has no method calls in v0.1"
+
+[[case]]
+name = "a call after an index is not a method call"
+expr = "nums[0](1)"
+error = "E0108"
+
+# Go reads the field and reports that a string is not callable; dictum parses a
+# method call and reports that the struct has no such method. Both reject it.
+[[case]]
+name = "a method call is a member name followed by ("
+expr = "user.Name()"
+error = "E0214"
+
+[[case]]
+name = "a pipe takes a name, not a member"
+expr = "nums | user.F()"
+error = "E0101"
 
 [[case]]
 name = "pointer outside a predicate"

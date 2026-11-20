@@ -915,6 +915,11 @@ pub enum Intrinsic {
     GetMap,
     /// An argument is `any`: resolve at run time with [`crate::resolve::builtin`].
     Dyn(dictum_syntax::Builtin),
+    /// A method whose receiver or argument is `any`: resolve at run time with
+    /// [`crate::resolve::method`]. The arguments are the method's name as a constant
+    /// string, then the receiver, then the call's arguments; the name is a node so
+    /// that two calls on one receiver stay different expressions.
+    DynMethod,
 }
 
 /// Implicit conversions made explicit by the checker.

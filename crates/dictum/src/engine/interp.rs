@@ -1283,6 +1283,18 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             };
             intrinsic(op, &args, f, span)
         }
+        Intrinsic::DynMethod => {
+            let [name, recv, rest @ ..] = args else {
+                return Err(internal("method call without a receiver", span));
+            };
+            let tags: Vec<Tag> = rest.iter().map(Value::tag).collect();
+            let Some((op, _)) = resolve::method(recv.tag(), string(name, span)?, &tags) else {
+                let kind = EvalErrorKind::TypeMismatch { expected: "a value with methods", found: recv.tag().name() };
+                return Err(Frame::fault(kind, span));
+            };
+            let args: Vec<Value<'a>> = core::iter::once(recv).chain(rest).cloned().collect();
+            intrinsic(op, &args, f, span)
+        }
     }
 }
 

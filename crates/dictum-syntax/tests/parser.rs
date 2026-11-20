@@ -73,10 +73,31 @@ fn precedence_table_rows() {
 }
 
 #[test]
+fn method_calls() {
+    parses_as("a.b(c)", "(.call a b c)");
+    parses_as("a.b()", "(.call a b)");
+    parses_as("a?.b(c, d)", "(?.call a b c d)");
+    parses_as("a.b().c()", "(.call (.call a b) c)");
+    parses_as("a[0].b(1)", "(.call ([] a 0) b 1)");
+    parses_as("a.b(c).d", "(. (.call a b c) d)");
+    parses_as("-a.b(c)", "(neg (.call a b c))");
+    parses_as("a.b(c) + 1", "(+ (.call a b c) 1)");
+    // The pipe takes a bare name and a `(`, as in Go's parser.
+    fails_with("a | b.f()", ErrorCode::UnexpectedToken);
+    fails_with("a | f().g()", ErrorCode::UnexpectedToken);
+    // Only a name written with `.` is callable: `a["b"]` is the same node, but Go
+    // rejects a `(` after the bracket too.
+    fails_with(r#"a["b"](c)"#, ErrorCode::NotCallable);
+    fails_with("(a)(b)", ErrorCode::NotCallable);
+    fails_with("a[0](b)", ErrorCode::NotCallable);
+}
+
+#[test]
 fn desugarings() {
     parses_as("a | f(b)", "(call f a b)");
     parses_as("xs | filter(# > 1) | len()", "(call len (call filter xs {(cmp # > 1)}))");
     parses_as("all(xs, .Age > 1)", "(call all xs {(cmp (. # Age) > 1)})");
+    parses_as("all(xs, .Age.Abs() > 1)", "(call all xs {(cmp (.call (. # Age) Abs) > 1)})");
     parses_as("all(xs, {# > 1})", "(call all xs {(cmp # > 1)})");
     parses_as("a ?: b", "(|| a b)");
     parses_as("let x = 1; let y = x; x + y", "(let x 1) (let y x) (+ x y)");

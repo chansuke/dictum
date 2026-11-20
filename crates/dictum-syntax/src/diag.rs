@@ -70,6 +70,7 @@ error_codes! {
     InvalidPattern = "E0211", "invalid regular expression: {0}";
     DecimalFloatMix = "E0212", "decimal and float cannot be mixed; use decimal() or float()";
     DynamicFieldKey = "E0213", "a struct field must be named by a constant";
+    UnknownMethod = "E0214", "type `{0}` has no method `{1}`";
     // E03xx: evaluation.
     Overflow = "E0301", "integer overflow";
     DivisionByZero = "E0302", "division by zero";
