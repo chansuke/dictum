@@ -46,6 +46,8 @@ mod func;
 mod output;
 mod rule;
 mod rule_set;
+#[cfg(feature = "runtime-schema")]
+pub mod runtime;
 mod schema;
 
 pub use ctx::{Ctx, Limits};
