@@ -38,6 +38,7 @@ pub(crate) mod methods;
 pub(crate) mod ops;
 pub(crate) mod optimize;
 pub(crate) mod set;
+pub(crate) mod sprint;
 pub(crate) mod trace;
 pub(crate) mod value;
 
