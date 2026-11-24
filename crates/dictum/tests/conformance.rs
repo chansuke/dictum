@@ -35,11 +35,20 @@ fn main() {
     let trials = cases
         .into_iter()
         .map(|case| {
-            let pending = reached == Stage::None;
+            let pending = reached == Stage::None || !has_feature(case.feature.as_deref());
             Trial::test(case.id.clone(), move || run(&case, reached)).with_ignored_flag(pending)
         })
         .collect();
     libtest_mimic::run(&args, trials).exit();
+}
+
+/// Whether this build has the feature a case needs.
+fn has_feature(feature: Option<&str>) -> bool {
+    match feature {
+        None => true,
+        Some("decimal") => cfg!(feature = "decimal"),
+        Some(_) => false,
+    }
 }
 
 fn run(case: &Case, reached: Stage) -> Result<(), Failed> {

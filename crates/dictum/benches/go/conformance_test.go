@@ -21,6 +21,7 @@ type conformanceCase struct {
 	Nil       bool
 	Error     string
 	Deviation string
+	Feature   string
 }
 
 var sampleNow = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

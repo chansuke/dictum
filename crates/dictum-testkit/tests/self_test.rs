@@ -76,6 +76,8 @@ fn loader_rejects_ambiguous_and_malformed_cases() {
     assert!(load_str(unknown_key).is_err());
     let dup = "[[case]]\nname = \"x\"\nexpr = \"1\"\nexpect = 1\n[[case]]\nname = \"x\"\nexpr = \"2\"\nexpect = 2\n";
     assert!(load_str(dup).unwrap_err().contains("duplicate"));
+    let feature = "[[case]]\nname = \"x\"\nexpr = \"1\"\nexpect = 1\nfeature = \"decimals\"\n";
+    assert!(load_str(feature).unwrap_err().contains("unknown feature `decimals`"));
 }
 
 #[test]

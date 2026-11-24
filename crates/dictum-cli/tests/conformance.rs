@@ -20,8 +20,13 @@ fn main() {
         .unwrap_or_else(|e| panic!("sample facts: {e}"));
     let session: &'static Session = Box::leak(Box::new(session));
     let cases = conformance::load(&dir).unwrap_or_else(|e| panic!("loading cases: {e}"));
-    let mut trials: Vec<Trial> =
-        cases.into_iter().map(|case| Trial::test(case.id.clone(), move || run(session, &case))).collect();
+    let mut trials: Vec<Trial> = cases
+        .into_iter()
+        .map(|case| {
+            let missing = case.feature.as_deref().is_some_and(|f| !(f == "decimal" && cfg!(feature = "decimal")));
+            Trial::test(case.id.clone(), move || run(session, &case)).with_ignored_flag(missing)
+        })
+        .collect();
     trials.push(Trial::test("sample.json matches the derived sample facts", move || same_facts(session)));
     libtest_mimic::run(&args, trials).exit();
 }

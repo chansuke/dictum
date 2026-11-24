@@ -387,3 +387,31 @@ error = "E0205"
 name = "bitshl with three arguments"
 expr = "bitshl(1, 2, 3)"
 error = "E0205"
+
+[[case]]
+name = "decimal adds exactly"
+expr = 'decimal("0.1") + decimal("0.2") == decimal("0.3")'
+expect = true
+feature = "decimal"
+deviation = "Go's expr has no decimal; dictum adds it behind the decimal feature"
+
+[[case]]
+name = "decimal keeps its scale"
+expr = 'string(decimal("1.10") + decimal(2))'
+expect = "3.10"
+feature = "decimal"
+deviation = "Go's expr has no decimal; dictum adds it behind the decimal feature"
+
+[[case]]
+name = "decimal of a bad string"
+expr = 'decimal("1.2.3")'
+error = "E0309"
+feature = "decimal"
+deviation = "Go's expr has no decimal; dictum adds it behind the decimal feature"
+
+[[case]]
+name = "decimal does not mix with float"
+expr = 'decimal("1.5") + 1.5'
+error = "E0212"
+feature = "decimal"
+deviation = "Go's expr has no decimal; dictum adds it behind the decimal feature"
