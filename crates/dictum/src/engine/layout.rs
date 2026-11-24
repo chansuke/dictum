@@ -9,7 +9,22 @@ use core::fmt::Write;
 use jiff::Timestamp;
 use jiff::tz::{Offset, TimeZone};
 
-use super::builtins;
+/// What Go shows of `t` in zone `z`: the civil time, the UTC offset in seconds, and
+/// the zone's abbreviation. A fixed offset that is not UTC has no abbreviation, as
+/// Go's `FixedZone("", offset)`, and is shown as the offset.
+pub(crate) fn zoned(t: jiff::Timestamp, z: &jiff::tz::TimeZone) -> (jiff::civil::DateTime, i32, Option<String>) {
+    let info = z.to_offset_info(t);
+    let offset = info.offset();
+    let name = z.iana_name().map(|_| String::from(info.abbreviation()));
+    (offset.to_datetime(t), offset.seconds(), name)
+}
+
+/// `-0700`, as Go writes an offset without a zone name.
+pub(crate) fn go_offset(seconds: i32, colon: bool, out: &mut String) {
+    let minutes = seconds.unsigned_abs() / 60;
+    out.push(if seconds < 0 { '-' } else { '+' });
+    let _ = write!(out, "{:02}{}{:02}", minutes / 60, if colon { ":" } else { "" }, minutes % 60);
+}
 
 /// One element of a layout (Go's `std*` constants).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -184,7 +199,7 @@ fn push_int(out: &mut String, x: i64, width: usize) {
 
 /// `t.Format(layout)` for `t` shown in zone `z`.
 pub(crate) fn format(t: Timestamp, z: &TimeZone, layout: &str, out: &mut String) {
-    let (dt, offset, name) = builtins::zoned(t, z);
+    let (dt, offset, name) = zoned(t, z);
     let (year, month, day) = (i64::from(dt.year()), usize::from(dt.month().unsigned_abs()), i64::from(dt.day()));
     let (hour, minute, second) = (i64::from(dt.hour()), i64::from(dt.minute()), i64::from(dt.second()));
     let weekday = usize::from(dt.weekday().to_sunday_zero_offset().unsigned_abs());
@@ -256,7 +271,7 @@ pub(crate) fn format(t: Timestamp, z: &TimeZone, layout: &str, out: &mut String)
             }
             Chunk::ZoneName => match &name {
                 Some(name) => out.push_str(name),
-                None => builtins::go_offset(offset, false, out),
+                None => go_offset(offset, false, out),
             },
             Chunk::Fraction { nines, digits, comma } => {
                 let nanos = dt.subsec_nanosecond();
@@ -752,7 +767,7 @@ mod tests {
     use super::*;
 
     fn tz(name: &str) -> TimeZone {
-        builtins::load_location(name).unwrap()
+        crate::engine::builtins::load_location(name).unwrap()
     }
 
     fn fmt(secs: i64, nanos: i32, zone: &str, layout: &str) -> String {

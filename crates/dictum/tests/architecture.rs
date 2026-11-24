@@ -28,14 +28,8 @@ const LAYERS: &[&[&str]] = &[
 
 /// Uses that break the layers today. Each refactoring that removes one deletes it
 /// here; the test fails while a listed edge is still used and once it is not.
-const KNOWN: &[(&str, &str)] = &[
-    ("value", "dynamic"),
-    ("value", "facts"),
-    ("dynamic", "explain"),
-    ("layout", "builtins"),
-    ("json", "interp"),
-    ("methods", "interp"),
-];
+const KNOWN: &[(&str, &str)] =
+    &[("value", "dynamic"), ("value", "facts"), ("dynamic", "explain"), ("json", "interp"), ("methods", "interp")];
 
 #[test]
 fn modules_use_only_lower_layers() {

@@ -10,8 +10,8 @@ use jiff::{SignedDuration, Timestamp};
 
 use super::frame::{Fault, Frame};
 use super::interp::{Res, at, built, go_string, internal};
+use super::layout;
 use super::value::{Repr, Value};
-use super::{builtins, layout};
 use crate::EvalErrorKind;
 
 /// Seconds from 1970 to January 1, year 1, 00:00 UTC: Go's zero time.
@@ -72,7 +72,7 @@ pub(super) fn call<'a>(method: Method, recv: &Value<'a>, args: &[Value<'a>], f: 
     }
     let (t, z) = recv.as_zoned().ok_or_else(|| internal("expected a time", span))?;
     let other = || arg(0).and_then(|v| v.as_time().ok_or_else(|| internal("expected a time", span)));
-    let (dt, _, _) = builtins::zoned(t, z);
+    let (dt, _, _) = layout::zoned(t, z);
     let nanos = t.as_nanosecond();
     Ok(match method {
         Method::Year => Value::int(i64::from(dt.year())),
@@ -168,7 +168,7 @@ fn round_duration(d: i128, m: i128) -> i128 {
 /// Go's `AddDate`: the civil fields in `z`, plus the deltas, normalized as Go's
 /// `time.Date` (January 31 plus one month is March 3 or 2).
 fn add_date(t: Timestamp, z: &TimeZone, years: i64, months: i64, days: i64) -> Option<Timestamp> {
-    let (dt, _, _) = builtins::zoned(t, z);
+    let (dt, _, _) = layout::zoned(t, z);
     let month = i64::from(dt.month()).checked_sub(1)?.checked_add(months)?;
     let year = i64::from(dt.year()).checked_add(years)?.checked_add(month.div_euclid(12))?;
     let first = layout::days_from_civil(year, month.rem_euclid(12).checked_add(1)?, 1)?;
