@@ -27,17 +27,10 @@ const LAYERS: &[&[&str]] = &[
     &["rule_set"],
 ];
 
-/// Uses that break the layers today. Each refactoring that removes one deletes it
-/// here; the test fails while a listed edge is still used and once it is not.
-const KNOWN: &[(&str, &str)] = &[
-    // `Value` reads facts through `Object`, `SeqView` and `MapView`.
-    ("value", "facts"),
-];
-
 #[test]
 fn modules_use_only_lower_layers() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let layers = Layers { src: &src, layers: LAYERS, nested: &["engine"], known: KNOWN };
+    let layers = Layers { src: &src, layers: LAYERS, nested: &["engine"], known: &[] };
     if let Some(failure) = layers.check().failure("crates/dictum/tests/architecture.rs") {
         panic!("{failure}");
     }

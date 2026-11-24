@@ -17,9 +17,9 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ops::ControlFlow;
 
-use dictum_check::{FieldId, StructDesc, Type};
+use dictum_check::{StructDesc, Type};
 
-use crate::engine::value::{MapRef, Repr, Seq, Str, Value};
+use crate::engine::value::{MapRef, MapView, Object, Repr, Seq, SeqView, Str, Value};
 
 /// A type that can be the root of a [`Schema`](crate::Schema): its fields are the
 /// variables a rule can name. Implemented by `#[derive(Dictum)]`; every derived
@@ -34,20 +34,6 @@ pub trait Dictum: Object {
     /// The descriptor of this struct.
     #[doc(hidden)]
     fn __desc() -> &'static StructDesc;
-}
-
-/// A derived struct, read field by field. Implemented by `#[derive(Dictum)]` only.
-///
-/// Contract (upheld by the derive, which generates both from one field list):
-/// `field(FieldId(i))` returns a value of type `desc().fields()[i].ty()`. An
-/// out-of-range id returns `missing_field()`; the evaluator reports a mismatch as an
-/// internal error instead of panicking. Not `Send + Sync`: facts are borrowed by one
-/// evaluation on one thread.
-pub trait Object {
-    /// The descriptor, for explain output and the runtime struct name.
-    fn desc(&self) -> &'static StructDesc;
-    /// Read one field, borrowing from `self`.
-    fn field(&self, id: FieldId) -> Value<'_>;
 }
 
 /// A Rust type usable as a field (or nested element) of a derived struct.
@@ -71,33 +57,6 @@ pub trait Field {
     fn ty() -> Type;
     /// Borrow `self` as a value.
     fn read(&self) -> Value<'_>;
-}
-
-/// A borrowed sequence. Elements are produced on access.
-pub trait SeqView {
-    /// Number of elements.
-    fn len(&self) -> usize;
-    /// `len() == 0`.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-    /// Element `i`, or `None` past the end.
-    fn get(&self, i: usize) -> Option<Value<'_>>;
-}
-
-/// A borrowed string-keyed map, iterated in its container's (deterministic) order.
-pub trait MapView {
-    /// Number of entries.
-    fn len(&self) -> usize;
-    /// `len() == 0`.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-    /// Lookup.
-    fn get(&self, key: &str) -> Option<Value<'_>>;
-    /// Visit entries in order until `f` breaks. Internal iteration keeps the trait
-    /// object-safe without boxing an iterator.
-    fn for_each<'s>(&'s self, f: &mut dyn FnMut(&'s str, Value<'s>) -> ControlFlow<()>);
 }
 
 /// Scalars that map to one dictum type, one row per Rust type. Integers widen to

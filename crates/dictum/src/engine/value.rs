@@ -11,8 +11,7 @@ use alloc::vec::Vec;
 use core::ops::ControlFlow;
 
 use dictum_check::ir::Const;
-
-use crate::facts::{MapView, Object, SeqView};
+use dictum_check::{FieldId, StructDesc};
 
 /// A value borrowing from facts for `'a`. Cheap to clone (scalars, borrows, `Arc`s).
 #[derive(Clone)]
@@ -22,6 +21,47 @@ pub struct Value<'a>(pub(crate) Repr<'a>);
 /// treats it like any other type mismatch at a field read (`Internal`, not a panic).
 pub fn missing_field<'a>() -> Value<'a> {
     Value(Repr::Nil)
+}
+
+/// A derived struct, read field by field. Implemented by `#[derive(Dictum)]` only.
+///
+/// Contract (upheld by the derive, which generates both from one field list):
+/// `field(FieldId(i))` returns a value of type `desc().fields()[i].ty()`. An
+/// out-of-range id returns `missing_field()`; the evaluator reports a mismatch as an
+/// internal error instead of panicking. Not `Send + Sync`: facts are borrowed by one
+/// evaluation on one thread.
+pub trait Object {
+    /// The descriptor, for explain output and the runtime struct name.
+    fn desc(&self) -> &'static StructDesc;
+    /// Read one field, borrowing from `self`.
+    fn field(&self, id: FieldId) -> Value<'_>;
+}
+
+/// A borrowed sequence. Elements are produced on access.
+pub trait SeqView {
+    /// Number of elements.
+    fn len(&self) -> usize;
+    /// `len() == 0`.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    /// Element `i`, or `None` past the end.
+    fn get(&self, i: usize) -> Option<Value<'_>>;
+}
+
+/// A borrowed string-keyed map, iterated in its container's (deterministic) order.
+pub trait MapView {
+    /// Number of entries.
+    fn len(&self) -> usize;
+    /// `len() == 0`.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    /// Lookup.
+    fn get(&self, key: &str) -> Option<Value<'_>>;
+    /// Visit entries in order until `f` breaks. Internal iteration keeps the trait
+    /// object-safe without boxing an iterator.
+    fn for_each<'s>(&'s self, f: &mut dyn FnMut(&'s str, Value<'s>) -> ControlFlow<()>);
 }
 
 /// How deeply `reduce` may nest computed containers. Twice the syntax's depth, so
