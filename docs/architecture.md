@@ -144,7 +144,7 @@ Where each invariant lives, strongest first:
 - At boundaries: name validity (derive and `Env::new`). A single `ErrorCode` list with templates and a single `Builtin` list, matched exhaustively (no `_ =>`) in the checker and the engine, so a new builtin fails the build until it is both typed and implemented. A single overload table (`resolve`) serves both static typing and `any` dispatch.
 - At runtime: budget charged before work is done, a type check on `any` → `T` (deep for containers), `Ice`/`Internal` instead of panics, and clippy `unwrap_used`, `panic`, `indexing_slicing` and `arithmetic_side_effects` as CI errors.
 
-Deliberately not done: method calls, generic or enum facts, dynamic (runtime-described) roots, `HashMap` facts, serialization of compiled rules, warnings, localized message catalogs (codes and args are exposed so others can build them), and a bytecode VM.
+Deliberately not done: method calls, generic or enum facts, `HashMap` facts, serialization of compiled rules, warnings, localized message catalogs (codes and args are exposed so others can build them), and a bytecode VM.
 
 Interface depth: users write `#[derive(Dictum)]` and call `Schema::builder` → `func`/`pure_func` → `build`, `Rule::compile` → `eval`/`explain`, and `RuleSet::builder` → `insert` → `build` → `eval`/`explain`, plus `Ctx::new`/`with_now`. That is about 15 methods. Behind them: parsing with recovery, static typing with promotions and optional discipline, resolution of overloads, constant folding, regex and set precompilation, type-specialized closure generation, cross-rule sharing, bounded and non-panicking evaluation, and explain recording. The remaining public names are result and error shapes: `Report`, `ExplainNode`, `NodeStatus`, `Outcomes`, `CompileError`, `EvalError`, `EvalErrorKind`, `Diagnostic`, `ErrorCode`, `Arg`, `Help`, `Span`, `Dynamic`, `DynMap`, `Limits`, `SchemaError`, `Output`, `IntoFunc`. No pipeline stage, IR, `Value` variant, or wire type is public.
 
@@ -209,9 +209,9 @@ Changed after review:
 - Newtype fields (`UserId(i64)`). Add `#[dictum(transparent)]`, or let users implement `Field` by delegating (possible because `Value` is opaque)?
 - Risk: the bevy-style double bound in `IntoFunc` compiles on 1.85.1 and nightly for the shapes in the example (`|t: Timestamp|`, `|code: &str| -> Result<..>`). Closures without type annotations will not infer, so the docs must say "annotate parameters".
 
-## Next implementation step
+## Status
 
-M1: implement `Lexer::next` and `Parser::expr_bp` against the binding-power table in `parser.rs`, with the precedence and recovery tests first.
+M1-M6 are done (`dictum_testkit::MILESTONE` is 6). Dynamic roots arrived in M6 as `dictum::runtime` (above). docs/feature-map.md lists each feature with its code and its checks.
 
 ## Verification
 
