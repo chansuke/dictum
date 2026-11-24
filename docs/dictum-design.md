@@ -667,7 +667,7 @@ pub struct Diagnostic {
 3. 参照評価：仕様インタプリタとMVPの組み込み関数。完了条件は、適合テストを通し、Go版との意図的な差分をすべて `deviation` に書くこと
 4. 高速評価：定数の畳み込み、クロージャコンパイル、実行上限。完了条件は、差分テストが10万ケース通ること、Go版とのベンチマークを記録すること
 5. ルールエンジン（`dictum`）：`Rule`、共通部分式を共有する `RuleSet`、`explain`、`Ctx`。完了条件は、`RuleSet` の差分テストが通ること、使用例（`examples/quickstart.rs`）が動くこと
-6. 拡張：残りの組み込み関数、CLIとREPL、WASM対応。それぞれ別に完了させる。組み込み関数は、一覧への追加、型付け、実装、移植した適合テストがそろったら完了とする。CLIは `dictum eval --schema s.toml --facts f.json '<expr>'` が適合テストの全式で期待どおりの結果を表示したら完了とする（方式は「実行時に記述するスキーマとCLI」。事実データは `tests/conformance/facts/`）。WASMは、CIで適合テストのランナーが `wasm32-wasip1` 上のwasmtimeで通ったら完了とする
+6. 拡張：残りの組み込み関数、CLIとREPL、WASM対応。それぞれ別に完了させる。組み込み関数は、一覧への追加、型付け、実装、移植した適合テストがそろったら完了とする（どの組み込み関数も適合テストのどれかが呼ぶことを、適合テストのランナーが確かめる）。CLIは `dictum eval --schema s.toml --facts f.json '<expr>'` が適合テストの全式で期待どおりの結果を表示したら完了とする（方式は「実行時に記述するスキーマとCLI」。事実データは `tests/conformance/facts/`）。WASMは、CIで適合テストのランナーが `wasm32-wasip1` 上のwasmtimeで通ったら完了とする
 
 ## 決定事項
 
