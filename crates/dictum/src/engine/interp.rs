@@ -10,7 +10,8 @@
 //! tree: no panics (IR invariant failures become `Internal`) and the same budget
 //! charges at the same points.
 //!
-//! Budget charges (the closure tree makes the same ones by calling these functions;
+//! Budget charges (the closure tree makes the same ones by calling the same functions,
+//! `frame::steps` and `frame::alloc`;
 //! only a constant it folded at compile time costs it nothing):
 //! - one step per element a predicate visits, before its body runs (the first
 //!   element of a `reduce` without an initial value included);
@@ -48,7 +49,7 @@ use dictum_syntax::ast::{self, CompareOp, LogicOp, Pointer};
 use crate::EvalErrorKind;
 use crate::engine::SchemaCore;
 use crate::engine::builtins;
-use crate::engine::frame::{Fault, Frame, Scope};
+use crate::engine::frame::{Fault, Frame, Res, Scope, alloc, at, built, internal, steps};
 use crate::engine::json;
 use crate::engine::methods;
 use crate::engine::ops;
@@ -84,19 +85,8 @@ struct Walk<'p, 't, 'a> {
     trace: Option<&'t mut Trace<'a>>,
 }
 
-pub(super) type Res<'a> = Result<Value<'a>, Fault>;
-
-pub(super) fn internal(what: &'static str, span: Span) -> Fault {
-    Frame::fault(EvalErrorKind::Internal(what), span)
-}
-
 pub(super) fn mismatch(expected: &'static str, found: &Value<'_>, span: Span) -> Fault {
     Frame::fault(EvalErrorKind::TypeMismatch { expected, found: found.tag().name() }, span)
-}
-
-/// Attach `span` to an `ops` error.
-pub(super) fn at(span: Span) -> impl Fn(EvalErrorKind) -> Fault {
-    move |kind| Frame::fault(kind, span)
 }
 
 // Typed reads. The checker proved the types, so a mismatch is a dictum bug.
@@ -136,20 +126,6 @@ fn decimal(v: &Value<'_>, span: Span) -> Result<rust_decimal::Decimal, Fault> {
         Repr::Decimal(d) => Ok(d),
         _ => Err(internal("expected a decimal", span)),
     }
-}
-
-pub(super) fn steps(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
-    f.budget.step(u64::try_from(n).unwrap_or(u64::MAX)).map_err(at(span))
-}
-
-pub(super) fn alloc(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
-    f.budget.alloc(u64::try_from(n).unwrap_or(u64::MAX)).map_err(at(span))
-}
-
-/// A computed string, charged one alloc per byte before it is kept.
-pub(super) fn built(f: &mut Frame<'_>, s: String, span: Span) -> Res<'static> {
-    alloc(f, s.len(), span)?;
-    Ok(Value::string(s))
 }
 
 pub(super) fn promote<'a>(v: Value<'a>, p: Promote, span: Span) -> Res<'a> {

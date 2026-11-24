@@ -4,6 +4,8 @@
 
 use alloc::vec::Vec;
 
+use alloc::string::String;
+
 use dictum_syntax::Span;
 
 use crate::EvalErrorKind;
@@ -93,6 +95,31 @@ impl<'a> Frame<'a> {
     pub(crate) fn fault(kind: EvalErrorKind, span: Span) -> Fault {
         Fault { kind, span }
     }
+}
+
+pub(super) type Res<'a> = Result<Value<'a>, Fault>;
+
+pub(super) fn internal(what: &'static str, span: Span) -> Fault {
+    Frame::fault(EvalErrorKind::Internal(what), span)
+}
+
+/// Attach `span` to an `ops` error.
+pub(super) fn at(span: Span) -> impl Fn(EvalErrorKind) -> Fault {
+    move |kind| Frame::fault(kind, span)
+}
+
+pub(super) fn steps(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
+    f.budget.step(u64::try_from(n).unwrap_or(u64::MAX)).map_err(at(span))
+}
+
+pub(super) fn alloc(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
+    f.budget.alloc(u64::try_from(n).unwrap_or(u64::MAX)).map_err(at(span))
+}
+
+/// A computed string, charged one alloc per byte before it is kept.
+pub(super) fn built(f: &mut Frame<'_>, s: String, span: Span) -> Res<'static> {
+    alloc(f, s.len(), span)?;
+    Ok(Value::string(s))
 }
 
 #[cfg(test)]
