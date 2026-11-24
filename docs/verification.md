@@ -2,7 +2,7 @@
 
 What "done" means for a change, and which check gives the evidence. Every check is a `just` recipe; CI runs the same recipes (`.github/workflows`).
 
-`scripts/verify` is the entry point. It runs `just verify`, `just hatches`, `scripts/check-feature-map.sh` (every path and test docs/feature-map.md names exists), and the recipes the changed files need (its `TRIGGERS` table: `drt` for the engine, checker, parser or Lean, `tla` for sharing and budgets, `nostd msrv deny` for library code and manifests, and so on), keeps each log under `target/verify/logs/`, and writes `target/verify/summary.md`: each step's result, the tests that were skipped and why, and what else the changed files need. `scripts/verify full` runs `just ci`; `scripts/verify deep` runs the property and differential tests with 100k cases.
+`scripts/verify` is the entry point. It runs `just verify`, `just hatches`, `scripts/check-feature-map.sh` (every path and test docs/feature-map.md names exists), and the recipes the changed files need (its `TRIGGERS` table: `drt` for the engine, checker, parser or Lean, `tla` for sharing and budgets, `nostd msrv deny` for library code and manifests, and so on), keeps each log under `target/verify/logs/`, and writes `target/verify/summary.md`: each step's result, the tests that were skipped and why, and what else the changed files need. `scripts/verify full` runs `just ci`; `scripts/verify deep` runs the property and differential tests with 100k cases. CI runs `scripts/verify` on every PR in the Nix shell (job `verify`, summary in the job summary), and the `hatches` job runs the added-line check and the feature-map check.
 
 | when | command | time |
 | --- | --- | --- |
