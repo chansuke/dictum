@@ -38,6 +38,31 @@ expr = "level < 0"
 expect = false
 
 [[case]]
+name = "each comparison the ranges decide"
+expr = "[level >= 0, level <= 255, level > 255, level >= 256, delta > -129, delta <= -129]"
+expect = [true, true, false, false, true, false]
+
+[[case]]
+name = "a comparison at the edge of the range is decided"
+expr = "[255 >= level, 0 <= level, delta < 128, delta >= -128]"
+expect = [true, true, true, true]
+
+[[case]]
+name = "a comparison inside the range is evaluated"
+expr = "[level <= 199, level >= 200, delta > -100, delta >= -100]"
+expect = [false, true, false, true]
+
+[[case]]
+name = "a comparison the ranges decide keeps an error in an operand"
+expr = "7 % (level - 200) >= 0"
+error = "E0302"
+
+[[case]]
+name = "a chain is evaluated, not decided"
+expr = "0 <= level <= 255"
+expect = true
+
+[[case]]
 name = "a product with zero drops a field"
 expr = "level * 0 + limit"
 expect = 10
