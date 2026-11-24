@@ -2,16 +2,14 @@
 //! `RuleSet::eval` call for a set) and dropped at its end, so compiled rules hold no
 //! mutable state and stay `Send + Sync`.
 
-use alloc::vec::Vec;
-
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use dictum_syntax::Span;
 
 use crate::EvalErrorKind;
 use crate::ctx::Limits;
-use crate::engine::value::Value;
-use crate::facts::Object;
+use crate::engine::value::{Object, Value};
 
 /// An error inside the engine: kind + span. Converted to `EvalError` (which adds the
 /// source and rule name) at the public boundary.

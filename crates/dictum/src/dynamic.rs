@@ -6,8 +6,8 @@ use core::ops::ControlFlow;
 
 use dictum_check::{FieldId, Type};
 
-use crate::engine::value::{Bytes, MapRef, Repr, Seq, Str, Value, missing_field};
-use crate::facts::{Field, MapView, SeqView};
+use crate::engine::value::{Bytes, MapRef, MapView, Repr, Seq, SeqView, Str, Value, missing_field};
+use crate::facts::Field;
 
 /// An owned value whose type is known only at run time.
 ///

@@ -22,8 +22,8 @@ use crate::engine::SchemaCore;
 use crate::engine::analysis::Dependence;
 use crate::engine::compile::Compiler;
 use crate::engine::frame::Frame;
+use crate::engine::value::Object;
 use crate::engine::value::{Value, missing_field};
-use crate::facts::Object;
 
 /// A budget for evaluating one constant at compile time. A constant that needs more
 /// (`len(1..1000000)`) is left to run time, where the caller's limits apply.

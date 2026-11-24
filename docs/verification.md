@@ -54,7 +54,7 @@ All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`,
 | the implemented `RuleSet::eval` follows the model | TLA+ trace validation (`RuleSetTrace.tla`) of hand-written traces; the Rust side does not record traces yet (see below) |
 | hot reload: readers see only complete sets, one per evaluation, never freed under them | TLA+ `HotReload`: `OnlyCompleteSetsArePublished`, `OneSetPerEvaluation`, `NoUseAfterFree`, `EvaluationsFinish` |
 | a new builtin fails the build until it is typed and implemented | no `_ =>` or catch-all binding in a `match` on `Builtin` or `ErrorCode` (`crates/dictum-check/tests/exhaustive.rs`); the parser and the checker agree on predicate builtins (`predicate_builtins_agree_with_the_parser`) |
-| modules use only lower layers; known cycles only shrink | `tests/architecture.rs` in `dictum-syntax`, `dictum-check` and `dictum` (`dictum_testkit::layers`, self-test `crates/dictum-testkit/tests/layers.rs`) |
+| modules use only lower layers | `tests/architecture.rs` in `dictum-syntax`, `dictum-check` and `dictum` (`dictum_testkit::layers`, self-test `crates/dictum-testkit/tests/layers.rs`) |
 | schema and facts agree | derive generates both from one field list; trybuild |
 | a rule runs only with its own facts type and result type | trybuild `wrong_facts_type`, `result_type_not_output` |
 

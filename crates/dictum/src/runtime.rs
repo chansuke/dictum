@@ -38,8 +38,9 @@ use dictum_check::{FieldDesc, FieldId, StructDesc, Type};
 use crate::Dynamic;
 use crate::engine::builtins;
 use crate::engine::layout;
+use crate::engine::value::Object;
 use crate::engine::value::Value;
-use crate::facts::{Dictum, Field, Object};
+use crate::facts::{Dictum, Field};
 
 /// Named structs and their fields, each field's type written as in diagnostics:
 /// `bool` `int` `float` `string` `bytes` `time` `duration` `location` `any`,

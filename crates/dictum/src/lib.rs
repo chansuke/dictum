@@ -74,8 +74,8 @@ pub use rust_decimal;
 /// Not part of the API: no semver promise, may change in any release.
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::engine::value::{Value, missing_field};
-    pub use crate::facts::{Field, MapView, Object, SeqView};
+    pub use crate::engine::value::{MapView, Object, SeqView, Value, missing_field};
+    pub use crate::facts::Field;
     pub use crate::func::{ErasedFunc, FromArg, Ret, RetValue};
     pub use dictum_check::{FieldDesc, FieldId, StructDesc, Type};
 }
