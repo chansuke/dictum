@@ -380,8 +380,10 @@ dependencies = [
  "arbitrary",
  "dictum",
  "dictum-syntax",
+ "proc-macro2",
  "proptest",
  "serde",
+ "syn 2.0.119",
  "toml",
 ]
 
