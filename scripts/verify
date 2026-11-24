@@ -111,6 +111,7 @@ check)
   step lint just lint
   step test just test
   step hatches just hatches "$base"
+  step feature-map scripts/check-feature-map.sh
   for recipe in "${recipes[@]}"; do
     step "$recipe" just "$recipe"
   done
