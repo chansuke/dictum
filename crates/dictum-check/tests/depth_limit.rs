@@ -6,8 +6,11 @@
 //! Checking must reject those with E0105 instead. Regression tests for
 //! the crash the Deep workflow's `check` fuzz target found on 2026-11-19
 //! (run 44517413081).
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(
+    clippy::expect_used,
+    clippy::panic,
+    reason = "helpers outside #[test] functions: a failure there fails the test"
+)]
 
 use dictum_check::{Env, Type};
 use dictum_syntax::ErrorCode;

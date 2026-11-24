@@ -83,8 +83,6 @@ fn find<T, Q: ?Sized>(xs: &[T], x: &Q, cmp: impl Fn(&T, &Q) -> core::cmp::Orderi
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::arithmetic_side_effects)]
-
     use alloc::sync::Arc;
 
     use super::*;

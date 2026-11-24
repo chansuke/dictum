@@ -1,12 +1,8 @@
 //! The single lists this crate owns (error codes, builtins, reserved words) and the
 //! small pieces implemented before M1. Every other stage trusts these.
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
+#![expect(
+    clippy::arithmetic_side_effects,
+    reason = "helpers outside #[test] functions: a failure there fails the test"
 )]
 
 use std::collections::BTreeSet;

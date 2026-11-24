@@ -13,14 +13,7 @@
 //!
 //! Cases beyond the reached stage are reported as ignored with the milestone they
 //! wait for, so `cargo test` output shows what is still pending.
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
-)]
+#![expect(clippy::panic, reason = "helpers outside #[test] functions: a failure there fails the test")]
 
 use dictum::{Ctx, DynMap, Dynamic, ErrorCode, Rule, Schema};
 use dictum_check::{Env, Type};

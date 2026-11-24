@@ -1,13 +1,10 @@
 //! Snapshots of rendered errors (`Display` of `CompileError` and `EvalError`): the
 //! caret format, line/column, multi-byte characters, help lines and the
 //! "and N more" tail. Review snapshot changes with `cargo insta review`.
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(
+#![expect(
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
+    reason = "helpers outside #[test] functions: a failure there fails the test"
 )]
 
 use dictum::{Ctx, Dynamic, Rule, Schema};

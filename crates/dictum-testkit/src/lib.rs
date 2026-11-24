@@ -3,13 +3,12 @@
 //!
 //! One fixture for unit, property, conformance, fuzz and benchmark code means a rule
 //! that fails in one of them can be pasted into any other.
-// Test support, not evaluation code: the workspace's no-panic lints do not apply.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    reason = "test support, not evaluation code: a failure here fails the test that called it"
 )]
 
 pub mod conformance;

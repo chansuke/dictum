@@ -749,8 +749,6 @@ fn signed_offset_len(v: &[u8]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
-
     use super::*;
 
     fn tz(name: &str) -> TimeZone {

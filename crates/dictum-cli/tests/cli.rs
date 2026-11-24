@@ -1,7 +1,6 @@
 //! The `dictum` command: its schema handling, and the binary's output and exit
 //! status (0 a value, 1 a rule that fails, 2 bad input).
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions: a failure there fails the test")]
 
 use std::path::PathBuf;
 

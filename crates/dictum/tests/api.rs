@@ -1,13 +1,6 @@
 //! End-to-end behavior of the public API that a conformance case cannot express:
 //! contexts, rule sets, result types, explain reports, limits and threads.
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
-)]
+#![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions: a failure there fails the test")]
 
 use std::sync::Arc;
 

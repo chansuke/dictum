@@ -9,14 +9,7 @@
 //! Each test names the milestone that makes it meaningful. Until then it is ignored,
 //! never weakened: the assertions are the specification. Case counts come from
 //! `PROPTEST_CASES` (default 256).
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
-)]
+#![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions: a failure there fails the test")]
 
 use dictum::{Ctx, Dynamic, EvalError, EvalErrorKind, Limits, Rule, RuleSet, Schema};
 use dictum_testkit::generate::{self, Ty};

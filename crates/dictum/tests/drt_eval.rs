@@ -10,13 +10,10 @@
 //! The comparison waits for M3; one trial runs before that and checks the generator:
 //! the oracle never answers `internal` (every rule is well typed), and the rules
 //! produce values and both runtime errors.
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    reason = "helpers outside #[test] functions: a failure there fails the test"
 )]
 
 use std::cell::RefCell;

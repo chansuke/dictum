@@ -1,7 +1,7 @@
 //! Evaluation benchmarks on the shared fixture. CI only builds them
 //! (`cargo bench --no-run`); `just bench` runs them and the same rules on Go's expr
 //! (`go/bench_test.go`). The results are in docs/benchmarks.md.
-#![allow(clippy::unwrap_used)]
+#![expect(clippy::unwrap_used, reason = "benchmark setup on fixed rules and facts")]
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use dictum::{Ctx, Rule, RuleSet, Schema};

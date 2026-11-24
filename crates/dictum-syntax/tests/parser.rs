@@ -1,13 +1,11 @@
 //! Parser tests: one test per row of the precedence table in docs/dictum-design.md,
 //! the desugarings, and error recovery. Trees are compared as s-expressions so a
 //! failure shows the shape that was parsed.
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
+#![expect(
     clippy::panic,
     clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    reason = "helpers outside #[test] functions: a failure there fails the test"
 )]
 
 use dictum_syntax::{ErrorCode, parse};
