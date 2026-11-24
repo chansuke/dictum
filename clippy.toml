@@ -8,6 +8,6 @@ allow-indexing-slicing-in-tests = true
 # Environment variables are read in one place each, so a knob has one default and
 # one name. Use dictum_testkit::oracle::cases() or Oracle::locate().
 disallowed-methods = [
-  { path = "std::env::var", reason = "read the environment in dictum-testkit (oracle::cases, Oracle::locate) and pass the value in" },
-  { path = "std::env::var_os", reason = "read the environment in dictum-testkit (oracle::cases, Oracle::locate) and pass the value in" },
+    { path = "std::env::var", reason = "read the environment in dictum-testkit (oracle::cases, Oracle::locate) and pass the value in" },
+    { path = "std::env::var_os", reason = "read the environment in dictum-testkit (oracle::cases, Oracle::locate) and pass the value in" },
 ]
