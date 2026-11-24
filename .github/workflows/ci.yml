@@ -40,6 +40,22 @@ jobs:
           tar -xzf actionlint.tar.gz -C "$HOME/.cargo/bin" actionlint
       - run: just fmt lint
 
+  # Added lines that put off a fix or switch off a check, and the paths and tests
+  # docs/feature-map.md names. Plain bash and git, so no toolchain is needed.
+  hatches:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - run: scripts/test-check-escape-hatches.sh
+      - name: Check the lines this change adds
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: scripts/check-escape-hatches.sh "$BASE" HEAD
+      - run: scripts/check-feature-map.sh
+
   deny:
     runs-on: ubuntu-latest
     steps:
@@ -79,8 +95,8 @@ jobs:
         with:
           tool: just,cargo-nextest
       - run: just test
-      # Ignored tests are milestones not yet reached, not failures; list them so
-      # the count is visible in every run.
+      # Ignored tests are ones that cannot run here; list the count so it is
+      # visible in every run.
       - run: just pending >> "$GITHUB_STEP_SUMMARY"
 
   msrv:
@@ -146,3 +162,26 @@ jobs:
         with:
           tool: just,cargo-fuzz
       - run: just bench-build fuzz-build
+
+  # scripts/verify, as a developer runs it: `just verify` plus the recipes the
+  # changed files need, in the Nix shell. Its summary goes to the job summary.
+  verify:
+    if: github.event_name == 'pull_request'
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: rustup toolchain install nightly 1.85.1 --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: scripts/verify
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: scripts/verify --base "$BASE"
+      - if: always() && hashFiles('target/verify/summary.md') != ''
+        run: cat target/verify/summary.md >> "$GITHUB_STEP_SUMMARY"
