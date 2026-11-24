@@ -79,14 +79,18 @@ Compile-time rejections, checked with a probe crate. Each is a Rust compile erro
 
 ### Crates and what each may see
 
-Four crates. The doc's `dictum-eval` is merged into `dictum`.
+Four library crates, plus the CLI and the test kit. The doc's `dictum-eval` is merged into `dictum`.
 
 | crate | owns | public = contract with | depends on |
 | --- | --- | --- | --- |
 | `dictum-syntax` | lexer, Pratt parser, AST, `Span`, `Diagnostic`/`ErrorCode`, the `Builtin` name list, identifier rules | `dictum-check` (AST), everyone (diagnostics) | nothing |
 | `dictum-check` | `Type`, `StructDesc`, `Env<P>`, typed IR, checker, overload tables (`resolve`) | `dictum` | syntax, jiff (folded time constants) |
-| `dictum` | the public API, plus `engine/` (private): `Value`, folding, closure compiler, `Frame`/`Budget`, CSE, spec interpreter (`interp`, which implements explain), builtin impls | users | check, derive, jiff, regex, libm |
+| `dictum` | the public API, plus `engine/` (private): `Value`, folding, closure compiler, `Frame`/`Budget`, CSE, spec interpreter (`interp`, which implements explain), builtin impls | users | syntax, check, derive, jiff, regex, libm |
 | `dictum-derive` | `#[derive(Dictum)]` | users via `dictum::Dictum` | syn, quote, syntax |
+| `dictum-cli` | the `dictum` binary: `eval`, `repl`, `schema infer` | users | dictum (`runtime-schema`), clap, serde_json |
+| `dictum-testkit` (not published) | the shared fixture, generators, conformance loader, Lean oracle client, layer check | the workspace's tests, fuzz targets and benchmarks | dictum, syntax |
+
+`crates/dictum-testkit/tests/crate_dependencies.rs` checks the last column against the manifests. Four dev-dependency cycles are listed there and left as they are: the tests of `dictum-syntax`, `dictum-check` and `dictum` use `dictum-testkit` (and `dictum-check`'s use `dictum`), which depend on them, so those tests link a second copy of the crate.
 
 Enforcement: `unreachable_pub = "deny"` (workspace lint), so every `pub` item is either reachable from its crate root on purpose or the build fails. Internals are `pub(crate)`. The engine is a private module, so importing it from outside fails the build (`E0603`). Inner crates say "no API stability" in their manifests, and `dictum` pins them with `=0.1.0`. The one reachable internal is `dictum::__private`, `#[doc(hidden)]`. Derive output has to name something, and that module holds only what it names. `Value` is opaque even there: it is a struct with a private `Repr` enum.
 
