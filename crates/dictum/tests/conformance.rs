@@ -25,13 +25,15 @@ fn main() {
     let args = Arguments::from_args();
     let cases = conformance::load(&conformance::dir()).unwrap_or_else(|e| panic!("loading cases: {e}"));
     let reached = dictum_testkit::stage();
-    let trials = cases
+    let exprs: Vec<String> = cases.iter().map(|c| c.expr.clone()).collect();
+    let mut trials: Vec<Trial> = cases
         .into_iter()
         .map(|case| {
             let pending = reached == Stage::None || !has_feature(case.feature.as_deref());
             Trial::test(case.id.clone(), move || run(&case, reached)).with_ignored_flag(pending)
         })
         .collect();
+    trials.push(Trial::test("every builtin has a case", move || every_builtin_is_called(&exprs)));
     libtest_mimic::run(&args, trials).exit();
 }
 
@@ -42,6 +44,22 @@ fn has_feature(feature: Option<&str>) -> bool {
         Some("decimal") => cfg!(feature = "decimal"),
         Some(_) => false,
     }
+}
+
+/// M6 counts a builtin as done once it has ported cases, so a builtin that no case
+/// calls (as `name(`, not as a method or part of a longer name) fails here.
+fn every_builtin_is_called(exprs: &[String]) -> Result<(), Failed> {
+    let called = |name: &str| {
+        let call = format!("{name}(");
+        exprs.iter().any(|e| {
+            e.match_indices(&call).any(|(at, _)| {
+                !e[..at].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.')
+            })
+        })
+    };
+    let missing: Vec<&str> =
+        dictum_syntax::Builtin::ALL.iter().map(|b| b.name()).filter(|name| !called(name)).collect();
+    if missing.is_empty() { Ok(()) } else { Err(format!("no conformance case calls {missing:?}").into()) }
 }
 
 fn run(case: &Case, reached: Stage) -> Result<(), Failed> {
