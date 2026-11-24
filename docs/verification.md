@@ -57,6 +57,7 @@ All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`,
 | modules use only lower layers | `tests/architecture.rs` in `dictum-syntax`, `dictum-check` and `dictum` (`dictum_testkit::layers`, self-test `crates/dictum-testkit/tests/layers.rs`) |
 | each crate depends only on the crates docs/architecture.md allows; dev-dependency cycles are listed | `crates/dictum-testkit/tests/crate_dependencies.rs` |
 | every theorem the optimizations table and `engine/optimize.rs` cite exists in `formal/lean` | `crates/dictum/tests/formal_names.rs` |
+| a change adds no TODO or workaround comment, unexplained `#[ignore]`, constant-ignored trial, fixed proptest case count or saturated signed value | `just hatches` (`scripts/check-escape-hatches.sh`, added lines only) |
 | schema and facts agree | derive generates both from one field list; trybuild |
 | a rule runs only with its own facts type and result type | trybuild `wrong_facts_type`, `result_type_not_output` |
 
