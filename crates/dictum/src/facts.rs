@@ -305,8 +305,6 @@ impl<T: Field> MapView for BTreeMap<String, T> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::indexing_slicing)]
-
     use alloc::boxed::Box;
     use alloc::collections::BTreeMap;
     use alloc::string::String;

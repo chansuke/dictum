@@ -285,8 +285,6 @@ fn collect_unchecked(e: &ir::Expr, out: &mut BTreeSet<NodeId>) {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
-
     use super::*;
     use alloc::string::String;
     use dictum_check::{Env, FieldDesc, StructDesc};

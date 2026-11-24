@@ -1,8 +1,7 @@
 //! Schemas described at run time: what a description may say, and how facts that
 //! do not match it are reported.
 #![cfg(feature = "runtime-schema")]
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::indexing_slicing)]
+#![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions: a failure there fails the test")]
 
 use dictum::runtime::{Description, Root};
 use dictum::{Ctx, DynMap, Dynamic, Rule, Schema};

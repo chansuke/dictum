@@ -198,7 +198,7 @@ fn erase(f: impl for<'a> Fn(&[Value<'a>]) -> Result<Value<'a>, CallError> + Send
 // requires the closure to accept a borrow of any lifetime, which a closure
 // annotated with `&str` does.
 macro_rules! into_func {
-    ($($a:ident),*) => {
+    ($($a:ident $v:ident),*) => {
         impl<Func, R, $($a,)*> IntoFunc<(R, $($a,)*)> for Func
         where
             Func: Fn($($a),*) -> R + for<'s> Fn($($a::Of<'s>),*) -> R + Send + Sync + 'static,
@@ -208,10 +208,9 @@ macro_rules! into_func {
             fn into_func(self) -> ErasedFunc {
                 let sig = FuncSig { params: alloc::vec![$($a::ty()),*].into(), ret: R::ty() };
                 let call = erase(move |args| {
-                    #[allow(non_snake_case)]
-                    let [$($a),*] = args else { return Err(CallError::BadArgument) };
-                    $( #[allow(non_snake_case)] let $a = $a::from_value($a).ok_or(CallError::BadArgument)?; )*
-                    self($($a),*).into_result().map_err(CallError::Function)
+                    let [$($v),*] = args else { return Err(CallError::BadArgument) };
+                    $( let $v = $a::from_value($v).ok_or(CallError::BadArgument)?; )*
+                    self($($v),*).into_result().map_err(CallError::Function)
                 });
                 ErasedFunc { sig, call }
             }
@@ -220,7 +219,7 @@ macro_rules! into_func {
 }
 
 into_func!();
-into_func!(A1);
-into_func!(A1, A2);
-into_func!(A1, A2, A3);
-into_func!(A1, A2, A3, A4);
+into_func!(A1 a1);
+into_func!(A1 a1, A2 a2);
+into_func!(A1 a1, A2 a2, A3 a3);
+into_func!(A1 a1, A2 a2, A3 a3, A4 a4);

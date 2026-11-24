@@ -2,8 +2,7 @@
 //! schema and JSON facts in `tests/conformance/facts/` instead of the derived
 //! `dictum_testkit::Facts`. Same expectations, so a case passes here exactly when
 //! the described schema types and reads the facts as the derive does.
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#![expect(clippy::panic, reason = "helpers outside #[test] functions: a failure there fails the test")]
 
 use dictum::{Ctx, DynMap, Dynamic, Rule, Schema};
 use dictum_cli::Session;

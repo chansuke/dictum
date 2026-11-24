@@ -73,7 +73,7 @@ pub(crate) fn len_str(s: &str) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::arithmetic_side_effects)]
+    #![expect(clippy::arithmetic_side_effects, reason = "expected values in tests are computed with plain operators")]
 
     use super::*;
     use proptest::prelude::*;

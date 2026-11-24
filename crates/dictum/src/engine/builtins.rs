@@ -438,8 +438,6 @@ pub(crate) fn load_location(name: &str) -> Result<jiff::tz::TimeZone, EvalErrorK
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
-
     use super::*;
     use jiff::SignedDuration;
 

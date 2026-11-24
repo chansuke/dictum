@@ -11,13 +11,10 @@
 //! syntax errors for the Lean parser, since agreeing on rejections alone would
 //! say little.
 //! `just drt` builds it and runs this with `PROPTEST_CASES` cases (default 4096).
-// Test code: the workspace's no-panic lints are for evaluation code.
-#![allow(
-    clippy::unwrap_used,
+#![expect(
     clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::arithmetic_side_effects
+    clippy::arithmetic_side_effects,
+    reason = "helpers outside #[test] functions: a failure there fails the test"
 )]
 
 use std::cell::RefCell;

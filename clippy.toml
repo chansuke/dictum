@@ -1,0 +1,6 @@
+# Test code may unwrap, expect, panic and index: a failure there is a failed test,
+# not a panic in evaluation. Evaluation code keeps the workspace's no-panic lints.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

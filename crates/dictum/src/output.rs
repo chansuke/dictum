@@ -11,8 +11,6 @@ use crate::engine::value::Repr;
 use crate::engine::value::Value;
 
 mod sealed {
-    // Reachable only as a supertrait, which is the point of sealing.
-    #[allow(unreachable_pub)]
     pub trait Sealed {}
     impl Sealed for bool {}
     impl Sealed for i64 {}
