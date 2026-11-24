@@ -11,7 +11,8 @@
 //! The Lean fragment has `int` and `bool` only, so the rules touch only those
 //! (`x + 0.0` is not `x` for `x = -0.0`, and `x == x` is false for NaN). A field
 //! read is the fragment's `var`: reading a non-optional field cannot fail, at any
-//! depth. Only `<` is in the fragment, so only `<` is decided by ranges.
+//! depth. A comparison is the fragment's `lt`, `le`, `gt` or `ge` only when it has
+//! one operator; a chain (`a < b < c`) is left alone.
 //! `explain` runs the unoptimized IR, so the eval/explain property tests compare
 //! every rewrite with the original rule.
 
@@ -104,6 +105,24 @@ fn skip_check(op: IntOp, lhs: &ir::Expr, rhs: &ir::Expr) -> bool {
         && range_of(lhs).zip(range_of(rhs)).is_some_and(|(a, b)| op_range(op, a, b).fits())
 }
 
+/// Lean `cmpDecide`: the value of `a op b` for every `a` in `ra` and `b` in `rb`,
+/// when the ranges decide it.
+fn cmp_decide(op: CompareOp, a: Range, b: Range) -> Option<bool> {
+    let (holds, fails) = match op {
+        CompareOp::Lt => (a.hi < b.lo, b.hi <= a.lo),
+        CompareOp::Le => (a.hi <= b.lo, b.hi < a.lo),
+        CompareOp::Gt => (b.hi < a.lo, a.hi <= b.lo),
+        CompareOp::Ge => (b.hi <= a.lo, a.hi < b.lo),
+    };
+    if holds {
+        Some(true)
+    } else if fails {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 /// Lean `safe`: evaluating `e` cannot fail.
 fn safe(e: &ir::Expr) -> bool {
     match e.kind() {
@@ -119,7 +138,7 @@ fn safe(e: &ir::Expr) -> bool {
         }
         ExprKind::Binary { op: BinaryOp::Eq(EqKind::Int | EqKind::Bool), lhs, rhs } => safe(lhs) && safe(rhs),
         ExprKind::Compare { kind: CompareKind::Int, first, rest } => match rest.as_slice() {
-            [(CompareOp::Lt, b)] => safe(first) && safe(b),
+            [(_, b)] => safe(first) && safe(b),
             _ => false,
         },
         ExprKind::Logic { operands, .. } => operands.iter().all(safe),
@@ -183,9 +202,8 @@ fn simplify_node(e: &mut ir::Expr) {
             }
         }
         ExprKind::Compare { kind: CompareKind::Int, first, rest } => match rest.as_slice() {
-            [(CompareOp::Lt, b)] if safe(first) && safe(b) => match (range_of(first), range_of(b)) {
-                (Some(ra), Some(rb)) if ra.hi < rb.lo => Rewrite::Bool(true),
-                (Some(ra), Some(rb)) if rb.hi <= ra.lo => Rewrite::Bool(false),
+            [(op, b)] if safe(first) && safe(b) => match (range_of(first), range_of(b)) {
+                (Some(ra), Some(rb)) => cmp_decide(*op, ra, rb).map_or(Rewrite::None, Rewrite::Bool),
                 _ => Rewrite::None,
             },
             _ => Rewrite::None,
@@ -340,6 +358,10 @@ mod tests {
         // `Opt/Simp.lean`'s examples, and each rule.
         assert!(same_as("age < 256", "true"));
         assert!(same_as("age < 0", "false"));
+        assert!(same_as("age >= 0", "true") && same_as("age > 255", "false"));
+        assert!(same_as("age <= 255", "true") && same_as("256 <= age", "false"));
+        assert!(same_as("256 > age", "true") && same_as("age >= 256", "false"));
+        assert!(!same_as("age <= 254", "true") && !same_as("age <= 254", "false"));
         assert!(same_as("age * 0 + n", "n"));
         assert!(same_as("n + 0", "n") && same_as("0 + n", "n") && same_as("n - 0", "n"));
         assert!(same_as("n * 1", "n") && same_as("1 * n", "n"));
@@ -361,8 +383,9 @@ mod tests {
         // Outside the `int`/`bool` fragment: `-0.0 + 0.0` is `0.0`, NaN is not NaN.
         assert!(!same_as("x + 0.0", "x"));
         assert!(!same_as("x == x", "true"));
-        // Only `<` is in the fragment.
-        assert!(!same_as("age <= 255", "true"));
+        // A chain is not one of the fragment's comparisons.
+        assert!(!same_as("0 <= age <= 255", "true"));
+        assert!(!same_as("7 % n >= 0", "true"), "the operand can fail");
     }
 
     #[test]
