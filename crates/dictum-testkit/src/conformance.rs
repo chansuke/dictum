@@ -21,6 +21,13 @@
 //! expr = "\"héllo\"[2:]"
 //! error = "E0304"
 //! deviation = "Go slices inside the character; dictum reports CharBoundary"
+//!
+//! [[case]]
+//! name = "decimal adds exactly"
+//! expr = 'decimal("0.1") + decimal("0.2") == decimal("0.3")'
+//! expect = true
+//! feature = "decimal"           # runs only where dictum is built with this feature
+//! deviation = "Go's expr has no decimal"
 //! ```
 //!
 //! Exactly one of `expect`, `nil` and `error` is set. `deviation` records an
@@ -79,6 +86,9 @@ pub struct Case {
     pub expr: String,
     pub expect: Expect,
     pub deviation: Option<String>,
+    /// The cargo feature of `dictum` the case needs; a runner built without it
+    /// reports the case as ignored.
+    pub feature: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -96,7 +106,11 @@ struct RawCase {
     nil: Option<bool>,
     error: Option<String>,
     deviation: Option<String>,
+    feature: Option<String>,
 }
+
+/// The `dictum` features a case may name.
+const FEATURES: &[&str] = &["decimal"];
 
 /// The repository's `tests/conformance` directory.
 pub fn dir() -> PathBuf {
@@ -129,7 +143,10 @@ pub fn load(dir: &Path) -> Result<Vec<Case>, String> {
             if cases.iter().any(|c: &Case| c.id == id) {
                 return Err(format!("{id}: duplicate case name"));
             }
-            cases.push(Case { id, expr: raw.expr, expect, deviation: raw.deviation });
+            if let Some(f) = raw.feature.as_deref().filter(|f| !FEATURES.contains(f)) {
+                return Err(format!("{id}: unknown feature `{f}`; known: {FEATURES:?}"));
+            }
+            cases.push(Case { id, expr: raw.expr, expect, deviation: raw.deviation, feature: raw.feature });
         }
     }
     Ok(cases)
