@@ -373,7 +373,7 @@ pub fn core_expr(ty: Ty, depth: u32) -> BoxedStrategy<(String, String)> {
         _ => prop_oneof![
             leaf.clone(),
             leaf,
-            (sub(Ty::Int), proptest::sample::select(&["==", "<"][..]), sub(Ty::Int))
+            (sub(Ty::Int), proptest::sample::select(&["==", "<", "<=", ">", ">="][..]), sub(Ty::Int))
                 .prop_map(|((a, aa), op, (b, bb))| (format!("({a} {op} {b})"), format!("({op} {aa} {bb})"))),
             (sub(Ty::Bool), sub(Ty::Bool))
                 .prop_map(|((a, aa), (b, bb))| (format!("({a} == {b})"), format!("(== {aa} {bb})"))),
@@ -405,7 +405,11 @@ pub fn core_untyped(depth: u32) -> BoxedStrategy<(String, String)> {
     prop_oneof![
         leaf.clone(),
         leaf,
-        (sub.clone(), proptest::sample::select(&["+", "-", "*", "%", "==", "<", "&&", "||"][..]), sub.clone())
+        (
+            sub.clone(),
+            proptest::sample::select(&["+", "-", "*", "%", "==", "<", "<=", ">", ">=", "&&", "||"][..]),
+            sub.clone()
+        )
             .prop_map(|((a, aa), op, (b, bb))| (format!("({a} {op} {b})"), format!("({op} {aa} {bb})"))),
         sub.clone().prop_map(|(a, aa)| (format!("(not {a})"), format!("(not {aa})"))),
         (sub.clone(), sub.clone(), sub)
