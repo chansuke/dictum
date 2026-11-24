@@ -48,6 +48,12 @@ test:
     cargo test --workspace --all-features --doc
     cargo run -p dictum --example quickstart
 
+# Lines added since BASE that put off a fix or switch off a check, and the
+# script's own tests. Only added lines are read.
+hatches base="origin/main":
+    scripts/test-check-escape-hatches.sh
+    scripts/check-escape-hatches.sh {{base}}
+
 # What is still ignored, by milestone.
 pending:
     @echo "MILESTONE = $(just milestone)"
