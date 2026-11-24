@@ -32,9 +32,6 @@ fn single_rules(c: &mut Criterion) {
 }
 
 fn rule_set(c: &mut Criterion) {
-    if dictum_testkit::MILESTONE < 5 {
-        return; // `RuleSet` arrives in M5.
-    }
     let schema = Schema::<Facts>::builder().build().unwrap();
     let mut builder = RuleSet::<bool, Facts>::builder(&schema);
     for (name, src) in RULES {

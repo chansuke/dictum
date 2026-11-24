@@ -31,8 +31,7 @@ fn main() {
     let compared = oracle.clone();
     let generated = oracle.clone();
     let trials = vec![
-        Trial::test("checker_agrees_with_lean", move || agree(compared?))
-            .with_ignored_flag(dictum_testkit::MILESTONE < 2 || oracle.is_err()),
+        Trial::test("checker_agrees_with_lean", move || agree(compared?)).with_ignored_flag(oracle.is_err()),
         Trial::test("generated_rules_are_a_mix_of_typed_and_ill_typed", move || mixed(generated?))
             .with_ignored_flag(oracle.is_err()),
     ];

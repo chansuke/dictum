@@ -6,8 +6,7 @@
 //! - sharing: a `RuleSet` gives what its rules give standalone;
 //! - robustness: no input makes compilation panic.
 //!
-//! Each test names the milestone that makes it meaningful. Until then it is ignored,
-//! never weakened: the assertions are the specification. Case counts come from
+//! The assertions are the specification: never weakened. Case counts come from
 //! `PROPTEST_CASES` (default 256).
 #![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions: a failure there fails the test")]
 

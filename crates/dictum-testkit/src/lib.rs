@@ -20,23 +20,10 @@ pub mod syntax;
 
 pub use fixture::{Facts, sample, sample_now};
 
-/// The last milestone whose behavior is implemented (0 = none; see
-/// docs/dictum-design.md, "マイルストーン"). Raise it in the change that completes a
-/// milestone; tests gated on a later milestone are reported as ignored, not passed.
+/// The last milestone whose behavior is implemented. Every milestone (M1-M6) is
+/// done, so tests no longer wait on it; only `just fuzz` still reads it, to skip a
+/// fuzz target whose `# M<n>` comment in fuzz/Cargo.toml is later.
 pub const MILESTONE: u8 = 6;
-
-/// The conformance stage `MILESTONE` reaches. M2 (types) and M3 (reference
-/// evaluation) are swapped relative to the stage order on purpose: see the
-/// milestone list.
-pub const fn stage() -> conformance::Stage {
-    use conformance::Stage;
-    match MILESTONE {
-        0 => Stage::None,
-        1 => Stage::Parse,
-        2 => Stage::Check,
-        _ => Stage::Eval,
-    }
-}
 
 /// Whether two results are the same value, for differential tests: as `==`, except
 /// that NaN is the same as NaN (`0/0` gives NaN on both sides, and `NaN != NaN`).
