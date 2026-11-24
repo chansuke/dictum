@@ -58,6 +58,21 @@ expr = "max(2, 7)"
 expect = 7
 
 [[case]]
+name = "min"
+expr = "min(2, 7)"
+expect = 2
+
+[[case]]
+name = "min of an array"
+expr = "min(nums)"
+expect = 1
+
+[[case]]
+name = "min of int and float"
+expr = "min(3, 2.5)"
+expect = 2.5
+
+[[case]]
 name = "floor"
 expr = "floor(2.7)"
 expect = 2.0

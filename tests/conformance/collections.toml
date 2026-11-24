@@ -154,3 +154,34 @@ deviation = "Go returns the zero value \"\" for a missing key, so ?? never appli
 name = "step limit"
 expr = "count(1..2000000, true)"
 error = "E0305"
+
+[[case]]
+name = "values are in BTreeMap order"
+expr = "values(order.Notes)"
+expect = ["yes", "leave at door"]
+deviation = "Go iterates a map in random order; dictum keeps the container's order"
+
+[[case]]
+name = "get from an array"
+expr = "get(nums, 2)"
+expect = 4
+
+[[case]]
+name = "get past the end is nil"
+expr = "get(nums, 99)"
+nil = true
+
+[[case]]
+name = "get with a negative index"
+expr = "get(nums, -1)"
+expect = 6
+
+[[case]]
+name = "get from a map"
+expr = 'get(order.Notes, "gift")'
+expect = "yes"
+
+[[case]]
+name = "get of a missing key is nil"
+expr = 'get(order.Notes, "none")'
+nil = true
