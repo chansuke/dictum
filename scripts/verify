@@ -54,7 +54,6 @@ TRIGGERS=(
   $'^crates/dictum/benches/\tbench-build\t'
   $'^tests/conformance/|^crates/dictum/benches/go/\tconformance-go\t'
   $'^crates/[^/]+/tests/|^crates/dictum-testkit/|(^|/)Cargo\\.lock$|^justfile$\twasm\tTests read files by compiled-in paths and run one at a time under wasmtime.'
-  $'^crates/dictum-testkit/src/lib\\.rs$\tpending\tIf a milestone is complete, raise MILESTONE and remove its ignores.'
 )
 
 out=$root/target/verify

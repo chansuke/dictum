@@ -33,8 +33,7 @@ fn main() {
     let compared = oracle.clone();
     let generated = oracle.clone();
     let trials = vec![
-        Trial::test("eval_agrees_with_lean", move || agree(compared?))
-            .with_ignored_flag(dictum_testkit::MILESTONE < 3 || oracle.is_err()),
+        Trial::test("eval_agrees_with_lean", move || agree(compared?)).with_ignored_flag(oracle.is_err()),
         Trial::test("core_rules_are_well_typed_and_varied", move || varied(generated?))
             .with_ignored_flag(oracle.is_err()),
     ];

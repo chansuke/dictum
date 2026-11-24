@@ -95,7 +95,7 @@ The theorems are about Lean definitions. `dictum-oracle` (`formal/lean/Oracle.le
 
 `Rule::eval` runs the closure tree, so `drt_eval` compares it with `Dictum.eval`, and `eval_agrees_with_explain` ties it to the spec interpreter, which `explain` runs.
 
-Each test also has a trial that runs before its milestone. It checks that the generator is useful: most sources parse, the rules are well typed, and they produce values, overflows and divisions by zero.
+Each test also has a trial that checks that the generator is useful: most sources parse, the rules are well typed, and they produce values, overflows and divisions by zero.
 
 ### TLA+
 
@@ -112,14 +112,9 @@ Update the models in the same change when you change what they describe:
 - the cache, budgets, `RuleSet::eval` order or error policy: `formal/tla/RuleSetEval.tla` and `RuleSetTrace.tla`
 - how sets are built, published or dropped: `formal/tla/HotReload.tla`
 
-## Milestones and pending checks
+## Milestones
 
-Most checks describe behavior that does not exist yet (bodies are `todo!()`). They are written now, as the specification, and wait for their milestone:
-
-- `#[ignore = "pending Mn: ..."]` on a test, and
-- `dictum_testkit::MILESTONE` (the last completed milestone) for conformance cases and fuzz targets.
-
-`just pending` lists what is waiting. The change that completes a milestone raises `MILESTONE`, removes the matching `ignore` attributes, and passes them. Ignored means "not reached", never "fails".
+Every milestone (M1-M6) is done: `dictum_testkit::MILESTONE` is 6, and no test waits on it. Only `just fuzz` still reads it, to skip a fuzz target whose `# M<n>` comment in `fuzz/Cargo.toml` names a later one. A test is ignored only when it cannot run where it is (the Lean oracle is not built, or WASI has no threads or processes); `target/verify/summary.md` says which.
 
 ## Rules for changing checks
 

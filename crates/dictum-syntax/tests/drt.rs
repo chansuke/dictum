@@ -30,7 +30,7 @@ use proptest::test_runner::{Config, TestCaseError, TestRunner};
 fn main() {
     let args = Arguments::from_args();
     let oracle = Oracle::locate();
-    let ignored = dictum_testkit::MILESTONE < 1 || oracle.is_err();
+    let ignored = oracle.is_err();
     let trial = |name: &str, strategy: fn() -> BoxedStrategy<String>| {
         let oracle = oracle.clone();
         Trial::test(name, move || agree(oracle?, strategy())).with_ignored_flag(ignored)

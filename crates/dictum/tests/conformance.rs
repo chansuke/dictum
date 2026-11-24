@@ -1,6 +1,6 @@
 //! End-to-end conformance: every case in `tests/conformance/*.toml`, one trial each.
 //!
-//! A case is checked at every stage `dictum_testkit::MILESTONE` reaches:
+//! A case is checked at every stage:
 //!
 //! - parse (M1): an E01xx case fails `dictum_syntax::parse` with that code first;
 //!   every other case parses.
@@ -10,9 +10,6 @@
 //! - eval (M3): through the public API only. `Rule::compile` fails with the
 //!   expected compile-time code, or succeeds and then `eval` gives the expected value
 //!   or runtime code, and `explain(ctx).into_result()` gives the same outcome.
-//!
-//! Cases beyond the reached stage are reported as ignored with the milestone they
-//! wait for, so `cargo test` output shows what is still pending.
 #![expect(clippy::panic, reason = "helpers outside #[test] functions: a failure there fails the test")]
 
 use dictum::{Ctx, DynMap, Dynamic, ErrorCode, Rule, Schema};
@@ -24,13 +21,12 @@ use libtest_mimic::{Arguments, Failed, Trial};
 fn main() {
     let args = Arguments::from_args();
     let cases = conformance::load(&conformance::dir()).unwrap_or_else(|e| panic!("loading cases: {e}"));
-    let reached = dictum_testkit::stage();
     let exprs: Vec<String> = cases.iter().map(|c| c.expr.clone()).collect();
     let mut trials: Vec<Trial> = cases
         .into_iter()
         .map(|case| {
-            let pending = reached == Stage::None || !has_feature(case.feature.as_deref());
-            Trial::test(case.id.clone(), move || run(&case, reached)).with_ignored_flag(pending)
+            let pending = !has_feature(case.feature.as_deref());
+            Trial::test(case.id.clone(), move || run(&case)).with_ignored_flag(pending)
         })
         .collect();
     trials.push(Trial::test("every builtin has a case", move || every_builtin_is_called(&exprs)));
@@ -62,7 +58,7 @@ fn every_builtin_is_called(exprs: &[String]) -> Result<(), Failed> {
     if missing.is_empty() { Ok(()) } else { Err(format!("no conformance case calls {missing:?}").into()) }
 }
 
-fn run(case: &Case, reached: Stage) -> Result<(), Failed> {
+fn run(case: &Case) -> Result<(), Failed> {
     let ctx = |msg: String| -> Failed {
         let deviation = case.deviation.as_deref().map(|d| format!("\n  deviation: {d}")).unwrap_or_default();
         format!("{msg}\n  expr: {}\n  expected: {:?}{deviation}", case.expr, case.expect).into()
@@ -79,9 +75,6 @@ fn run(case: &Case, reached: Stage) -> Result<(), Failed> {
         (Ok(_), Stage::Parse) => return Err(ctx("parsed, expected a syntax error".into())),
         (Ok(ast), _) => ast,
     };
-    if reached < Stage::Check {
-        return Ok(());
-    }
 
     // Check.
     let env = Env::<()>::new(<Facts as dictum::Dictum>::__desc(), Vec::new()).map_err(|e| ctx(format!("{e:?}")))?;
@@ -90,9 +83,6 @@ fn run(case: &Case, reached: Stage) -> Result<(), Failed> {
         (Err(diags), _) => return Err(ctx(format!("check failed: {:?}", codes(&diags.finish().0)))),
         (Ok(_), Stage::Check) => return Err(ctx("type-checked, expected a type error".into())),
         (Ok(ir), _) => ir.validate(&env).map_err(|e| ctx(format!("IR invariant broken: {e}")))?,
-    }
-    if reached < Stage::Eval {
-        return Ok(());
     }
 
     // Evaluate through the public API.

@@ -40,7 +40,6 @@ lint:
 deny:
     cargo deny check
 
-# Tests waiting for a milestone are reported as ignored; `just pending` lists them.
 # Unit, property, conformance (e2e), API e2e, trybuild and doc tests.
 test:
     cargo nextest run --workspace --all-features --no-fail-fast
@@ -54,13 +53,12 @@ hatches base="origin/main":
     scripts/test-check-escape-hatches.sh
     scripts/check-escape-hatches.sh {{base}}
 
-# What is still ignored, by milestone.
+# Tests that are ignored where they run (CI writes this into the job summary).
 pending:
     @echo "MILESTONE = $(just milestone)"
     @cargo nextest list --workspace --all-features --run-ignored only 2>/dev/null | wc -l | xargs echo "ignored tests:"
-    @grep -rhoE 'ignore = "pending M[0-9]+[^"]*"' crates | sort | uniq -c || echo "no pending milestones"
 
-# The last completed milestone (dictum_testkit::MILESTONE).
+# The last completed milestone (dictum_testkit::MILESTONE), for `just fuzz`.
 milestone:
     @grep -oE 'MILESTONE: u8 = [0-9]+' crates/dictum-testkit/src/lib.rs | grep -oE '[0-9]+$'
 
@@ -124,9 +122,8 @@ lean:
 oracle := justfile_directory() / "formal/lean/.lake/build/bin/dictum-oracle"
 
 # Differential tests against the Lean definitions: the parser against the reference
-# parser, the checker against `Dictum.infer`, evaluation against `Dictum.eval`. Tests
-# whose milestone is not reached are
-# ignored; with DICTUM_ORACLE set, a missing oracle fails instead of skipping.
+# parser, the checker against `Dictum.infer`, evaluation against `Dictum.eval`. With
+# DICTUM_ORACLE set, a missing oracle fails instead of skipping.
 drt: lean
     DICTUM_ORACLE={{oracle}} cargo test -p dictum-syntax --test drt
     DICTUM_ORACLE={{oracle}} cargo test -p dictum-check --test drt
