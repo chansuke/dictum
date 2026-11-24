@@ -24,8 +24,8 @@ use dictum_syntax::ast::{self, LogicOp, Pointer};
 use crate::EvalErrorKind;
 use crate::engine::SchemaCore;
 use crate::engine::analysis::CacheSlot;
-use crate::engine::frame::{Fault, Frame};
-use crate::engine::interp::{self, Res, at, internal};
+use crate::engine::frame::{self, Fault, Frame, Res, at, internal};
+use crate::engine::interp;
 use crate::engine::ops;
 use crate::engine::set::ConstSet;
 use crate::engine::value::{Repr, Seq, Value};
@@ -333,7 +333,7 @@ impl<'c> Compiler<'c> {
                     // A search charges what the scan it replaces would.
                     Some((set, len)) => Compiled::Bool(bool_node(move |f| {
                         let n = n(f)?;
-                        interp::steps(f, len, span)?;
+                        frame::steps(f, len, span)?;
                         Ok(set.contains(&n) != negated)
                     })),
                     None => {
@@ -374,7 +374,7 @@ impl<'c> Compiler<'c> {
             ExprKind::Array(xs) => {
                 let xs = self.values(xs)?;
                 Compiled::Value(value_node(move |f| {
-                    interp::alloc(f, xs.len(), span)?;
+                    frame::alloc(f, xs.len(), span)?;
                     let mut out = Vec::with_capacity(xs.len());
                     for x in &xs {
                         out.push(x(f)?);
@@ -388,7 +388,7 @@ impl<'c> Compiler<'c> {
                     .map(|(k, v)| Ok((self.value(k)?, k.span(), self.value(v)?)))
                     .collect::<Result<Vec<_>, Ice>>()?;
                 Compiled::Value(value_node(move |f| {
-                    interp::alloc(f, pairs.len(), span)?;
+                    frame::alloc(f, pairs.len(), span)?;
                     let mut out: Vec<(Arc<str>, Value<'_>)> = Vec::with_capacity(pairs.len());
                     for (k, k_span, v) in &pairs {
                         let key = k(f)?;

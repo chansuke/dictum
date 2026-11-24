@@ -17,8 +17,7 @@ use dictum_check::FieldId;
 use dictum_syntax::{MAX_DEPTH, Span};
 
 use crate::EvalErrorKind;
-use crate::engine::frame::{Fault, Frame};
-use crate::engine::interp::{Res, alloc, internal, steps};
+use crate::engine::frame::{Fault, Frame, Res, alloc, internal, steps};
 use crate::engine::value::{Repr, Str, Value};
 use crate::engine::{builtins, layout};
 

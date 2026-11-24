@@ -8,8 +8,8 @@ use dictum_syntax::Span;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
-use super::frame::{Fault, Frame};
-use super::interp::{Res, at, built, go_string, internal};
+use super::frame::{Fault, Frame, Res, at, built, internal};
+use super::interp::go_string;
 use super::layout;
 use super::value::{Repr, Value};
 use crate::EvalErrorKind;

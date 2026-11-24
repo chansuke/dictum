@@ -34,9 +34,7 @@ const KNOWN: &[(&str, &str)] = &[
     ("value", "dynamic"),
     // `Value` reads facts through `Object`, `SeqView` and `MapView`.
     ("value", "facts"),
-    // `Res`, `internal`, `alloc` and `steps` live in `interp`.
-    ("json", "interp"),
-    // `Res`, `at`, `built`, `go_string` and `internal` live in `interp`.
+    // `go_string` lives in `interp`.
     ("methods", "interp"),
 ];
 
