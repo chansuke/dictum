@@ -14,6 +14,7 @@
 pub mod conformance;
 pub mod fixture;
 pub mod generate;
+pub mod layers;
 pub mod oracle;
 pub mod syntax;
 
