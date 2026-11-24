@@ -33,7 +33,7 @@ def safe (ρ : REnv) : Expr → Bool
         match rangeOf ρ b with
         | some rb => decide (0 < rb.lo ∨ rb.hi < 0)
         | none => false
-      | .eq | .lt => true
+      | .eq | .lt | .le | .gt | .ge => true
   | .and a b => safe ρ a && safe ρ b
   | .or a b => safe ρ a && safe ρ b
   | .not a => safe ρ a
@@ -88,13 +88,14 @@ theorem safe_ok {env Γ ρ} (henv : EnvTy env Γ) (hρ : EnvRange env ρ) {e T} 
       obtain ⟨_, rfl⟩ := ok_bool henv hta hx
       obtain ⟨_, rfl⟩ := ok_bool henv htb hy
       exact ⟨_, rfl⟩
-  | @lt a b hta htb iha ihb =>
-    simp only [safe, Bool.and_eq_true] at hs
-    obtain ⟨x, hx⟩ := iha hs.1.1
-    obtain ⟨y, hy⟩ := ihb hs.1.2
-    obtain ⟨_, rfl, _⟩ := ok_int henv hta hx
-    obtain ⟨_, rfl, _⟩ := ok_int henv htb hy
-    simp [eval, hx, hy, applyBin]
+  | @cmp op a b hop hta htb iha ihb =>
+    rcases hop with rfl | rfl | rfl | rfl <;>
+    · simp only [safe, Bool.and_eq_true] at hs
+      obtain ⟨x, hx⟩ := iha hs.1.1
+      obtain ⟨y, hy⟩ := ihb hs.1.2
+      obtain ⟨_, rfl, _⟩ := ok_int henv hta hx
+      obtain ⟨_, rfl, _⟩ := ok_int henv htb hy
+      simp [eval, hx, hy, applyBin]
   | @and a b hta htb iha ihb =>
     simp only [safe, Bool.and_eq_true] at hs
     obtain ⟨x, hx⟩ := iha hs.1
@@ -126,6 +127,39 @@ theorem safe_ok {env Γ ρ} (henv : EnvTy env Γ) (hρ : EnvRange env ρ) {e T} 
 abbrev intLit (n : Int) : Expr := .lit (.int n)
 abbrev boolLit (b : Bool) : Expr := .lit (.bool b)
 
+/-- The value of `a op b` for every `a ∈ ra`, `b ∈ rb`, when the ranges decide the
+comparison: `a < b` is true when `ra` lies wholly below `rb`, false when wholly at
+or above it, and `<=`, `>`, `>=` likewise. -/
+def cmpDecide : BinOp → Range → Range → Option Bool
+  | .lt, a, b => if a.hi < b.lo then some true else if b.hi ≤ a.lo then some false else none
+  | .le, a, b => if a.hi ≤ b.lo then some true else if b.hi < a.lo then some false else none
+  | .gt, a, b => if b.hi < a.lo then some true else if a.hi ≤ b.lo then some false else none
+  | .ge, a, b => if b.hi ≤ a.lo then some true else if a.hi < b.lo then some false else none
+  | _, _, _ => none
+
+theorem cmpDecide_spec {op ra rb x y v} (hx : ra.Mem x) (hy : rb.Mem y) (h : cmpDecide op ra rb = some v) :
+    applyBin op (.int x) (.int y) = .ok (.bool v) := by
+  unfold Range.Mem at hx hy
+  cases op <;> simp only [cmpDecide, reduceCtorEq] at h
+  all_goals
+    split at h
+    · cases h; simp [applyBin]; omega
+    · split at h
+      · cases h; simp [applyBin]; omega
+      · cases h
+
+/-- A comparison of two operands that cannot fail, replaced by its value when the
+ranges decide it. The operands are dropped, so they must be `safe`. -/
+def cmpRule (ρ : REnv) (op : BinOp) (a b : Expr) : Expr :=
+  if safe ρ a ∧ safe ρ b then
+    match rangeOf ρ a, rangeOf ρ b with
+    | some ra, some rb =>
+      match cmpDecide op ra rb with
+      | some v => boolLit v
+      | none => .bin op a b
+    | _, _ => .bin op a b
+  else .bin op a b
+
 /-- One rewrite at the root, if a rule applies. -/
 def simp1 (ρ : REnv) (e : Expr) : Expr :=
   match e with
@@ -136,13 +170,10 @@ def simp1 (ρ : REnv) (e : Expr) : Expr :=
     else if a = intLit 1 then b
     else if (b = intLit 0 ∧ safe ρ a) ∨ (a = intLit 0 ∧ safe ρ b) then intLit 0
     else e
-  | .bin .lt a b =>
-    if safe ρ a ∧ safe ρ b then
-      match rangeOf ρ a, rangeOf ρ b with
-      | some ra, some rb =>
-        if ra.hi < rb.lo then boolLit true else if rb.hi ≤ ra.lo then boolLit false else e
-      | _, _ => e
-    else e
+  | .bin .lt a b => cmpRule ρ .lt a b
+  | .bin .le a b => cmpRule ρ .le a b
+  | .bin .gt a b => cmpRule ρ .gt a b
+  | .bin .ge a b => cmpRule ρ .ge a b
   | .bin .eq a b => if a = b ∧ safe ρ a then boolLit true else e
   | .not (.not a) => a
   | .and a b =>
@@ -174,6 +205,17 @@ def simp (ρ : REnv) : Expr → Expr
   | .not a => simp1 ρ (.not (simp ρ a))
   | .ite c t e => simp1 ρ (.ite (simp ρ c) (simp ρ t) (simp ρ e))
 
+theorem cmpRule_type {Γ ρ op a b} (ht : HasType Γ (.bin op a b) .bool) :
+    HasType Γ (cmpRule ρ op a b) .bool := by
+  unfold cmpRule
+  split
+  · split
+    · split
+      · exact .bool _
+      · exact ht
+    · exact ht
+  · exact ht
+
 theorem simp1_type {Γ ρ e T} (ht : HasType Γ e T) : HasType Γ (simp1 ρ e) T := by
   cases ht with
   | int h => exact .int h
@@ -195,16 +237,8 @@ theorem simp1_type {Γ ρ e T} (ht : HasType Γ e T) : HasType Γ (simp1 ρ e) T
     simp only [simp1]; split
     · exact .bool _
     · exact .eq hta htb
-  | lt hta htb =>
-    simp only [simp1]; split
-    · split
-      · split
-        · exact .bool _
-        · split
-          · exact .bool _
-          · exact .lt hta htb
-      · exact .lt hta htb
-    · exact .lt hta htb
+  | cmp hop hta htb =>
+    rcases hop with rfl | rfl | rfl | rfl <;> exact cmpRule_type (.cmp (by simp) hta htb)
   | and hta htb =>
     simp only [simp1]
     split; · exact htb
@@ -225,7 +259,7 @@ theorem simp1_type {Γ ρ e T} (ht : HasType Γ e T) : HasType Γ (simp1 ρ e) T
     | var h => exact .not (.var h)
     | bool b => exact .not (.bool b)
     | eq a b => exact .not (.eq a b)
-    | lt a b => exact .not (.lt a b)
+    | cmp hop a b => exact .not (.cmp hop a b)
     | and a b => exact .not (.and a b)
     | or a b => exact .not (.or a b)
     | ite c t e => exact .not (.ite c t e)
@@ -243,7 +277,7 @@ theorem simp_type {Γ ρ e T} (ht : HasType Γ e T) : HasType Γ (simp ρ e) T :
   | var h => exact .var h
   | arith hop _ _ iha ihb => exact simp1_type (.arith hop iha ihb)
   | eq _ _ iha ihb => exact simp1_type (.eq iha ihb)
-  | lt _ _ iha ihb => exact simp1_type (.lt iha ihb)
+  | cmp hop _ _ iha ihb => exact simp1_type (.cmp hop iha ihb)
   | and _ _ iha ihb => exact simp1_type (.and iha ihb)
   | or _ _ iha ihb => exact simp1_type (.or iha ihb)
   | not _ iha => exact simp1_type (.not iha)
@@ -252,6 +286,28 @@ theorem simp_type {Γ ρ e T} (ht : HasType Γ e T) : HasType Γ (simp ρ e) T :
 section
 variable {env : List Val} {Γ : List Ty} {ρ : REnv} (henv : EnvTy env Γ) (hρ : EnvRange env ρ)
 include henv hρ
+
+theorem cmpRule_sound {op a b}
+    (hta : HasType Γ a .int) (htb : HasType Γ b .int) :
+    eval env (cmpRule ρ op a b) = eval env (.bin op a b) := by
+  unfold cmpRule
+  split
+  · next hs =>
+    obtain ⟨sa, sb⟩ := hs
+    obtain ⟨x, hx⟩ := safe_ok henv hρ hta sa
+    obtain ⟨y, hy⟩ := safe_ok henv hρ htb sb
+    obtain ⟨x, rfl, _⟩ := ok_int henv hta hx
+    obtain ⟨y, rfl, _⟩ := ok_int henv htb hy
+    split
+    · next ra rb hra hrb =>
+      split
+      · next v hv =>
+        rw [show eval env (.bin op a b) = applyBin op (.int x) (.int y) by simp [eval, hx, hy],
+          cmpDecide_spec (rangeOf_sound hρ a hra hx) (rangeOf_sound hρ b hrb hy) hv]
+        rfl
+      · rfl
+    · rfl
+  · rfl
 
 theorem simp1_sound {e T} (ht : HasType Γ e T) : eval env (simp1 ρ e) = eval env e := by
   cases ht with
@@ -318,27 +374,9 @@ theorem simp1_sound {e T} (ht : HasType Γ e T) : eval env (simp1 ρ e) = eval e
       | int => obtain ⟨n, rfl, _⟩ := ok_int henv hta hv; simp [eval, hv, applyBin]
       | bool => obtain ⟨p, rfl⟩ := ok_bool henv hta hv; simp [eval, hv, applyBin]
     · rfl
-  | @lt a b hta htb =>
-    simp only [simp1]
-    split
-    · next hs =>
-      obtain ⟨sa, sb⟩ := hs
-      obtain ⟨x, hx⟩ := safe_ok henv hρ hta sa
-      obtain ⟨y, hy⟩ := safe_ok henv hρ htb sb
-      obtain ⟨x, rfl, _⟩ := ok_int henv hta hx
-      obtain ⟨y, rfl, _⟩ := ok_int henv htb hy
-      split
-      · next ra rb hra hrb =>
-        have mx := rangeOf_sound hρ a hra hx
-        have my := rangeOf_sound hρ b hrb hy
-        unfold Range.Mem at mx my
-        split
-        · next h => simp [eval, hx, hy, applyBin]; omega
-        · split
-          · next h => simp [eval, hx, hy, applyBin]; omega
-          · rfl
-      · rfl
-    · rfl
+  | @cmp op a b hop hta htb =>
+    have h := cmpRule_sound (op := op) henv hρ hta htb
+    rcases hop with rfl | rfl | rfl | rfl <;> exact h
   | @and a b hta htb =>
     simp only [simp1]
     split
@@ -417,9 +455,9 @@ theorem simp_sound {e T} (ht : HasType Γ e T) : eval env (simp ρ e) = eval env
     simp only [simp]
     rw [simp1_sound henv hρ (.eq (simp_type hta) (simp_type htb))]
     simp only [eval, iha, ihb]
-  | lt hta htb iha ihb =>
+  | cmp hop hta htb iha ihb =>
     simp only [simp]
-    rw [simp1_sound henv hρ (.lt (simp_type hta) (simp_type htb))]
+    rw [simp1_sound henv hρ (.cmp hop (simp_type hta) (simp_type htb))]
     simp only [eval, iha, ihb]
   | and hta htb iha ihb =>
     simp only [simp]
@@ -443,6 +481,9 @@ end
 /-- With `age: u8`: `age >= 0`-style tests decided by the range disappear, and
 `age * 0 + x` becomes `x`. -/
 example : simp [some ⟨0, 255⟩] (.bin .lt (.var 0) (intLit 256)) = boolLit true := by decide
+example : simp [some ⟨0, 255⟩] (.bin .ge (.var 0) (intLit 0)) = boolLit true := by decide
+example : simp [some ⟨0, 255⟩] (.bin .gt (.var 0) (intLit 255)) = boolLit false := by decide
+example : simp [some ⟨0, 255⟩] (.bin .le (.var 0) (intLit 254)) = .bin .le (.var 0) (intLit 254) := by decide
 example : simp [some ⟨0, 255⟩, none] (.bin .add (.bin .mul (.var 0) (intLit 0)) (.var 1)) = .var 1 := by decide
 /-- `7 % 0 * 0` is not `0`: the left operand fails, and the error must stay. -/
 example : simp [] (.bin .mul (.bin .mod (intLit 7) (intLit 0)) (intLit 0)) =

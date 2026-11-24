@@ -25,7 +25,8 @@ inductive HasType (Γ : List Ty) : Expr → Ty → Prop where
   | arith {op a b} : (op = .add ∨ op = .sub ∨ op = .mul ∨ op = .mod) →
       HasType Γ a .int → HasType Γ b .int → HasType Γ (.bin op a b) .int
   | eq {a b T} : HasType Γ a T → HasType Γ b T → HasType Γ (.bin .eq a b) .bool
-  | lt {a b} : HasType Γ a .int → HasType Γ b .int → HasType Γ (.bin .lt a b) .bool
+  | cmp {op a b} : (op = .lt ∨ op = .le ∨ op = .gt ∨ op = .ge) →
+      HasType Γ a .int → HasType Γ b .int → HasType Γ (.bin op a b) .bool
   | and {a b} : HasType Γ a .bool → HasType Γ b .bool → HasType Γ (.and a b) .bool
   | or {a b} : HasType Γ a .bool → HasType Γ b .bool → HasType Γ (.or a b) .bool
   | not {a} : HasType Γ a .bool → HasType Γ (.not a) .bool
@@ -111,7 +112,7 @@ theorem soundness {env Γ e T} (henv : EnvTy env Γ) (ht : HasType Γ e T) : Saf
           obtain ⟨_, rfl⟩ := ValTy.bool_inv iha
           obtain ⟨_, rfl⟩ := ValTy.bool_inv ihb
           exact ValTy.bool _
-  | lt _ _ iha ihb =>
+  | cmp hop _ _ iha ihb =>
     simp only [eval]
     revert iha ihb
     cases eval env _ with
@@ -123,7 +124,7 @@ theorem soundness {env Γ e T} (henv : EnvTy env Γ) (ht : HasType Γ e T) : Saf
         intro iha ihb
         obtain ⟨_, rfl, _⟩ := ValTy.int_inv iha
         obtain ⟨_, rfl, _⟩ := ValTy.int_inv ihb
-        exact ValTy.bool _
+        rcases hop with rfl | rfl | rfl | rfl <;> exact ValTy.bool _
   | @and a b _ _ iha ihb =>
     simp only [eval]
     revert iha ihb

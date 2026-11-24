@@ -13,7 +13,8 @@ It mirrors the Rust code as follows:
 * `Expr.var i`        ~ `ir` field read by `FieldId(i)` from `Frame::root`
 * `eval`              ~ the spec interpreter (`engine/interp.rs`): strict operators
                         evaluate left to right, `&&`/`||`/`?:` short-circuit
-* `applyBin`          ~ the primitives in `engine/ops.rs`
+* `applyBin`          ~ the primitives in `engine/ops.rs`; `lt`, `le`, `gt`, `ge` are
+                        a `Compare` with one operator (chains are left out)
 
 What is left out (strings, floats, collections, predicates, `let`, budgets) is
 covered by the property and differential tests instead. The `Oracle` executable
@@ -56,6 +57,9 @@ inductive BinOp where
   | mod
   | eq
   | lt
+  | le
+  | gt
+  | ge
   deriving DecidableEq, Repr
 
 inductive Expr where
@@ -82,6 +86,9 @@ def applyBin : BinOp → Val → Val → Except Err Val
   | .eq, .int a, .int b => .ok (.bool (decide (a = b)))
   | .eq, .bool a, .bool b => .ok (.bool (decide (a = b)))
   | .lt, .int a, .int b => .ok (.bool (decide (a < b)))
+  | .le, .int a, .int b => .ok (.bool (decide (a ≤ b)))
+  | .gt, .int a, .int b => .ok (.bool (decide (a > b)))
+  | .ge, .int a, .int b => .ok (.bool (decide (a ≥ b)))
   | _, _, _ => .error .internal
 
 /-- The reference semantics. `env` is the fact root's fields in `FieldId` order. -/

@@ -17,7 +17,8 @@ check <types> <expr>      ok int  |  ok bool  |  err                    (Dictum.
 `<types>` is the fact root's field types in order, space-separated: `int bool`.
 `<env>` is the fact root's fields in order, space-separated: `i:36 b:true`.
 `<expr>` is a core expression: `$0` (field 0), integers, `true`, `false`,
-`(+ a b)`, `(- a b)`, `(* a b)`, `(% a b)`, `(== a b)`, `(< a b)`, `(&& a b)`,
+`(+ a b)`, `(- a b)`, `(* a b)`, `(% a b)`, `(== a b)`, `(< a b)`, `(<= a b)`,
+`(> a b)`, `(>= a b)`, `(&& a b)`,
 `(|| a b)`, `(not a)`, `(? c t e)`. An unreadable query is answered `bad`.
 
 The Rust side lives in `dictum_testkit::oracle`.
@@ -62,6 +63,9 @@ def binOp : String → Option BinOp
   | "%" => some .mod
   | "==" => some .eq
   | "<" => some .lt
+  | "<=" => some .le
+  | ">" => some .gt
+  | ">=" => some .ge
   | _ => none
 
 partial def toExpr : SExp → Option Expr
