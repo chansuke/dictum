@@ -15,6 +15,17 @@
 //! checks the folder too.
 //! ```
 
+// Numeric casts decide what a rule computes, so each one in the engine is checked:
+// a lossy cast needs `#[expect(clippy::cast_.., reason = "..")]` saying why it is exact
+// or why Go loses the same bits. Outside the engine these lints stay off.
+#![warn(
+    clippy::cast_lossless,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
+
 pub(crate) mod analysis;
 pub(crate) mod builtins;
 pub(crate) mod compile;

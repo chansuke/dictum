@@ -464,7 +464,10 @@ impl<'c> Compiler<'c> {
             ExprKind::Convert { op, arg } => match op {
                 Conversion::IntToFloat => {
                     let a = self.int(arg)?;
-                    #[allow(clippy::cast_precision_loss)]
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "int to float rounds to nearest, as Go's float64(n)"
+                    )]
                     Compiled::Float(float_node(move |f| Ok(a(f)? as f64)))
                 }
                 // The same value, now of an optional or `any` type.
@@ -543,7 +546,6 @@ impl<'c> Compiler<'c> {
             }
             BinaryOp::Eq(EqKind::Float) | BinaryOp::Ne(EqKind::Float) => {
                 let (a, b, eq) = (self.float(lhs)?, self.float(rhs)?, matches!(op, BinaryOp::Eq(_)));
-                #[allow(clippy::float_cmp)]
                 Compiled::Bool(bool_node(move |f| {
                     let x = a(f)?;
                     Ok((x == b(f)?) == eq)

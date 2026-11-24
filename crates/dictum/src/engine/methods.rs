@@ -42,7 +42,10 @@ pub(super) fn call<'a>(method: Method, recv: &Value<'a>, args: &[Value<'a>], f: 
         let m = || arg(0).and_then(|v| v.as_duration().ok_or_else(|| internal("expected a duration", span)));
         return match method {
             // Go truncates toward zero, then adds the remainder's fraction.
-            #[allow(clippy::cast_precision_loss)]
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "Go converts the whole units and the remainder to float64 the same way"
+            )]
             Method::Hours | Method::Minutes | Method::Seconds => {
                 let unit = match method {
                     Method::Hours => HOUR,

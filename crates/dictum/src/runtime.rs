@@ -365,7 +365,6 @@ fn read(ty: &Type, v: &Dynamic, path: &str) -> Result<Fact, FactsError> {
         (Type::Bool, Dynamic::Bool(_)) | (Type::Int, Dynamic::Int(_)) | (Type::Float, Dynamic::Float(_)) => {
             value(v.clone())
         }
-        #[allow(clippy::cast_precision_loss)]
         (Type::Float, Dynamic::Int(n)) => value(Dynamic::Float(*n as f64)),
         (Type::String, Dynamic::String(_)) | (Type::Bytes, Dynamic::Bytes(_)) => value(v.clone()),
         (Type::Bytes, Dynamic::String(s)) => value(Dynamic::Bytes(s.as_bytes().to_vec())),
