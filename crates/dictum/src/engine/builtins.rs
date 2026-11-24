@@ -390,23 +390,6 @@ pub(crate) fn go_duration(d: jiff::SignedDuration, out: &mut String) {
     }
 }
 
-/// What Go shows of `t` in zone `z`: the civil time, the UTC offset in seconds, and
-/// the zone's abbreviation. A fixed offset that is not UTC has no abbreviation, as
-/// Go's `FixedZone("", offset)`, and is shown as the offset.
-pub(crate) fn zoned(t: jiff::Timestamp, z: &jiff::tz::TimeZone) -> (jiff::civil::DateTime, i32, Option<String>) {
-    let info = z.to_offset_info(t);
-    let offset = info.offset();
-    let name = z.iana_name().map(|_| String::from(info.abbreviation()));
-    (offset.to_datetime(t), offset.seconds(), name)
-}
-
-/// `-0700`, as Go writes an offset without a zone name.
-pub(crate) fn go_offset(seconds: i32, colon: bool, out: &mut String) {
-    let minutes = seconds.unsigned_abs() / 60;
-    out.push(if seconds < 0 { '-' } else { '+' });
-    let _ = write!(out, "{:02}{}{:02}", minutes / 60, if colon { ":" } else { "" }, minutes % 60);
-}
-
 /// Go's `time.Time.String`: `2026-01-01 09:00:00 +0900 JST`, with a fraction only
 /// when nonzero.
 pub(crate) fn go_time(t: jiff::Timestamp, z: &jiff::tz::TimeZone, out: &mut String) {
