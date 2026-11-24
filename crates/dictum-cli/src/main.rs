@@ -1,4 +1,5 @@
 //! `dictum eval`, `dictum repl` and `dictum schema infer`.
+#![expect(clippy::print_stdout, clippy::print_stderr, reason = "a command-line tool: its output is the result")]
 
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};

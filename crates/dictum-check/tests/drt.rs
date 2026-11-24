@@ -20,7 +20,7 @@ use dictum_check::ir::{Conversion, Expr, ExprKind};
 use dictum_check::{Env, Type};
 use dictum_testkit::Facts;
 use dictum_testkit::generate::{core_types, core_untyped};
-use dictum_testkit::oracle::{CoreTy, Oracle};
+use dictum_testkit::oracle::{self, CoreTy, Oracle};
 use libtest_mimic::{Arguments, Failed, Trial};
 use proptest::strategy::{Strategy, ValueTree};
 use proptest::test_runner::{Config, TestCaseError, TestRunner};
@@ -28,9 +28,6 @@ use proptest::test_runner::{Config, TestCaseError, TestRunner};
 fn main() {
     let args = Arguments::from_args();
     let oracle = Oracle::locate();
-    if let Err(why) = &oracle {
-        eprintln!("drt: ignored: {why}");
-    }
     let compared = oracle.clone();
     let generated = oracle.clone();
     let trials = vec![
@@ -52,8 +49,7 @@ fn unerased(e: &Expr) -> &Type {
 fn agree(path: PathBuf) -> Result<(), Failed> {
     let oracle = RefCell::new(Oracle::spawn(&path));
     let env = Env::<()>::new(<Facts as dictum::Dictum>::__desc(), Vec::new()).map_err(|e| format!("{e:?}"))?;
-    let cases = std::env::var("PROPTEST_CASES").ok().and_then(|n| n.parse().ok()).unwrap_or(4096);
-    let mut runner = TestRunner::new(Config { cases, failure_persistence: None, ..Config::default() });
+    let mut runner = TestRunner::new(Config { cases: oracle::cases(), failure_persistence: None, ..Config::default() });
     runner
         .run(&core_untyped(4), |(src, core)| {
             let ast = dictum_syntax::parse(&src).map_err(|_| TestCaseError::fail(format!("{src}: does not parse")))?;
