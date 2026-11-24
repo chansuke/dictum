@@ -21,7 +21,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 
 use dictum_testkit::generate::{operator_soup, operator_source};
-use dictum_testkit::oracle::Oracle;
+use dictum_testkit::oracle::{self, Oracle};
 use dictum_testkit::syntax::program;
 use libtest_mimic::{Arguments, Failed, Trial};
 use proptest::strategy::{BoxedStrategy, Strategy, ValueTree};
@@ -30,9 +30,6 @@ use proptest::test_runner::{Config, TestCaseError, TestRunner};
 fn main() {
     let args = Arguments::from_args();
     let oracle = Oracle::locate();
-    if let Err(why) = &oracle {
-        eprintln!("drt: ignored: {why}");
-    }
     let ignored = dictum_testkit::MILESTONE < 1 || oracle.is_err();
     let trial = |name: &str, strategy: fn() -> BoxedStrategy<String>| {
         let oracle = oracle.clone();
@@ -52,8 +49,7 @@ fn main() {
 
 fn agree(path: PathBuf, sources: BoxedStrategy<String>) -> Result<(), Failed> {
     let oracle = RefCell::new(Oracle::spawn(&path));
-    let cases = std::env::var("PROPTEST_CASES").ok().and_then(|n| n.parse().ok()).unwrap_or(4096);
-    let mut runner = TestRunner::new(Config { cases, failure_persistence: None, ..Config::default() });
+    let mut runner = TestRunner::new(Config { cases: oracle::cases(), failure_persistence: None, ..Config::default() });
     runner
         .run(&sources, |src| {
             let rust = dictum_syntax::parse(&src).map(|p| program(&p)).map_err(|d| {

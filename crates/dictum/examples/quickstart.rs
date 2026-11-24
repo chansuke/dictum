@@ -1,5 +1,6 @@
 //! The usage sketch from docs/architecture.md: a schema with functions, a single
 //! rule with explain, and a rule set. `just test` runs it.
+#![expect(clippy::print_stdout, clippy::print_stderr, reason = "an example shows its results")]
 
 use std::collections::BTreeMap;
 use std::fmt;

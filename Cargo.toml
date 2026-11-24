@@ -86,3 +86,10 @@ arithmetic_side_effects = "warn"
 # expect, panic and index without one (clippy.toml).
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
+# Debugging leftovers and stubs never reach main. Output goes through a return
+# value; only the CLI and examples print (each says so with `expect`).
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+print_stdout = "deny"
+print_stderr = "deny"

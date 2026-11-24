@@ -13,6 +13,14 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+/// How many generated inputs each differential test compares: `$PROPTEST_CASES`,
+/// else 4096. `.github/workflows/deep.yml` raises it.
+pub fn cases() -> u32 {
+    #[expect(clippy::disallowed_methods, reason = "the one place the differential tests read PROPTEST_CASES")]
+    let named = std::env::var("PROPTEST_CASES");
+    named.ok().and_then(|n| n.parse().ok()).unwrap_or(4096)
+}
+
 /// A running oracle. Queries are answered in order, one line each.
 pub struct Oracle {
     child: Child,
@@ -38,13 +46,30 @@ pub enum CoreResult {
 
 impl Oracle {
     /// Where the oracle is: `Ok(path)`, or `Err(reason)` if it is not available and
-    /// the tests that need it should be ignored. Panics if `$DICTUM_ORACLE` names a
-    /// file that does not exist.
+    /// the tests that need it should be ignored. The reason is also printed, since
+    /// an ignored test shows none. Panics if `$DICTUM_ORACLE` names a file that does
+    /// not exist.
     pub fn locate() -> Result<PathBuf, String> {
+        let found = Self::find();
+        if let Err(why) = &found {
+            #[expect(
+                clippy::print_stderr,
+                reason = "an ignored test shows no reason, so the differential tests print it here"
+            )]
+            {
+                eprintln!("differential tests ignored: {why}");
+            }
+        }
+        found
+    }
+
+    fn find() -> Result<PathBuf, String> {
         if cfg!(target_os = "wasi") {
             return Err("WASI cannot start the oracle process; `just drt` runs these on the host".into());
         }
-        if let Some(path) = std::env::var_os("DICTUM_ORACLE") {
+        #[expect(clippy::disallowed_methods, reason = "the one place DICTUM_ORACLE is read")]
+        let named = std::env::var_os("DICTUM_ORACLE");
+        if let Some(path) = named {
             let path = PathBuf::from(path);
             assert!(path.is_file(), "DICTUM_ORACLE={} does not exist; run `just oracle`", path.display());
             return Ok(path);

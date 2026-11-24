@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use dictum::{Ctx, Dynamic, EvalErrorKind, Rule, Schema};
 use dictum_testkit::generate::{Ty, core_env, core_expr};
-use dictum_testkit::oracle::{CoreResult, CoreVal, Oracle};
+use dictum_testkit::oracle::{self, CoreResult, CoreVal, Oracle};
 use dictum_testkit::{Facts, sample};
 use libtest_mimic::{Arguments, Failed, Trial};
 use proptest::strategy::{BoxedStrategy, Strategy, ValueTree};
@@ -30,9 +30,6 @@ use proptest::test_runner::{Config, TestCaseError, TestRunner};
 fn main() {
     let args = Arguments::from_args();
     let oracle = Oracle::locate();
-    if let Err(why) = &oracle {
-        eprintln!("drt_eval: ignored: {why}");
-    }
     let compared = oracle.clone();
     let generated = oracle.clone();
     let trials = vec![
@@ -55,8 +52,7 @@ fn agree(path: PathBuf) -> Result<(), Failed> {
     let schema = Schema::<Facts>::builder().build().map_err(|e| format!("{e:?}"))?;
     let facts = sample();
     let env = core_env(&facts);
-    let cases = std::env::var("PROPTEST_CASES").ok().and_then(|n| n.parse().ok()).unwrap_or(4096);
-    let mut runner = TestRunner::new(Config { cases, failure_persistence: None, ..Config::default() });
+    let mut runner = TestRunner::new(Config { cases: oracle::cases(), failure_persistence: None, ..Config::default() });
     runner
         .run(&rules(), |(_, (src, core))| {
             let rule = Rule::<Dynamic, Facts>::compile(&src, &schema)
