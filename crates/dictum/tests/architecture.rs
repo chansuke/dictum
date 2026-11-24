@@ -30,8 +30,6 @@ const LAYERS: &[&[&str]] = &[
 /// Uses that break the layers today. Each refactoring that removes one deletes it
 /// here; the test fails while a listed edge is still used and once it is not.
 const KNOWN: &[(&str, &str)] = &[
-    // `Value` converts to and from `Dynamic`.
-    ("value", "dynamic"),
     // `Value` reads facts through `Object`, `SeqView` and `MapView`.
     ("value", "facts"),
 ];

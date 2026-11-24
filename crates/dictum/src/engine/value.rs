@@ -10,11 +10,9 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::ControlFlow;
 
-use dictum_check::FieldId;
 use dictum_check::ir::Const;
 
 use crate::facts::{MapView, Object, SeqView};
-use crate::{DynMap, Dynamic};
 
 /// A value borrowing from facts for `'a`. Cheap to clone (scalars, borrows, `Arc`s).
 #[derive(Clone)]
@@ -404,40 +402,6 @@ impl<'a> Value<'a> {
                 }
             }
             _ => {}
-        }
-    }
-
-    /// A deep, owned copy. Structs become maps keyed by field name.
-    pub(crate) fn to_dynamic(&self) -> Dynamic {
-        match &self.0 {
-            Repr::Nil => Dynamic::Nil,
-            Repr::Bool(b) => Dynamic::Bool(*b),
-            Repr::Int(n) => Dynamic::Int(*n),
-            Repr::Float(x) => Dynamic::Float(*x),
-            #[cfg(feature = "decimal")]
-            Repr::Decimal(d) => Dynamic::Decimal(*d),
-            Repr::Str(s) => Dynamic::String(s.as_str().into()),
-            Repr::Bytes(b) => Dynamic::Bytes(b.as_slice().into()),
-            Repr::Time(t, z) => Dynamic::Time(t.to_zoned(z.clone())),
-            Repr::Duration(d) => Dynamic::Duration(*d),
-            Repr::Location(z) => Dynamic::Location(z.clone()),
-            Repr::Array(seq) => Dynamic::Array(seq.iter().map(|x| x.to_dynamic()).collect()),
-            Repr::Map(m) => {
-                let mut out = DynMap::new();
-                m.for_each(&mut |k, v| {
-                    out.insert(k, v.to_dynamic());
-                    ControlFlow::Continue(())
-                });
-                Dynamic::Map(out)
-            }
-            Repr::Object(o) => {
-                let mut out = DynMap::new();
-                for (i, f) in o.desc().fields().iter().enumerate() {
-                    let id = u16::try_from(i).map_or_else(|_| missing_field(), |i| o.field(FieldId::new(i)));
-                    out.insert(f.name(), id.to_dynamic());
-                }
-                Dynamic::Map(out)
-            }
         }
     }
 

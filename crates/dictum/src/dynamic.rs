@@ -4,9 +4,9 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ops::ControlFlow;
 
-use dictum_check::Type;
+use dictum_check::{FieldId, Type};
 
-use crate::engine::value::{Bytes, MapRef, Repr, Seq, Str, Value};
+use crate::engine::value::{Bytes, MapRef, Repr, Seq, Str, Value, missing_field};
 use crate::facts::{Field, MapView, SeqView};
 
 /// An owned value whose type is known only at run time.
@@ -43,6 +43,43 @@ pub enum Dynamic {
     Array(Vec<Dynamic>),
     /// `map` (and structs, keyed by field name)
     Map(DynMap),
+}
+
+impl Dynamic {
+    /// A deep, owned copy of an evaluated value. Structs become maps keyed by field
+    /// name.
+    pub(crate) fn copy_of(v: &Value<'_>) -> Dynamic {
+        match &v.0 {
+            Repr::Nil => Dynamic::Nil,
+            Repr::Bool(b) => Dynamic::Bool(*b),
+            Repr::Int(n) => Dynamic::Int(*n),
+            Repr::Float(x) => Dynamic::Float(*x),
+            #[cfg(feature = "decimal")]
+            Repr::Decimal(d) => Dynamic::Decimal(*d),
+            Repr::Str(s) => Dynamic::String(s.as_str().into()),
+            Repr::Bytes(b) => Dynamic::Bytes(b.as_slice().into()),
+            Repr::Time(t, z) => Dynamic::Time(t.to_zoned(z.clone())),
+            Repr::Duration(d) => Dynamic::Duration(*d),
+            Repr::Location(z) => Dynamic::Location(z.clone()),
+            Repr::Array(seq) => Dynamic::Array(seq.iter().map(|x| Dynamic::copy_of(&x)).collect()),
+            Repr::Map(m) => {
+                let mut out = DynMap::new();
+                m.for_each(&mut |k, v| {
+                    out.insert(k, Dynamic::copy_of(&v));
+                    ControlFlow::Continue(())
+                });
+                Dynamic::Map(out)
+            }
+            Repr::Object(o) => {
+                let mut out = DynMap::new();
+                for (i, f) in o.desc().fields().iter().enumerate() {
+                    let id = u16::try_from(i).map_or_else(|_| missing_field(), |i| o.field(FieldId::new(i)));
+                    out.insert(f.name(), Dynamic::copy_of(&id));
+                }
+                Dynamic::Map(out)
+            }
+        }
+    }
 }
 
 /// The value as a rule literal would write it: `"Ada"`, `[1, 2]`, `{gift: "yes"}`,
