@@ -15,7 +15,7 @@ fn invalid(what: &'static str, value: &str) -> EvalErrorKind {
 }
 
 /// `mean`: `0.0` of no numbers, as Go.
-#[allow(clippy::cast_precision_loss)]
+#[expect(clippy::cast_precision_loss, reason = "a slice length is far below 2^53, so the float is exact")]
 pub(crate) fn mean(xs: &[f64]) -> f64 {
     if xs.is_empty() { 0.0 } else { xs.iter().sum::<f64>() / xs.len() as f64 }
 }
@@ -65,7 +65,11 @@ pub(crate) fn bit(op: BitOp, x: i64, y: i64) -> Result<i64, EvalErrorKind> {
         BitOp::Not => !x,
         BitOp::Shl => x.checked_shl(shift()?).unwrap_or(0),
         BitOp::Shr => x.checked_shr(shift()?).unwrap_or(if x < 0 { -1 } else { 0 }),
-        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+        #[expect(
+            clippy::cast_sign_loss,
+            clippy::cast_possible_wrap,
+            reason = "Go's >>> reinterprets the bits as unsigned and back"
+        )]
         BitOp::Ushr => (x as u64).checked_shr(shift()?).unwrap_or(0) as i64,
     })
 }
@@ -246,7 +250,12 @@ pub(crate) fn parse_go_duration(s: &str) -> Result<jiff::SignedDuration, EvalErr
         let mut v = whole.checked_mul(unit).filter(|v| *v <= LIMIT).ok_or_else(bad)?;
         if frac > 0 {
             // As Go: the fraction goes through float64, truncated.
-            #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(
+                clippy::cast_precision_loss,
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "Go computes the fraction in float64 and truncates it the same way"
+            )]
             let part = (frac as f64 * (unit as f64 / scale)) as u64;
             v = v.checked_add(part).filter(|v| *v <= LIMIT).ok_or_else(bad)?;
         }

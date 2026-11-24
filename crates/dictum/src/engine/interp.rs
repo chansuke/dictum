@@ -155,7 +155,7 @@ pub(super) fn built(f: &mut Frame<'_>, s: String, span: Span) -> Res<'static> {
 pub(super) fn promote<'a>(v: Value<'a>, p: Promote, span: Span) -> Res<'a> {
     match p {
         Promote::None => Ok(v),
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_precision_loss, reason = "int to float rounds to nearest, as Go's float64(n)")]
         Promote::IntToFloat => Ok(Value::float(int(&v, span)? as f64)),
         #[cfg(feature = "decimal")]
         Promote::IntToDecimal => Ok(Value(Repr::Decimal(rust_decimal::Decimal::from(int(&v, span)?)))),
@@ -665,7 +665,6 @@ pub(super) fn equal(kind: EqKind, l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_
     Ok(match kind {
         EqKind::Bool => boolean(l, span)? == boolean(r, span)?,
         EqKind::Int => int(l, span)? == int(r, span)?,
-        #[allow(clippy::float_cmp)]
         EqKind::Float => float(l, span)? == float(r, span)?,
         #[cfg(feature = "decimal")]
         EqKind::Decimal => decimal(l, span)? == decimal(r, span)?,
@@ -1195,9 +1194,11 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 Repr::Int(n) => Ok(Value::int(*n)),
                 Repr::Float(x) => {
                     // Truncation toward zero, as Go's int(x); out of range is an error.
-                    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
                     let fits = x.is_finite() && *x > -9_223_372_036_854_777_856.0 && *x < 9_223_372_036_854_775_808.0;
-                    #[allow(clippy::cast_possible_truncation)]
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "used only when `fits` holds, so the cast truncates toward zero as Go's int(x)"
+                    )]
                     let n = *x as i64;
                     if fits { Ok(Value::int(n)) } else { Err(overflow()) }
                 }
@@ -1208,7 +1209,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         Intrinsic::ToFloat(_) => {
             let v = arg(0)?;
             match &v.0 {
-                #[allow(clippy::cast_precision_loss)]
+                #[expect(clippy::cast_precision_loss, reason = "int to float rounds to nearest, as Go's float64(n)")]
                 Repr::Int(n) => Ok(Value::float(*n as f64)),
                 Repr::Float(x) => Ok(Value::float(*x)),
                 Repr::Str(t) => t.as_str().parse::<f64>().map(Value::float).map_err(|_| invalid("float", t.as_str())),
@@ -1400,7 +1401,7 @@ fn flatten<'a>(xs: &Seq<'a>, out: &mut Vec<Value<'a>>, f: &mut Frame<'a>, span: 
 /// An int or float as a float, for `mean` and `median`.
 fn number(x: &Value<'_>, span: Span) -> Result<f64, Fault> {
     match x.0 {
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_precision_loss, reason = "int to float rounds to nearest, as Go's float64(n)")]
         Repr::Int(n) => Ok(n as f64),
         Repr::Float(x) => Ok(x),
         _ => Err(mismatch("a number", x, span)),
@@ -1415,9 +1416,9 @@ fn sum<'a>(xs: &Seq<'a>, span: Span) -> Res<'a> {
             (Repr::Int(a), Repr::Int(b)) => {
                 Value::int(a.checked_add(*b).ok_or_else(|| Frame::fault(EvalErrorKind::Overflow, span))?)
             }
-            #[allow(clippy::cast_precision_loss)]
+            #[expect(clippy::cast_precision_loss, reason = "int to float rounds to nearest, as Go's float64(n)")]
             (Repr::Int(a), Repr::Float(b)) => Value::float(*a as f64 + b),
-            #[allow(clippy::cast_precision_loss)]
+            #[expect(clippy::cast_precision_loss, reason = "int to float rounds to nearest, as Go's float64(n)")]
             (Repr::Float(a), Repr::Int(b)) => Value::float(a + *b as f64),
             (Repr::Float(a), Repr::Float(b)) => Value::float(a + b),
             _ => return Err(mismatch("a number", &x, span)),

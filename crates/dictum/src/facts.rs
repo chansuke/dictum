@@ -126,7 +126,6 @@ scalar_fields! {
 macro_rules! int_fields {
     ($($rust:ty),* $(,)?) => {$(
         impl Field for $rust {
-            #[allow(clippy::cast_lossless)]
             const RANGE: Option<(i64, i64)> = Some((<$rust>::MIN as i64, <$rust>::MAX as i64));
             fn ty() -> Type {
                 Type::Int
