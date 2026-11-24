@@ -2,8 +2,11 @@
 
 What "done" means for a change, and which check gives the evidence. Every check is a `just` recipe; CI runs the same recipes (`.github/workflows`).
 
+`scripts/verify` is the entry point. It runs `just verify`, `just hatches`, and the recipes the changed files need (its `TRIGGERS` table: `drt` for the engine, checker, parser or Lean, `tla` for sharing and budgets, `nostd msrv deny` for library code and manifests, and so on), keeps each log under `target/verify/logs/`, and writes `target/verify/summary.md`: each step's result, the tests that were skipped and why, and what else the changed files need. `scripts/verify full` runs `just ci`; `scripts/verify deep` runs the property and differential tests with 100k cases.
+
 | when | command | time |
 | --- | --- | --- |
+| before calling a change done | `scripts/verify`, then read `target/verify/summary.md` | 2-5 min |
 | before every commit | `just verify` (formatting, clippy, rustdoc, typos, actionlint, all tests) | ~1 min |
 | every PR | `just ci` (adds cargo-deny, the conformance cases against Go, the tests on WASM, MSRV, no_std, bench and fuzz builds, Lean, the differential tests against Lean, TLA+) | ~1 min locally, parallel jobs in CI |
 | nightly | `.github/workflows/deep.yml`: 10 min of fuzzing per target, property and differential tests with 100k cases | |
