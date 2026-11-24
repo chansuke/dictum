@@ -70,7 +70,7 @@ The Lean fragment (`formal/lean/Dictum/Core.lean`) has checked 64-bit integers, 
 
 ### Optimizations, and the theorem that allows each
 
-The engine may only apply an optimization that has a theorem here, under the same side conditions. Constant folding is `engine/fold.rs`; the interval analysis, the simplifications and the reordering are `engine/optimize.rs`, which names the Lean definition each function follows. They touch `int` and `bool` only, decide `<` only, and treat a field read at any depth as the fragment's `var`. Each theorem says the optimized rule gives the same result as the original on every input, errors included. A new optimization is proved first, then implemented, and the differential tests compare the two.
+The engine may only apply an optimization that has a theorem here, under the same side conditions. Constant folding is `engine/fold.rs`; the interval analysis, the simplifications and the reordering are `engine/optimize.rs`, which names the Lean definition each function follows. They touch `int` and `bool` only, decide a comparison only when it has one operator (`<`, `<=`, `>`, `>=`; not a chain), and treat a field read at any depth as the fragment's `var`. Each theorem says the optimized rule gives the same result as the original on every input, errors included. A new optimization is proved first, then implemented, and the differential tests compare the two.
 
 | optimization | condition | theorem |
 | --- | --- | --- |
