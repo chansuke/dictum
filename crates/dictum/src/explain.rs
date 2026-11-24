@@ -106,71 +106,10 @@ fn lines_of(node: &ExplainNode, source: &str, lead: String, rest: String, out: &
 
 fn status_text(status: &NodeStatus) -> String {
     match status {
-        NodeStatus::Value(v) => {
-            let mut s = String::new();
-            write_value(v, &mut s);
-            s
-        }
+        NodeStatus::Value(v) => alloc::format!("{v}"),
         NodeStatus::Skipped => "skipped".into(),
         NodeStatus::Failed(code) => alloc::format!("failed {}", code.as_str()),
         NodeStatus::Elided => "(too large to show)".into(),
-    }
-}
-
-/// A value as a rule literal would write it.
-pub(crate) fn write_value(v: &Dynamic, out: &mut String) {
-    use core::fmt::Write;
-    match v {
-        Dynamic::Nil => out.push_str("nil"),
-        Dynamic::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
-        Dynamic::Int(n) => {
-            let _ = write!(out, "{n}");
-        }
-        Dynamic::Float(x) => crate::engine::builtins::go_float(*x, out),
-        #[cfg(feature = "decimal")]
-        Dynamic::Decimal(d) => {
-            let _ = write!(out, "{d}");
-        }
-        Dynamic::String(s) => {
-            let _ = write!(out, "{s:?}");
-        }
-        Dynamic::Bytes(b) => {
-            let _ = write!(out, "{b:?}");
-        }
-        Dynamic::Time(t) if t.time_zone() == &jiff::tz::TimeZone::UTC => {
-            let _ = write!(out, "{}", t.timestamp());
-        }
-        Dynamic::Time(t) => {
-            let _ = write!(out, "{t}");
-        }
-        Dynamic::Location(z) => out.push_str(crate::engine::builtins::location_name(z)),
-        Dynamic::Duration(d) => crate::engine::builtins::go_duration(*d, out),
-        Dynamic::Array(xs) => {
-            out.push('[');
-            for (i, x) in xs.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(", ");
-                }
-                write_value(x, out);
-            }
-            out.push(']');
-        }
-        Dynamic::Map(m) => {
-            out.push('{');
-            for (i, (k, x)) in m.iter().enumerate() {
-                if i > 0 {
-                    out.push_str(", ");
-                }
-                // A key a rule could not write bare is quoted, as in a map literal.
-                if dictum_syntax::is_identifier(k) {
-                    let _ = write!(out, "{k}: ");
-                } else {
-                    let _ = write!(out, "{k:?}: ");
-                }
-                write_value(x, out);
-            }
-            out.push('}');
-        }
     }
 }
 

@@ -51,8 +51,65 @@ pub enum Dynamic {
 impl core::fmt::Display for Dynamic {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut out = String::new();
-        crate::explain::write_value(self, &mut out);
+        write_value(self, &mut out);
         f.write_str(&out)
+    }
+}
+
+/// A value as a rule literal would write it.
+fn write_value(v: &Dynamic, out: &mut String) {
+    use core::fmt::Write;
+    match v {
+        Dynamic::Nil => out.push_str("nil"),
+        Dynamic::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Dynamic::Int(n) => {
+            let _ = write!(out, "{n}");
+        }
+        Dynamic::Float(x) => crate::engine::builtins::go_float(*x, out),
+        #[cfg(feature = "decimal")]
+        Dynamic::Decimal(d) => {
+            let _ = write!(out, "{d}");
+        }
+        Dynamic::String(s) => {
+            let _ = write!(out, "{s:?}");
+        }
+        Dynamic::Bytes(b) => {
+            let _ = write!(out, "{b:?}");
+        }
+        Dynamic::Time(t) if t.time_zone() == &jiff::tz::TimeZone::UTC => {
+            let _ = write!(out, "{}", t.timestamp());
+        }
+        Dynamic::Time(t) => {
+            let _ = write!(out, "{t}");
+        }
+        Dynamic::Location(z) => out.push_str(crate::engine::builtins::location_name(z)),
+        Dynamic::Duration(d) => crate::engine::builtins::go_duration(*d, out),
+        Dynamic::Array(xs) => {
+            out.push('[');
+            for (i, x) in xs.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write_value(x, out);
+            }
+            out.push(']');
+        }
+        Dynamic::Map(m) => {
+            out.push('{');
+            for (i, (k, x)) in m.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                // A key a rule could not write bare is quoted, as in a map literal.
+                if dictum_syntax::is_identifier(k) {
+                    let _ = write!(out, "{k}: ");
+                } else {
+                    let _ = write!(out, "{k:?}: ");
+                }
+                write_value(x, out);
+            }
+            out.push('}');
+        }
     }
 }
 

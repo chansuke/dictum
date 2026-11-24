@@ -10,10 +10,11 @@ use dictum_testkit::layers::Layers;
 const LAYERS: &[&[&str]] = &[
     &["value"],
     &["error", "facts", "func", "set"],
-    &["ctx", "dynamic", "ops"],
-    &["layout", "output"],
+    &["ctx", "ops"],
+    &["layout"],
     &["builtins"],
-    &["explain", "frame"],
+    &["dynamic"],
+    &["explain", "frame", "output"],
     &["trace"],
     &["engine"],
     &["json", "methods"],
@@ -28,8 +29,16 @@ const LAYERS: &[&[&str]] = &[
 
 /// Uses that break the layers today. Each refactoring that removes one deletes it
 /// here; the test fails while a listed edge is still used and once it is not.
-const KNOWN: &[(&str, &str)] =
-    &[("value", "dynamic"), ("value", "facts"), ("dynamic", "explain"), ("json", "interp"), ("methods", "interp")];
+const KNOWN: &[(&str, &str)] = &[
+    // `Value` converts to and from `Dynamic`.
+    ("value", "dynamic"),
+    // `Value` reads facts through `Object`, `SeqView` and `MapView`.
+    ("value", "facts"),
+    // `Res`, `internal`, `alloc` and `steps` live in `interp`.
+    ("json", "interp"),
+    // `Res`, `at`, `built`, `go_string` and `internal` live in `interp`.
+    ("methods", "interp"),
+];
 
 #[test]
 fn modules_use_only_lower_layers() {
