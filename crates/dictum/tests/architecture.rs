@@ -15,7 +15,7 @@ const LAYERS: &[&[&str]] = &[
     &["builtins"],
     &["dynamic"],
     &["explain", "frame", "output"],
-    &["trace"],
+    &["sprint", "trace"],
     &["engine"],
     &["json", "methods"],
     &["interp"],
@@ -34,8 +34,6 @@ const KNOWN: &[(&str, &str)] = &[
     ("value", "dynamic"),
     // `Value` reads facts through `Object`, `SeqView` and `MapView`.
     ("value", "facts"),
-    // `go_string` lives in `interp`.
-    ("methods", "interp"),
 ];
 
 #[test]
