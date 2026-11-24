@@ -54,6 +54,11 @@ expr = 'upper("abc")'
 expect = "ABC"
 
 [[case]]
+name = "lower"
+expr = 'lower("AbC")'
+expect = "abc"
+
+[[case]]
 name = "trim"
 expr = 'trim("  x ")'
 expect = "x"
@@ -72,6 +77,16 @@ expect = "bbb"
 name = "hasPrefix"
 expr = 'hasPrefix("abc", "ab")'
 expect = true
+
+[[case]]
+name = "hasSuffix"
+expr = 'hasSuffix("abc", "bc")'
+expect = true
+
+[[case]]
+name = "hasSuffix is false for a prefix"
+expr = 'hasSuffix("abc", "ab")'
+expect = false
 
 [[case]]
 name = "contains operator"
