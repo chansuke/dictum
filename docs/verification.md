@@ -123,5 +123,5 @@ Every milestone (M1-M6) is done: `dictum_testkit::MILESTONE` is 6, and no test w
 - If a check still fails after three attempts to fix the code, stop and ask.
 - A seeded mutant (`*_mutant.cfg`) must keep failing, by the invariant it names. If a model change makes a mutant pass, the model has stopped checking that property.
 - A differential test disagreement is a bug in the Rust code or in the Lean definition. Find out which before changing either, and say which in the commit.
-- Changes to checks (`.github/`, `justfile`, `formal/`, `tests/conformance/`, test files, `dictum-testkit`) need code-owner review (`.github/CODEOWNERS`).
+- Changes to checks (`.github/`, `justfile`, `scripts/`, lint and dependency configuration, `formal/`, `tests/conformance/`, test files, `dictum-testkit`, `fuzz/`, `AGENTS.md`) need code-owner review (`.github/CODEOWNERS`).
 - Every conformance case whose expected result differs from Go's says why in `deviation`.

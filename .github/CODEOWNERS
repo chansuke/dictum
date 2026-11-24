@@ -7,3 +7,12 @@
 /tests/conformance/             @chansuke
 /crates/dictum-testkit/         @chansuke
 /crates/dictum/tests/           @chansuke
+/scripts/                       @chansuke
+/clippy.toml                    @chansuke
+/deny.toml                      @chansuke
+/Cargo.toml                     @chansuke
+/rust-toolchain.toml            @chansuke
+/crates/*/tests/                @chansuke
+/fuzz/                          @chansuke
+/AGENTS.md                      @chansuke
+/CLAUDE.md                      @chansuke
