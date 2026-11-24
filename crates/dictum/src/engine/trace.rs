@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 use dictum_check::ir::{self, ExprKind, NodeId};
 use dictum_syntax::ErrorCode;
 
+use crate::Dynamic;
 use crate::engine::value::Value;
 use crate::explain::{ExplainNode, NodeStatus};
 
@@ -63,7 +64,7 @@ impl<'a> Trace<'a> {
             None => NodeStatus::Skipped,
             Some(Recorded::Failed(code)) => NodeStatus::Failed(*code),
             Some(Recorded::Value(v)) if size(v) > MAX_REPORTED_ELEMENTS => NodeStatus::Elided,
-            Some(Recorded::Value(v)) => NodeStatus::Value(v.to_dynamic()),
+            Some(Recorded::Value(v)) => NodeStatus::Value(Dynamic::copy_of(v)),
         };
         let element = self.elements.get(id).copied().flatten();
         let children = match shown.kind() {

@@ -154,6 +154,6 @@ impl Output for Dynamic {
     }
     fn from_value(v: Value<'_>) -> Option<Self> {
         // Deep copy; structs become `Dynamic::Map` keyed by field name.
-        Some(v.to_dynamic())
+        Some(Dynamic::copy_of(&v))
     }
 }
