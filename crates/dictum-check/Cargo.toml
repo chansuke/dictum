@@ -22,6 +22,9 @@ dictum = { path = "../dictum" }
 dictum-testkit.workspace = true
 libtest-mimic.workspace = true
 proptest.workspace = true
+# tests/exhaustive.rs reads the workspace's source; line numbers need span-locations.
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+syn = { workspace = true, features = ["full", "visit"] }
 
 # Differential test against the Lean type checker (formal/lean/Dictum/Check.lean).
 [[test]]

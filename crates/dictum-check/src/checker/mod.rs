@@ -843,21 +843,17 @@ impl<'e, P> Checker<'e, P> {
             self.arity_error(callee_span, b.name(), (min, max), args.len());
             return None;
         }
-        if b.predicate_arg().is_some() {
-            return self.predicate(span, b, args, lets);
-        }
+        let any_type = match typing(b) {
+            Typing::Predicate(op) => return self.predicate(span, op, args, lets),
+            Typing::AnyType(op) => Some(op),
+            Typing::Overloaded => None,
+        };
         let args = self.all(args, lets)?;
         // `ceil`, `floor` and `round` of an int: the int as a float, as Go does.
         let args: Vec<ir::Expr> = if matches!(b, Builtin::Ceil | Builtin::Floor | Builtin::Round) {
             args.into_iter().map(|a| self.promote_int(a)).collect()
         } else {
             args
-        };
-        // Defined on every type, options and `any` included.
-        let any_type = match b {
-            Builtin::Type => Some(Intrinsic::TypeName),
-            Builtin::ToJson => Some(Intrinsic::ToJson),
-            _ => None,
         };
         if let Some(op) = any_type {
             return Some(self.mk(span, Type::String, ExprKind::Intrinsic { op, args }));
@@ -982,7 +978,7 @@ impl<'e, P> Checker<'e, P> {
     }
 
     /// `all(xs, p)` and the other predicate builtins: `#` is an element of `xs`.
-    fn predicate(&mut self, span: Span, b: Builtin, args: &[ast::Expr<'_>], lets: &LetScope<'_>) -> Inferred {
+    fn predicate(&mut self, span: Span, op: PredicateOp, args: &[ast::Expr<'_>], lets: &LetScope<'_>) -> Inferred {
         let [seq, rest @ ..] = args else { return None };
         let seq = self.expr(seq, lets)?;
         let elem = match seq.ty() {
@@ -992,23 +988,6 @@ impl<'e, P> Checker<'e, P> {
                 self.error(ErrorCode::TypeMismatch, seq.span(), vec![name_arg("an array"), ty_arg(other)]);
                 return None;
             }
-        };
-        let op = match b {
-            Builtin::All => PredicateOp::All,
-            Builtin::Any => PredicateOp::Any,
-            Builtin::None => PredicateOp::None,
-            Builtin::One => PredicateOp::One,
-            Builtin::Filter => PredicateOp::Filter,
-            Builtin::Map => PredicateOp::Map,
-            Builtin::Count => PredicateOp::Count,
-            Builtin::Find => PredicateOp::Find,
-            Builtin::FindLast => PredicateOp::FindLast,
-            Builtin::FindLastIndex => PredicateOp::FindLastIndex,
-            Builtin::GroupBy => PredicateOp::GroupBy,
-            // The key's ordering is set once the body is typed.
-            Builtin::SortBy => PredicateOp::SortBy(CompareKind::Dyn),
-            Builtin::Reduce => PredicateOp::Reduce,
-            _ => PredicateOp::FindIndex,
         };
         // The third argument is outside the body's scope: `#` there is the enclosing
         // predicate's.
@@ -1098,5 +1077,115 @@ impl<'e, P> Checker<'e, P> {
         let args: Option<Vec<ir::Expr>> =
             args.into_iter().zip(sig.params.iter()).map(|(a, p)| self.assign(a, p)).collect();
         Some(self.mk(span, sig.ret.clone(), ExprKind::Call { func, args: args? }))
+    }
+}
+
+/// How the checker types a builtin's call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Typing {
+    /// Its argument at [`Builtin::predicate_arg`] is a predicate over the elements.
+    Predicate(PredicateOp),
+    /// Defined on every type, options and `any` included.
+    AnyType(Intrinsic),
+    /// Looked up by argument types in [`resolve::builtin`].
+    Overloaded,
+}
+
+/// Every builtin is listed, so a new one fails the build here until it is typed.
+const fn typing(b: Builtin) -> Typing {
+    match b {
+        Builtin::All => Typing::Predicate(PredicateOp::All),
+        Builtin::Any => Typing::Predicate(PredicateOp::Any),
+        Builtin::None => Typing::Predicate(PredicateOp::None),
+        Builtin::One => Typing::Predicate(PredicateOp::One),
+        Builtin::Filter => Typing::Predicate(PredicateOp::Filter),
+        Builtin::Map => Typing::Predicate(PredicateOp::Map),
+        Builtin::Count => Typing::Predicate(PredicateOp::Count),
+        Builtin::Find => Typing::Predicate(PredicateOp::Find),
+        Builtin::FindIndex => Typing::Predicate(PredicateOp::FindIndex),
+        Builtin::FindLast => Typing::Predicate(PredicateOp::FindLast),
+        Builtin::FindLastIndex => Typing::Predicate(PredicateOp::FindLastIndex),
+        Builtin::GroupBy => Typing::Predicate(PredicateOp::GroupBy),
+        // The key's ordering is set once the body is typed.
+        Builtin::SortBy => Typing::Predicate(PredicateOp::SortBy(CompareKind::Dyn)),
+        Builtin::Reduce => Typing::Predicate(PredicateOp::Reduce),
+        Builtin::Type => Typing::AnyType(Intrinsic::TypeName),
+        Builtin::ToJson => Typing::AnyType(Intrinsic::ToJson),
+        Builtin::Trim
+        | Builtin::TrimPrefix
+        | Builtin::TrimSuffix
+        | Builtin::Upper
+        | Builtin::Lower
+        | Builtin::Split
+        | Builtin::SplitAfter
+        | Builtin::Replace
+        | Builtin::Repeat
+        | Builtin::HasPrefix
+        | Builtin::HasSuffix
+        | Builtin::IndexOf
+        | Builtin::LastIndexOf
+        | Builtin::Max
+        | Builtin::Min
+        | Builtin::Abs
+        | Builtin::Ceil
+        | Builtin::Floor
+        | Builtin::Round
+        | Builtin::Mean
+        | Builtin::Median
+        | Builtin::BitAnd
+        | Builtin::BitOr
+        | Builtin::BitXor
+        | Builtin::BitNand
+        | Builtin::BitNot
+        | Builtin::BitShl
+        | Builtin::BitShr
+        | Builtin::BitUshr
+        | Builtin::First
+        | Builtin::Last
+        | Builtin::Sum
+        | Builtin::Len
+        | Builtin::Join
+        | Builtin::Concat
+        | Builtin::Flatten
+        | Builtin::Uniq
+        | Builtin::Take
+        | Builtin::Reverse
+        | Builtin::Sort
+        | Builtin::Keys
+        | Builtin::Values
+        | Builtin::ToPairs
+        | Builtin::FromPairs
+        | Builtin::Int
+        | Builtin::Float
+        | Builtin::String
+        | Builtin::Decimal
+        | Builtin::FromJson
+        | Builtin::ToBase64
+        | Builtin::FromBase64
+        | Builtin::Now
+        | Builtin::Duration
+        | Builtin::Date
+        | Builtin::Timezone
+        | Builtin::Get => Typing::Overloaded,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Typing, typing};
+    use dictum_syntax::Builtin;
+
+    /// The parser reads a predicate exactly where the checker types one.
+    #[test]
+    fn predicate_builtins_agree_with_the_parser() {
+        for &b in Builtin::ALL {
+            let typed = matches!(typing(b), Typing::Predicate(_));
+            assert_eq!(
+                typed,
+                b.predicate_arg().is_some(),
+                "{}: Builtin::predicate_arg and checker::typing disagree",
+                b.name()
+            );
+        }
     }
 }

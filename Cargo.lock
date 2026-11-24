@@ -336,8 +336,10 @@ dependencies = [
  "dictum-testkit",
  "jiff",
  "libtest-mimic",
+ "proc-macro2",
  "proptest",
  "rust_decimal",
+ "syn 2.0.119",
 ]
 
 [[package]]
