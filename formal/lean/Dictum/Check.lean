@@ -18,7 +18,7 @@ namespace Dictum
 
 def binTy : BinOp → Ty → Ty → Option Ty
   | .add, .int, .int | .sub, .int, .int | .mul, .int, .int | .mod, .int, .int => some .int
-  | .lt, .int, .int => some .bool
+  | .lt, .int, .int | .le, .int, .int | .gt, .int, .int | .ge, .int, .int => some .bool
   | .eq, a, b => if a = b then some .bool else none
   | _, _, _ => none
 
@@ -47,9 +47,9 @@ theorem binTy_sound {Γ op a b ta tb T} (ha : HasType Γ a ta) (hb : HasType Γ 
     (h : binTy op ta tb = some T) : HasType Γ (.bin op a b) T := by
   cases op <;> cases ta <;> cases tb <;> simp [binTy] at h <;> subst h
   all_goals first
-    | exact .arith (by simp) ha hb
-    | exact .lt ha hb
     | exact .eq ha hb
+    | (apply HasType.arith _ ha hb; decide)
+    | (apply HasType.cmp _ ha hb; decide)
 
 theorem infer_sound {Γ} : ∀ {e T}, infer Γ e = some T → HasType Γ e T := by
   intro e
@@ -106,7 +106,8 @@ theorem infer_complete {Γ e T} (h : HasType Γ e T) : infer Γ e = some T := by
   | arith hop _ _ iha ihb =>
     rcases hop with rfl | rfl | rfl | rfl <;> simp [infer, iha, ihb, binTy]
   | eq _ _ iha ihb => simp [infer, iha, ihb, binTy]
-  | lt _ _ iha ihb => simp [infer, iha, ihb, binTy]
+  | cmp hop _ _ iha ihb =>
+    rcases hop with rfl | rfl | rfl | rfl <;> simp [infer, iha, ihb, binTy]
   | and _ _ iha ihb => simp [infer, iha, ihb]
   | or _ _ iha ihb => simp [infer, iha, ihb]
   | not _ iha => simp [infer, iha]

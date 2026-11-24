@@ -251,7 +251,7 @@ theorem rangeOf_sound {env ρ} (hρ : EnvRange env ρ) :
                   simp only [Except.ok.injEq, Val.int.injEq] at he
                   subst he
                   exact hm.2.2.2 rfl hy0
-              | eq | lt => simp [opRange] at hr0
+              | eq | lt | le | gt | ge => simp [opRange] at hr0
     · cases hr
   | and a b _ _ => intro r n hr _; simp [rangeOf] at hr
   | or a b _ _ => intro r n hr _; simp [rangeOf] at hr
