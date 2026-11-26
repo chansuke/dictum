@@ -31,6 +31,11 @@ impl<F> Clone for Schema<F> {
 
 impl<F: Dictum<Static = F>> Schema<F> {
     /// Start a schema whose variables are `F`'s fields.
+    ///
+    /// For a schema described at run time (`runtime::Facts`), use `Schema::runtime`
+    /// instead; `Schema::<runtime::Facts>::builder()` uses an empty root descriptor
+    /// that rejects facts read by any `runtime::Root` with
+    /// [`EvalErrorKind::SchemaMismatch`](crate::EvalErrorKind::SchemaMismatch).
     pub fn builder() -> SchemaBuilder<F> {
         SchemaBuilder { root: F::__desc(), funcs: Vec::new(), _facts: PhantomData }
     }

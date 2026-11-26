@@ -3,8 +3,8 @@
 #![cfg(feature = "runtime-schema")]
 #![expect(clippy::unwrap_used, reason = "helpers outside #[test] functions: a failure there fails the test")]
 
-use dictum::runtime::{Description, Root};
-use dictum::{Ctx, DynMap, Dynamic, Rule, Schema};
+use dictum::runtime::{Description, Facts, Root};
+use dictum::{Ctx, DynMap, Dynamic, ErrorCode, EvalErrorKind, NodeStatus, Rule, RuleSet, Schema, Span};
 
 fn map(entries: &[(&str, Dynamic)]) -> Dynamic {
     let mut m = DynMap::new();
@@ -92,3 +92,92 @@ fn facts_that_do_not_match_say_where() {
         "$env.limits.day: needs a duration such as `1h30m`, found `1 day`"
     );
 }
+
+#[test]
+fn mismatched_runtime_root_is_rejected_with_schema_mismatch() {
+    // Two distinct roots with identical field names and types: without a descriptor
+    // identity check, field reads by index would silently read from the wrong root.
+    let root_a = Description::new().root([("x", "int")]).unwrap();
+    let root_b = Description::new().root([("x", "int")]).unwrap();
+    let root_c = Description::new().root([("y", "string")]).unwrap();
+
+    let facts_a = root_a.facts(&map(&[("x", Dynamic::Int(10))])).unwrap();
+    let facts_b = root_b.facts(&map(&[("x", Dynamic::Int(42))])).unwrap();
+    let facts_c = root_c.facts(&map(&[("y", Dynamic::String("hi".into()))])).unwrap();
+
+    let schema_a = Schema::runtime(&root_a).build().unwrap();
+    let rule = Rule::<i64, _>::compile("x + 1", &schema_a).unwrap();
+    assert_eq!(rule.eval(&Ctx::new(&facts_a)).unwrap(), 11);
+
+    for bad in [&facts_b, &facts_c] {
+        let err = rule.eval(&Ctx::new(bad)).unwrap_err();
+        assert!(matches!(err.kind(), EvalErrorKind::SchemaMismatch));
+        assert_eq!(err.code(), ErrorCode::SchemaMismatch);
+        assert_eq!(err.code().as_str(), "E0313");
+        assert_eq!(err.span(), Span { start: 0, end: 5 });
+        assert_eq!(err.rule(), None);
+        assert_eq!(
+            err.to_string(),
+            "error[E0313]: facts do not match the schema this rule was compiled against\n \
+             --> rule:1:1\n  \
+             |\n\
+             1 | x + 1\n  \
+             | ^^^^^"
+        );
+    }
+
+    let report = rule.explain(&Ctx::new(&facts_b));
+    let err = report.result().as_ref().unwrap_err();
+    assert!(matches!(err.kind(), EvalErrorKind::SchemaMismatch));
+    assert_eq!(err.code(), ErrorCode::SchemaMismatch);
+    assert_eq!(err.span(), Span { start: 0, end: 5 });
+    assert_eq!(report.root().status(), &NodeStatus::Failed(ErrorCode::SchemaMismatch));
+    assert!(report.to_string().contains("failed E0313"));
+
+    // Body span is reported even when the rule has `let` bindings.
+    let with_let = Rule::<i64, _>::compile("let y = x;\ny + 1", &schema_a).unwrap();
+    let err = with_let.eval(&Ctx::new(&facts_b)).unwrap_err();
+    assert!(matches!(err.kind(), EvalErrorKind::SchemaMismatch));
+    assert_eq!(err.span(), Span { start: 11, end: 16 });
+
+    // RuleSet::eval and RuleSet::explain check the descriptor too.
+    let mut builder = RuleSet::<bool, _>::builder(&schema_a);
+    builder.insert("positive", "x > 0").unwrap();
+    builder.insert("small", "x < 100").unwrap();
+    let set = builder.build();
+
+    let matched: Vec<_> = set.eval(&Ctx::new(&facts_a)).unwrap().matched().collect();
+    assert_eq!(matched, vec!["positive", "small"]);
+
+    let err = set.eval(&Ctx::new(&facts_b)).err().unwrap();
+    assert!(matches!(err.kind(), EvalErrorKind::SchemaMismatch));
+    assert_eq!(err.code(), ErrorCode::SchemaMismatch);
+    assert_eq!(err.rule(), Some("positive"));
+    assert_eq!(err.span(), Span { start: 0, end: 5 });
+    assert!(err.to_string().contains("--> positive:1:1"));
+
+    let report = set.explain("small", &Ctx::new(&facts_b)).unwrap();
+    let err = report.result().as_ref().unwrap_err();
+    assert!(matches!(err.kind(), EvalErrorKind::SchemaMismatch));
+    assert_eq!(err.code(), ErrorCode::SchemaMismatch);
+    assert_eq!(err.rule(), Some("small"));
+    assert_eq!(err.span(), Span { start: 0, end: 7 });
+    assert_eq!(report.root().status(), &NodeStatus::Failed(ErrorCode::SchemaMismatch));
+}
+
+#[test]
+fn schema_builder_for_runtime_facts_rejects_facts_from_a_root() {
+    let schema = Schema::<Facts>::builder().build().unwrap();
+    let rule = Rule::<i64, _>::compile("1 + 1", &schema).unwrap();
+    let root = Description::new().root([("x", "int")]).unwrap();
+    let facts = root.facts(&map(&[("x", Dynamic::Int(1))])).unwrap();
+
+    let err = rule.eval(&Ctx::new(&facts)).unwrap_err();
+    assert!(matches!(err.kind(), EvalErrorKind::SchemaMismatch));
+    assert_eq!(err.code(), ErrorCode::SchemaMismatch);
+
+    let report = rule.explain(&Ctx::new(&facts));
+    assert!(matches!(report.result().as_ref().unwrap_err().kind(), EvalErrorKind::SchemaMismatch));
+    assert_eq!(report.root().status(), &NodeStatus::Failed(ErrorCode::SchemaMismatch));
+}
+

@@ -84,6 +84,7 @@ error_codes! {
     RuntimeDuplicateKey = "E0310", "duplicate map key `{0}`";
     ClockUnset = "E0311", "`now()` needs a time; pass one with `Ctx::with_now`";
     DepthLimit = "E0312", "a value is nested deeper than {0} levels";
+    SchemaMismatch = "E0313", "facts do not match the schema this rule was compiled against";
     // E09xx: a dictum bug. Never expected; reported instead of panicking.
     Internal = "E0900", "internal error: {0}";
 }
