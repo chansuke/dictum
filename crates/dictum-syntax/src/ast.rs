@@ -129,7 +129,7 @@ pub enum Callee<'src> {
 }
 
 /// Predicate pointers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Pointer {
     /// `#`
     Current,
@@ -140,7 +140,7 @@ pub enum Pointer {
 }
 
 /// Prefix operators.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum UnaryOp {
     /// `not` / `!`
     Not,
@@ -151,7 +151,7 @@ pub enum UnaryOp {
 }
 
 /// Strict binary operators.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BinaryOp {
     /// `+`
     Add,
@@ -188,7 +188,7 @@ pub enum BinaryOp {
 }
 
 /// Short-circuit operators.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum LogicOp {
     /// `and` / `&&`
     And,
@@ -197,7 +197,7 @@ pub enum LogicOp {
 }
 
 /// Chainable comparisons.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CompareOp {
     /// `<`
     Lt,

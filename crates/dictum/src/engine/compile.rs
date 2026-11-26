@@ -455,11 +455,47 @@ impl<'c> Compiler<'c> {
             ExprKind::Call { func, args } => {
                 let call = self.schema.payload(*func).ok_or(Ice("unknown function"))?.call.clone();
                 let name: String = self.schema.func_name(*func).unwrap_or("?").into();
-                let args = self.values(args)?;
-                Compiled::Value(value_node(move |f| {
-                    let vals = args.iter().map(|a| a(f)).collect::<Result<Vec<_>, _>>()?;
-                    call(&vals).map_err(|err| interp::call_fault(err, &name, span))
-                }))
+                let mut take = |slot: &mut Node<ValueK>| core::mem::replace(slot, value_node(|_| Ok(Value::NIL)));
+                match self.values(args)?.as_mut_slice() {
+                    [] => Compiled::Value(value_node(move |_| {
+                        call(&[]).map_err(|err| interp::call_fault(err, &name, span))
+                    })),
+                    [a] => {
+                        let a = take(a);
+                        Compiled::Value(value_node(move |f| {
+                            let vals = [a(f)?];
+                            call(&vals).map_err(|err| interp::call_fault(err, &name, span))
+                        }))
+                    }
+                    [a, b] => {
+                        let (a, b) = (take(a), take(b));
+                        Compiled::Value(value_node(move |f| {
+                            let vals = [a(f)?, b(f)?];
+                            call(&vals).map_err(|err| interp::call_fault(err, &name, span))
+                        }))
+                    }
+                    [a, b, c] => {
+                        let (a, b, c) = (take(a), take(b), take(c));
+                        Compiled::Value(value_node(move |f| {
+                            let vals = [a(f)?, b(f)?, c(f)?];
+                            call(&vals).map_err(|err| interp::call_fault(err, &name, span))
+                        }))
+                    }
+                    [a, b, c, d] => {
+                        let (a, b, c, d) = (take(a), take(b), take(c), take(d));
+                        Compiled::Value(value_node(move |f| {
+                            let vals = [a(f)?, b(f)?, c(f)?, d(f)?];
+                            call(&vals).map_err(|err| interp::call_fault(err, &name, span))
+                        }))
+                    }
+                    args => {
+                        let args: Vec<_> = args.iter_mut().map(&mut take).collect();
+                        Compiled::Value(value_node(move |f| {
+                            let vals = args.iter().map(|a| a(f)).collect::<Result<Vec<_>, _>>()?;
+                            call(&vals).map_err(|err| interp::call_fault(err, &name, span))
+                        }))
+                    }
+                }
             }
             ExprKind::Convert { op, arg } => match op {
                 Conversion::IntToFloat => {
@@ -473,7 +509,7 @@ impl<'c> Compiler<'c> {
                 // The same value, now of an optional or `any` type.
                 Conversion::Some | Conversion::Erase => self.expr(arg)?,
                 op => {
-                    let (a, op, ty) = (self.value(arg)?, op.clone(), e.ty().clone());
+                    let (a, op, ty) = (self.value(arg)?, *op, e.ty().clone());
                     Compiled::Value(value_node(move |f| {
                         let v = a(f)?;
                         match op {
