@@ -186,6 +186,23 @@ fn constant_subtrees_are_folded_at_compile_time() {
 }
 
 #[test]
+fn post_optimize_constants_are_refolded_at_compile_time() {
+    // `level` is `u8`, so `level < 256` simplifies to `true` in `optimize`, making the
+    // surrounding expression constant; post-optimization re-folding folds it before
+    // compilation so `eval` spends zero runtime steps/allocs on it.
+    let rule =
+        Rule::<bool, Facts>::compile("count(1..(level < 256 ? 100 : 200), # % 2 == 0) == 50", &schema()).unwrap();
+    let facts = sample();
+    let tight = Ctx::new(&facts).with_limits(Limits::default().with_max_steps(10));
+    assert!(rule.eval(&tight).unwrap());
+    assert!(matches!(rule.explain(&tight).result().as_ref().unwrap_err().kind(), EvalErrorKind::StepLimit));
+
+    let concat = Rule::<String, Facts>::compile(r#"(level < 256 ? "a" : "b") + "c""#, &schema()).unwrap();
+    let zero_alloc = Ctx::new(&facts).with_limits(Limits::default().with_max_alloc(0));
+    assert_eq!(concat.eval(&zero_alloc).unwrap(), "ac");
+}
+
+#[test]
 fn constants_too_large_to_fold_run_under_the_callers_limits() {
     let rule = Rule::<i64, Facts>::compile("count(1..20000, # > 0)", &schema()).unwrap();
     let facts = sample();

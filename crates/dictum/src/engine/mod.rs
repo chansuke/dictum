@@ -159,9 +159,34 @@ fn folded(checked: &Checked, schema: &Arc<SchemaCore>) -> Optimized {
     let mut ir = checked.ir.clone();
     let before = analysis::dependence(&ir, schema);
     fold::fold(&mut ir, schema, &before);
-    let unchecked = optimize::optimize(&mut ir);
-    let deps = analysis::dependence(&ir, schema);
+    let mut unchecked = optimize::optimize(&mut ir);
+    let mut deps = analysis::dependence(&ir, schema);
+    if has_new_const(&ir, &before, &deps) {
+        fold::fold(&mut ir, schema, &deps);
+        unchecked = optimize::optimize(&mut ir);
+        deps = analysis::dependence(&ir, schema);
+    }
     Optimized { ir, deps, unchecked }
+}
+
+/// Whether `optimize` made any non-`Const` node newly constant (excluding nodes
+/// that were already `Const` before optimization, so intentionally unfolded
+/// constants are not evaluated a second time).
+fn has_new_const(program: &ir::Program, before: &[analysis::Dependence], after: &[analysis::Dependence]) -> bool {
+    if !before.iter().zip(after).any(|(b, a)| *a == analysis::Dependence::Const && *b != analysis::Dependence::Const) {
+        return false;
+    }
+    fn visit(e: &ir::Expr, before: &[analysis::Dependence], after: &[analysis::Dependence]) -> bool {
+        let id = e.id().index();
+        if !matches!(e.kind(), ir::ExprKind::Const(_))
+            && after.get(id) == Some(&analysis::Dependence::Const)
+            && before.get(id) != Some(&analysis::Dependence::Const)
+        {
+            return true;
+        }
+        e.children().any(|c| visit(c, before, after))
+    }
+    program.lets().iter().chain(core::iter::once(program.body())).any(|r| visit(r, before, after))
 }
 
 impl Prepared {
@@ -298,5 +323,51 @@ impl PreparedSet {
 
     pub(crate) fn cache_slots(&self) -> u32 {
         self.cache_slots
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dictum_check::{FieldDesc, StructDesc};
+
+    fn int() -> Type {
+        Type::Int
+    }
+
+    static FIELDS: [FieldDesc; 2] = [
+        FieldDesc::new("age", int).with_range(Some((0, 255))),
+        FieldDesc::new("n", int).with_range(Some((i64::MIN, i64::MAX))),
+    ];
+    static ROOT: StructDesc = StructDesc::new("Root", &FIELDS);
+
+    fn fold_ir(src: &str, expected: &Type) -> Optimized {
+        let schema = Arc::new(SchemaCore::new(&ROOT, Vec::new()).unwrap());
+        let checked = check(src, None, &schema, expected).unwrap();
+        let opt = folded(&checked, &schema);
+        opt.ir.validate(&schema).unwrap();
+        opt
+    }
+
+    #[test]
+    fn post_optimize_refolds_newly_constant_expressions() {
+        let str_opt = fold_ir(r#"(age < 256 ? "a" : "b") + "c""#, &Type::String);
+        assert!(
+            matches!(str_opt.ir.body().kind(), ir::ExprKind::Const(ir::Const::Str(s)) if s.as_ref() == "ac"),
+            "{:?}",
+            str_opt.ir.body().kind()
+        );
+
+        let len_opt = fold_ir(r#"len(age < 256 ? "abc" : "defg")"#, &Type::Int);
+        assert!(
+            matches!(len_opt.ir.body().kind(), ir::ExprKind::Const(ir::Const::Int(3))),
+            "{:?}",
+            len_opt.ir.body().kind()
+        );
+
+        // Re-folding can also expose another algebraic identity (`(1 - 1) + n` -> `0 + n` -> `n`).
+        let id_opt = fold_ir("((age < 256 ? 1 : 2) - 1) + n", &Type::Int);
+        assert!(matches!(id_opt.ir.body().kind(), ir::ExprKind::Field { .. }), "{:?}", id_opt.ir.body().kind());
+        assert!(id_opt.unchecked.is_empty());
     }
 }

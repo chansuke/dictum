@@ -49,31 +49,38 @@ impl Range {
         self.lo >= i128::from(i64::MIN) && self.hi <= i128::from(i64::MAX)
     }
 
-    fn abs_max(self) -> i128 {
-        self.lo.saturating_abs().max(self.hi.saturating_abs())
+    /// Lean `clampI64`: intersect with `i64`; `None` if empty.
+    fn clamp_i64(self) -> Option<Self> {
+        let lo = self.lo.max(i128::from(i64::MIN));
+        let hi = self.hi.min(i128::from(i64::MAX));
+        (lo <= hi).then_some(Self { lo, hi })
+    }
+
+    fn abs_max(self) -> Option<i128> {
+        Some(self.lo.checked_abs()?.max(self.hi.checked_abs()?))
     }
 }
 
 /// Lean `opRange`: the exact range of `a op b`, before any overflow check.
-fn op_range(op: IntOp, a: Range, b: Range) -> Range {
+fn op_range(op: IntOp, a: Range, b: Range) -> Option<Range> {
     match op {
-        IntOp::Add => Range { lo: a.lo.saturating_add(b.lo), hi: a.hi.saturating_add(b.hi) },
-        IntOp::Sub => Range { lo: a.lo.saturating_sub(b.hi), hi: a.hi.saturating_sub(b.lo) },
+        IntOp::Add => Some(Range { lo: a.lo.checked_add(b.lo)?, hi: a.hi.checked_add(b.hi)? }),
+        IntOp::Sub => Some(Range { lo: a.lo.checked_sub(b.hi)?, hi: a.hi.checked_sub(b.lo)? }),
         IntOp::Mul => {
-            let corners = [
-                a.lo.saturating_mul(b.lo),
-                a.lo.saturating_mul(b.hi),
-                a.hi.saturating_mul(b.lo),
-                a.hi.saturating_mul(b.hi),
-            ];
-            let lo = corners.iter().copied().min().unwrap_or(i128::MIN);
-            let hi = corners.iter().copied().max().unwrap_or(i128::MAX);
-            Range { lo, hi }
+            let p = a.lo.checked_mul(b.lo)?;
+            let q = a.lo.checked_mul(b.hi)?;
+            let r = a.hi.checked_mul(b.lo)?;
+            let s = a.hi.checked_mul(b.hi)?;
+            Some(Range { lo: p.min(q).min(r.min(s)), hi: p.max(q).max(r.max(s)) })
         }
-        // `|a % b| <= |a|` and `|a % b| < |b|`.
+        // `|a % b| <= |a|` and `|a % b| < |b|`; `b.abs_max == 0` means the divisor is 0.
         IntOp::Mod => {
-            let m = a.abs_max().min(b.abs_max().saturating_sub(1));
-            Range { lo: m.saturating_neg(), hi: m }
+            let b_abs = b.abs_max()?;
+            if b_abs == 0 {
+                return None;
+            }
+            let m = a.abs_max()?.min(b_abs.checked_sub(1)?);
+            Some(Range { lo: m.checked_neg()?, hi: m })
         }
     }
 }
@@ -90,7 +97,9 @@ fn range_of(e: &ir::Expr) -> Option<Range> {
                 .map(|(lo, hi)| Range { lo: i128::from(lo), hi: i128::from(hi) }),
             _ => None,
         },
-        ExprKind::Binary { op: BinaryOp::Int(op), lhs, rhs } => Some(op_range(*op, range_of(lhs)?, range_of(rhs)?)),
+        ExprKind::Binary { op: BinaryOp::Int(op), lhs, rhs } => {
+            op_range(*op, range_of(lhs)?, range_of(rhs)?)?.clamp_i64()
+        }
         ExprKind::Conditional { then, otherwise, .. } => {
             let (t, o) = (range_of(then)?, range_of(otherwise)?);
             Some(Range { lo: t.lo.min(o.lo), hi: t.hi.max(o.hi) })
@@ -102,7 +111,7 @@ fn range_of(e: &ir::Expr) -> Option<Range> {
 /// Lean `skipCheck`: `lhs op rhs` cannot overflow.
 fn skip_check(op: IntOp, lhs: &ir::Expr, rhs: &ir::Expr) -> bool {
     matches!(op, IntOp::Add | IntOp::Sub | IntOp::Mul)
-        && range_of(lhs).zip(range_of(rhs)).is_some_and(|(a, b)| op_range(op, a, b).fits())
+        && range_of(lhs).zip(range_of(rhs)).and_then(|(a, b)| op_range(op, a, b)).is_some_and(Range::fits)
 }
 
 /// Lean `cmpDecide`: the value of `a op b` for every `a` in `ra` and `b` in `rb`,
@@ -275,6 +284,15 @@ fn logic(e: &mut ir::Expr) {
     }
 }
 
+/// Node count of `e` (matches `exact_key(e).1` without allocating).
+fn node_cost(e: &ir::Expr) -> u32 {
+    let mut cost: u32 = 1;
+    for c in e.children() {
+        cost = cost.saturating_add(node_cost(c));
+    }
+    cost
+}
+
 /// Lean `and_swap_in_chain`/`or_swap_in_chain`: each maximal run of safe operands
 /// sorted by size, smallest first (stable), so a cheap operand that decides the
 /// result spares the others. An operand that can fail keeps its place, so every
@@ -284,7 +302,7 @@ fn reorder(operands: &mut [ir::Expr]) {
     while start < operands.len() {
         let len = operands.get(start..).map_or(0, |rest| rest.iter().take_while(|o| safe(o)).count());
         if let Some(run) = operands.get_mut(start..start.saturating_add(len)) {
-            run.sort_by_key(|o| exact_key(o).1);
+            run.sort_by_key(node_cost);
         }
         start = start.saturating_add(len.max(1));
     }
@@ -400,5 +418,56 @@ mod tests {
         assert!(same_as("age + 1 < 9 && b", "b && age + 1 < 9"));
         assert!(same_as("7 % n > 0 && age + 1 < 9 && b", "7 % n > 0 && b && age + 1 < 9"));
         assert!(!same_as("b && 7 % n > 0", "7 % n > 0 && b"));
+    }
+
+    fn checked_ir(src: &str, expected: &Type) -> ir::Program {
+        let env = Env::<()>::new(&ROOT, alloc::vec::Vec::new()).unwrap();
+        let ast = dictum_syntax::parse(src).unwrap();
+        dictum_check::check(&ast, &env, expected).unwrap()
+    }
+
+    #[test]
+    fn mod_zero_and_i64_clamping_match_lean() {
+        // Guaranteed division by zero has no successful result, matching Lean `opRange`.
+        assert_eq!(range_of(checked_ir("7 % 0", &Type::Int).body()), None);
+        assert_eq!(range_of(checked_ir("age % 0", &Type::Int).body()), None);
+        assert_eq!(range_of(checked_ir("n % 0", &Type::Int).body()), None);
+
+        // `n + 1` clamps to `[i64::MIN + 1, i64::MAX]`, while `i64::MAX + 1` has empty range.
+        assert_eq!(
+            range_of(checked_ir("n + 1", &Type::Int).body()),
+            Some(Range { lo: i128::from(i64::MIN) + 1, hi: i128::from(i64::MAX) })
+        );
+        assert_eq!(range_of(checked_ir("9223372036854775807 + 1", &Type::Int).body()), None);
+        // `(n + 1) - 1`: `n + 1` keeps its check, but if it succeeds its result is at least
+        // `i64::MIN + 1`, so `- 1` cannot underflow.
+        assert_eq!(optimized("(n + 1) - 1").1, 1);
+
+        // Deep `i64` products stay clamped to `i64` rather than saturating `i128`.
+        let deep = checked_ir("((n * n) * (n * n)) * ((n * n) * (n * n))", &Type::Int);
+        let r = range_of(deep.body()).unwrap();
+        assert_eq!(r, Range { lo: i128::from(i64::MIN), hi: i128::from(i64::MAX) });
+        assert!(r.fits());
+        // Multiplying two `i64`-clamped ranges never overflows `i128`.
+        assert!(op_range(IntOp::Mul, r, r).is_some());
+    }
+
+    #[test]
+    fn node_cost_matches_exact_key_and_preserves_reorder() {
+        for src in [
+            "42",
+            "b",
+            "age + 1 < 9",
+            "age * 2 + n - 1",
+            "b ? age + 1 : n * 3",
+            "age < 10 && age > 5 && b",
+            "7 % n > 0 && age + 1 < 9 && b",
+        ] {
+            let ir = checked_ir(src, &Type::Any);
+            assert_eq!(node_cost(ir.body()), exact_key(ir.body()).1, "{src}");
+        }
+        // Equal-cost safe operands keep their original order (stable sort).
+        assert!(same_as("age < 10 && age > 5", "age < 10 && age > 5"));
+        assert!(!same_as("age < 10 && age > 5", "age > 5 && age < 10"));
     }
 }
