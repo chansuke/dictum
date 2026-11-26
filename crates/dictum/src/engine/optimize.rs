@@ -22,7 +22,7 @@ use dictum_check::Type;
 use dictum_check::ir::{self, BinaryOp, CompareKind, Const, EqKind, ExprKind, IntOp, NodeId, UnaryOp};
 use dictum_syntax::ast::{CompareOp, LogicOp};
 
-use super::analysis::exact_key;
+use super::analysis::same_expr;
 
 /// Simplify and reorder `program` in place; the nodes whose overflow check the
 /// closure compiler may leave out.
@@ -166,7 +166,7 @@ fn is_bool(e: &ir::Expr, b: bool) -> bool {
 }
 
 fn same(a: &ir::Expr, b: &ir::Expr) -> bool {
-    exact_key(a).0 == exact_key(b).0
+    same_expr(a, b)
 }
 
 /// Lean `simp`: the children, then the node.
@@ -284,7 +284,7 @@ fn logic(e: &mut ir::Expr) {
     }
 }
 
-/// Node count of `e` (matches `exact_key(e).1` without allocating).
+/// Node count of `e` (matches `analysis::subtree_cost(e)` without allocating).
 fn node_cost(e: &ir::Expr) -> u32 {
     let mut cost: u32 = 1;
     for c in e.children() {
@@ -321,8 +321,8 @@ fn collect_unchecked(e: &ir::Expr, out: &mut BTreeSet<NodeId>) {
 
 #[cfg(test)]
 mod tests {
+    use super::super::analysis::subtree_cost;
     use super::*;
-    use alloc::string::String;
     use dictum_check::{Env, FieldDesc, StructDesc};
 
     fn int() -> Type {
@@ -344,18 +344,18 @@ mod tests {
     ];
     static ROOT: StructDesc = StructDesc::new("Root", &FIELDS);
 
-    /// The optimized body as an exact key, and the unchecked operations' count.
-    fn optimized(src: &str) -> (String, usize) {
+    /// The optimized program, and the unchecked operations' count.
+    fn optimized(src: &str) -> (ir::Program, usize) {
         let env = Env::<()>::new(&ROOT, alloc::vec::Vec::new()).unwrap();
         let ast = dictum_syntax::parse(src).unwrap();
         let mut ir = dictum_check::check(&ast, &env, &Type::Any).unwrap();
         let unchecked = optimize(&mut ir);
         ir.validate(&env).unwrap();
-        (exact_key(ir.body()).0, unchecked.len())
+        (ir, unchecked.len())
     }
 
     fn same_as(src: &str, simpler: &str) -> bool {
-        optimized(src).0 == optimized(simpler).0
+        same_expr(optimized(src).0.body(), optimized(simpler).0.body())
     }
 
     #[test]
@@ -464,7 +464,7 @@ mod tests {
             "7 % n > 0 && age + 1 < 9 && b",
         ] {
             let ir = checked_ir(src, &Type::Any);
-            assert_eq!(node_cost(ir.body()), exact_key(ir.body()).1, "{src}");
+            assert_eq!(node_cost(ir.body()), subtree_cost(ir.body()), "{src}");
         }
         // Equal-cost safe operands keep their original order (stable sort).
         assert!(same_as("age < 10 && age > 5", "age < 10 && age > 5"));

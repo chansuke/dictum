@@ -131,7 +131,7 @@ impl fmt::Display for Type {
 /// Runtime type tag. `Option` has no tag: an optional value is `Nil` or its inner
 /// tag. Used by the overload tables in [`crate::resolve`] both statically (from a
 /// `Type`) and dynamically (from a value of type `any`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Tag {
     /// `nil`
     Nil,

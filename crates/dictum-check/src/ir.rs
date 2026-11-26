@@ -39,7 +39,7 @@ impl NodeId {
 }
 
 /// A `let` slot: slot `i` holds `Program::lets()[i]`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SlotId(u16);
 
 impl SlotId {
@@ -576,7 +576,7 @@ impl Const {
 }
 
 /// Resolved prefix operations.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum UnaryOp {
     /// `not` on `bool`
     Not,
@@ -595,7 +595,7 @@ pub enum UnaryOp {
 
 /// `int` arithmetic. Division is not here: `int / int` is `float` (operands are
 /// converted), and `**` is `float` (Go's `math.Pow`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IntOp {
     /// checked `+`
     Add,
@@ -608,7 +608,7 @@ pub enum IntOp {
 }
 
 /// `float` arithmetic (IEEE 754; no errors).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FloatOp {
     /// `+`
     Add,
@@ -624,7 +624,7 @@ pub enum FloatOp {
 
 /// `decimal` arithmetic; overflow and zero division are errors.
 #[cfg(feature = "decimal")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DecimalOp {
     /// `+`
     Add,
@@ -639,7 +639,7 @@ pub enum DecimalOp {
 }
 
 /// Resolved strict binary operations.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BinaryOp {
     /// `int` ⊕ `int`
     Int(IntOp),
@@ -681,7 +681,7 @@ pub enum BinaryOp {
 }
 
 /// How `==` compares, chosen from the (promoted) operand types.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum EqKind {
     /// `bool`
     Bool,
@@ -707,7 +707,7 @@ pub enum EqKind {
 }
 
 /// How a comparison chain compares.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CompareKind {
     /// `int`
     Int,
@@ -727,7 +727,7 @@ pub enum CompareKind {
 }
 
 /// A bit operation, as Go's operator on `int`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum BitOp {
     /// `bitand`: `&`
     And,
@@ -749,7 +749,7 @@ pub enum BitOp {
 
 /// A method of a built-in type, with Go's name and meaning. Calendar methods read
 /// the time in its own zone.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Method {
     /// `t.Year()`
     Year,
@@ -828,7 +828,7 @@ pub enum Method {
 }
 
 /// Membership.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum InOp {
     /// `x in array`; constant arrays become a sorted set at compile time.
     Array(EqKind),
@@ -841,7 +841,7 @@ pub enum InOp {
 }
 
 /// Indexing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum IndexOp {
     /// `array[int]`
     Array,
@@ -856,7 +856,7 @@ pub enum IndexOp {
 }
 
 /// Slicing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SliceOp {
     /// `array[a:b]`
     Array,
@@ -869,7 +869,7 @@ pub enum SliceOp {
 }
 
 /// Predicate builtins. Each stops as soon as its result is decided.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PredicateOp {
     /// `all`
     All,
@@ -903,7 +903,7 @@ pub enum PredicateOp {
 }
 
 /// Non-predicate builtins after overload resolution.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Intrinsic {
     /// `len(string)`: number of characters (not bytes), as Go.
     LenString,
@@ -1037,7 +1037,7 @@ pub enum Intrinsic {
 }
 
 /// Implicit conversions made explicit by the checker.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Conversion {
     /// `int` → `float`
     IntToFloat,
