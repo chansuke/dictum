@@ -411,8 +411,9 @@ impl<'a> Value<'a> {
     }
 
     /// Elements that copying this value out (to a `Dynamic` result) would build
-    /// beyond what is in memory: a range's elements, and a computed container once
-    /// per reference, since the copy is a tree. Counting stops past `limit`.
+    /// beyond what is in memory: a range's elements, and a computed or constant
+    /// container once per reference, since the copy is a tree. Counting stops past
+    /// `limit`.
     pub(crate) fn copied_elements(&self, limit: u64) -> u64 {
         let mut n = 0u64;
         self.count_copied(limit, &mut n);
@@ -432,6 +433,15 @@ impl<'a> Value<'a> {
                     x.count_copied(limit, n);
                 }
             }
+            Repr::Array(Seq::Const(xs)) => {
+                add(n, xs.len());
+                for x in xs.iter() {
+                    if *n > limit {
+                        return;
+                    }
+                    count_const(x, limit, n);
+                }
+            }
             Repr::Map(MapRef::Owned(kvs, _)) => {
                 add(n, kvs.len());
                 for (_, x) in kvs.iter() {
@@ -439,6 +449,15 @@ impl<'a> Value<'a> {
                         return;
                     }
                     x.count_copied(limit, n);
+                }
+            }
+            Repr::Map(MapRef::Const(kvs)) => {
+                add(n, kvs.len());
+                for (_, x) in kvs.iter() {
+                    if *n > limit {
+                        return;
+                    }
+                    count_const(x, limit, n);
                 }
             }
             _ => {}
@@ -469,5 +488,30 @@ impl<'a> Value<'a> {
             Repr::Map(_) => Tag::Map,
             Repr::Object(_) => Tag::Struct,
         }
+    }
+}
+
+fn count_const(c: &Const, limit: u64, n: &mut u64) {
+    let add = |n: &mut u64, k: usize| *n = n.saturating_add(u64::try_from(k).unwrap_or(u64::MAX));
+    match c {
+        Const::Array(xs) => {
+            add(n, xs.len());
+            for x in xs.iter() {
+                if *n > limit {
+                    return;
+                }
+                count_const(x, limit, n);
+            }
+        }
+        Const::Map(kvs) => {
+            add(n, kvs.len());
+            for (_, x) in kvs.iter() {
+                if *n > limit {
+                    return;
+                }
+                count_const(x, limit, n);
+            }
+        }
+        _ => {}
     }
 }

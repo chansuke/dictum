@@ -18,18 +18,92 @@ use dictum_syntax::{MAX_DEPTH, Span};
 
 use crate::EvalErrorKind;
 use crate::engine::frame::{Fault, Frame, Res, alloc, internal, steps};
-use crate::engine::value::{Repr, Str, Value};
+use crate::engine::value::{MAX_VALUE_DEPTH, Object, Repr, Seq, Str, Value};
 use crate::engine::{builtins, layout};
 
 fn invalid(what: &'static str, value: &str, span: Span) -> Fault {
     Frame::fault(EvalErrorKind::InvalidArgument { what, value: value.into() }, span)
 }
 
-/// `toJSON(v)`, one step per value visited. The caller charges the text it returns.
-pub(crate) fn encode(v: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<String, Fault> {
+/// `toJSON(v)`, one step per value visited and one alloc per byte written, charged
+/// before appending to the output buffer. Uses an explicit stack so deeply nested
+/// values stay within small stacks (e.g. WASM and `no_std`) up to [`MAX_VALUE_DEPTH`].
+pub(crate) fn encode<'a>(v: &Value<'a>, f: &mut Frame<'_>, span: Span) -> Result<String, Fault> {
     let mut e = Encoder { out: String::new(), f, span };
-    e.value(v, 0)?;
+    let mut stack: Vec<EncodeFrame<'a>> = Vec::new();
+    e.value(v, &mut stack)?;
+    loop {
+        let depth = stack.len();
+        let Some(top) = stack.last_mut() else { break };
+        let next: Option<Value<'a>> = match top {
+            EncodeFrame::Array { seq, index } => {
+                let i = *index;
+                if i < seq.len() {
+                    if let Some(x) = seq.get(i) {
+                        *index = i.saturating_add(1);
+                        if i > 0 {
+                            e.push_char(',')?;
+                        }
+                        e.newline(depth)?;
+                        Some(x)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            EncodeFrame::Map { entries, first } => {
+                if let Some((k, x)) = entries.pop() {
+                    let is_first = *first;
+                    *first = false;
+                    if !is_first {
+                        e.push_char(',')?;
+                    }
+                    e.newline(depth)?;
+                    e.string(&k)?;
+                    e.push_str(": ")?;
+                    Some(x)
+                } else {
+                    None
+                }
+            }
+            EncodeFrame::Object { obj, index } => {
+                let i = *index;
+                if let Some(field) = obj.desc().fields().get(i) {
+                    *index = i.saturating_add(1);
+                    let id = u16::try_from(i).map_err(|_| internal("too many fields", e.span))?;
+                    let x = obj.field(FieldId::new(id));
+                    if i > 0 {
+                        e.push_char(',')?;
+                    }
+                    e.newline(depth)?;
+                    e.string(field.name())?;
+                    e.push_str(": ")?;
+                    Some(x)
+                } else {
+                    None
+                }
+            }
+        };
+        if let Some(x) = next {
+            e.value(&x, &mut stack)?;
+        } else {
+            let close = match stack.pop() {
+                Some(EncodeFrame::Array { .. }) => ']',
+                _ => '}',
+            };
+            e.newline(stack.len())?;
+            e.push_char(close)?;
+        }
+    }
     Ok(e.out)
+}
+
+enum EncodeFrame<'a> {
+    Array { seq: Seq<'a>, index: usize },
+    Map { entries: Vec<(String, Value<'a>)>, first: bool },
+    Object { obj: &'a dyn Object, index: usize },
 }
 
 struct Encoder<'f, 'a> {
@@ -39,97 +113,103 @@ struct Encoder<'f, 'a> {
 }
 
 impl Encoder<'_, '_> {
-    fn value(&mut self, v: &Value<'_>, depth: usize) -> Result<(), Fault> {
+    fn push_str(&mut self, s: &str) -> Result<(), Fault> {
+        alloc(self.f, s.len(), self.span)?;
+        self.out.push_str(s);
+        Ok(())
+    }
+
+    fn push_char(&mut self, c: char) -> Result<(), Fault> {
+        alloc(self.f, c.len_utf8(), self.span)?;
+        self.out.push(c);
+        Ok(())
+    }
+
+    fn value<'a>(&mut self, v: &Value<'a>, stack: &mut Vec<EncodeFrame<'a>>) -> Result<(), Fault> {
+        if stack.len() > usize::from(MAX_VALUE_DEPTH) {
+            return Err(Frame::fault(EvalErrorKind::DepthLimit, self.span));
+        }
         steps(self.f, 1, self.span)?;
         match &v.0 {
-            Repr::Nil => self.out.push_str("null"),
-            Repr::Bool(b) => self.out.push_str(if *b { "true" } else { "false" }),
+            Repr::Nil => self.push_str("null")?,
+            Repr::Bool(b) => self.push_str(if *b { "true" } else { "false" })?,
             Repr::Int(n) => {
-                let _ = write!(self.out, "{n}");
+                let text = alloc::format!("{n}");
+                self.push_str(&text)?;
             }
             Repr::Float(x) => self.float(*x)?,
             #[cfg(feature = "decimal")]
             Repr::Decimal(d) => {
-                let _ = write!(self.out, "{d}");
+                let text = alloc::format!("{d}");
+                self.push_str(&text)?;
             }
-            Repr::Str(s) => self.string(s.as_str()),
+            Repr::Str(s) => self.string(s.as_str())?,
             Repr::Bytes(b) => {
+                let bytes = b.as_slice();
+                let encoded = bytes
+                    .len()
+                    .div_ceil(3)
+                    .checked_mul(4)
+                    .and_then(|n| n.checked_add(2))
+                    .ok_or_else(|| Frame::fault(EvalErrorKind::AllocLimit, self.span))?;
+                alloc(self.f, encoded, self.span)?;
                 self.out.push('"');
-                builtins::base64_encode(b.as_slice(), &mut self.out);
+                builtins::base64_encode(bytes, &mut self.out);
                 self.out.push('"');
             }
             Repr::Time(t, z) => self.time(*t, z)?,
             // Go's `*time.Location` has no exported fields.
-            Repr::Location(_) => self.out.push_str("{}"),
+            Repr::Location(_) => self.push_str("{}")?,
             Repr::Duration(d) => {
-                let _ = write!(self.out, "{}", d.as_nanos());
+                let text = alloc::format!("{}", d.as_nanos());
+                self.push_str(&text)?;
             }
             Repr::Array(xs) => {
                 if xs.len() == 0 {
-                    self.out.push_str("[]");
+                    self.push_str("[]")?;
                     return Ok(());
                 }
-                self.out.push('[');
-                for (i, x) in xs.iter().enumerate() {
-                    if i > 0 {
-                        self.out.push(',');
-                    }
-                    self.newline(depth.saturating_add(1));
-                    self.value(&x, depth.saturating_add(1))?;
-                }
-                self.newline(depth);
-                self.out.push(']');
+                self.push_char('[')?;
+                stack.push(EncodeFrame::Array { seq: xs.clone(), index: 0 });
             }
             Repr::Map(m) => {
-                let mut entries: Vec<(String, Value<'_>)> = Vec::with_capacity(m.len());
+                if m.len() == 0 {
+                    self.push_str("{}")?;
+                    return Ok(());
+                }
+                let mut entries: Vec<(String, Value<'a>)> = Vec::with_capacity(m.len());
                 m.for_each(&mut |k, x| {
                     entries.push((k.into(), x));
                     ControlFlow::Continue(())
                 });
-                entries.sort_by(|a, b| a.0.cmp(&b.0));
-                self.object(entries.iter().map(|(k, x)| (k.as_str(), x.clone())), depth)?;
+                if entries.is_empty() {
+                    self.push_str("{}")?;
+                    return Ok(());
+                }
+                // Reverse order so `pop()` yields keys in ascending byte order.
+                entries.sort_by(|a, b| b.0.cmp(&a.0));
+                self.push_char('{')?;
+                stack.push(EncodeFrame::Map { entries, first: true });
             }
             Repr::Object(o) => {
-                let fields = o.desc().fields();
-                let mut entries = Vec::with_capacity(fields.len());
-                for (i, field) in fields.iter().enumerate() {
-                    let id = u16::try_from(i).map_err(|_| internal("too many fields", self.span))?;
-                    entries.push((field.name(), o.field(FieldId::new(id))));
+                if o.desc().fields().is_empty() {
+                    self.push_str("{}")?;
+                    return Ok(());
                 }
-                self.object(entries.into_iter(), depth)?;
+                self.push_char('{')?;
+                stack.push(EncodeFrame::Object { obj: *o, index: 0 });
             }
         }
         Ok(())
     }
 
-    fn object<'k, 'v>(
-        &mut self,
-        entries: impl Iterator<Item = (&'k str, Value<'v>)>,
-        depth: usize,
-    ) -> Result<(), Fault> {
-        let mut empty = true;
-        for (k, x) in entries {
-            self.out.push(if empty { '{' } else { ',' });
-            empty = false;
-            self.newline(depth.saturating_add(1));
-            self.string(k);
-            self.out.push_str(": ");
-            self.value(&x, depth.saturating_add(1))?;
-        }
-        if empty {
-            self.out.push_str("{}");
-        } else {
-            self.newline(depth);
-            self.out.push('}');
-        }
-        Ok(())
-    }
-
-    fn newline(&mut self, depth: usize) {
+    fn newline(&mut self, depth: usize) -> Result<(), Fault> {
+        alloc(self.f, depth.saturating_mul(2).saturating_add(1), self.span)?;
         self.out.push('\n');
         for _ in 0..depth {
             self.out.push_str("  ");
         }
+        Ok(())
     }
 
     /// Go's `floatEncoder`: `strconv.FormatFloat` with `'f'`, or `'e'` below 1e-6 and
@@ -144,37 +224,55 @@ impl Encoder<'_, '_> {
         if abs != 0.0 && !(1e-6..1e21).contains(&abs) {
             let sci = alloc::format!("{x:e}");
             let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
-            self.out.push_str(mantissa);
-            self.out.push('e');
+            self.push_str(mantissa)?;
+            self.push_char('e')?;
             if !exp.starts_with('-') {
-                self.out.push('+');
+                self.push_char('+')?;
             }
-            self.out.push_str(exp);
+            self.push_str(exp)
         } else {
-            let _ = write!(self.out, "{x}");
+            let text = alloc::format!("{x}");
+            self.push_str(&text)
         }
-        Ok(())
     }
 
     /// Go's `appendString` with HTML escaping.
-    fn string(&mut self, s: &str) {
-        self.out.push('"');
-        for c in s.chars() {
-            match c {
-                '"' => self.out.push_str("\\\""),
-                '\\' => self.out.push_str("\\\\"),
-                '\u{8}' => self.out.push_str("\\b"),
-                '\u{c}' => self.out.push_str("\\f"),
-                '\n' => self.out.push_str("\\n"),
-                '\r' => self.out.push_str("\\r"),
-                '\t' => self.out.push_str("\\t"),
-                '\0'..='\u{1f}' | '<' | '>' | '&' | '\u{2028}' | '\u{2029}' => {
-                    let _ = write!(self.out, "\\u{:04x}", u32::from(c));
+    fn string(&mut self, s: &str) -> Result<(), Fault> {
+        self.push_char('"')?;
+        let mut start = 0usize;
+        for (i, c) in s.char_indices() {
+            let escaped = match c {
+                '"' => Some("\\\""),
+                '\\' => Some("\\\\"),
+                '\u{8}' => Some("\\b"),
+                '\u{c}' => Some("\\f"),
+                '\n' => Some("\\n"),
+                '\r' => Some("\\r"),
+                '\t' => Some("\\t"),
+                '\0'..='\u{1f}' | '<' | '>' | '&' | '\u{2028}' | '\u{2029}' => Some(""),
+                _ => None,
+            };
+            if let Some(esc) = escaped {
+                if let Some(plain) = s.get(start..i) {
+                    if !plain.is_empty() {
+                        self.push_str(plain)?;
+                    }
                 }
-                c => self.out.push(c),
+                if esc.is_empty() {
+                    alloc(self.f, 6, self.span)?;
+                    let _ = write!(self.out, "\\u{:04x}", u32::from(c));
+                } else {
+                    self.push_str(esc)?;
+                }
+                start = i.saturating_add(c.len_utf8());
             }
         }
-        self.out.push('"');
+        if let Some(tail) = s.get(start..) {
+            if !tail.is_empty() {
+                self.push_str(tail)?;
+            }
+        }
+        self.push_char('"')
     }
 
     /// Go's `Time.MarshalJSON`: RFC 3339 in the time's zone, the nanoseconds trimmed
@@ -191,10 +289,11 @@ impl Encoder<'_, '_> {
             builtins::go_time(t, z, &mut text);
             return Err(invalid("JSON time, year outside 0 to 9999", &text, self.span));
         }
-        self.out.push('"');
-        layout::format(t, z, "2006-01-02T15:04:05.999999999Z07:00", &mut self.out);
-        self.out.push('"');
-        Ok(())
+        let mut formatted = String::new();
+        formatted.push('"');
+        layout::format(t, z, "2006-01-02T15:04:05.999999999Z07:00", &mut formatted);
+        formatted.push('"');
+        self.push_str(&formatted)
     }
 }
 
@@ -336,7 +435,11 @@ impl<'a> Decoder<'_, '_, 'a> {
                 }
                 self.bump();
             }
-            out.push_str(self.text.get(run..self.pos).unwrap_or(""));
+            let chunk = self.text.get(run..self.pos).unwrap_or("");
+            if !chunk.is_empty() {
+                alloc(self.f, chunk.len(), self.span)?;
+                out.push_str(chunk);
+            }
             match self.peek() {
                 None => return Err(self.fail("JSON, unexpected end")),
                 Some(b'"') => {
@@ -347,7 +450,6 @@ impl<'a> Decoder<'_, '_, 'a> {
                 Some(_) => return Err(self.fail("JSON, unexpected text")),
             }
         }
-        alloc(self.f, out.len(), self.span)?;
         Ok(out)
     }
 
@@ -380,12 +482,15 @@ impl<'a> Decoder<'_, '_, 'a> {
                 } else {
                     char::from_u32(unit)
                 };
-                out.push(c.unwrap_or(char::REPLACEMENT_CHARACTER));
+                let c = c.unwrap_or(char::REPLACEMENT_CHARACTER);
+                alloc(self.f, c.len_utf8(), self.span)?;
+                out.push(c);
                 return Ok(());
             }
             Some(_) => return Err(self.fail("JSON, unexpected text")),
         };
         self.bump();
+        alloc(self.f, c.len_utf8(), self.span)?;
         out.push(c);
         Ok(())
     }
@@ -440,9 +545,10 @@ impl<'a> Decoder<'_, '_, 'a> {
             self.expect(b':')?;
             self.space();
             let x = self.value(depth)?;
-            if out.insert(key.into(), x).is_none() {
+            if !out.contains_key(key.as_str()) {
                 alloc(self.f, 1, self.span)?;
             }
+            out.insert(key.into(), x);
             self.space();
             match self.peek() {
                 Some(b',') => self.bump(),

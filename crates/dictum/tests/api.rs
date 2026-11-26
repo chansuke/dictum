@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use dictum::{Ctx, Dynamic, ErrorCode, EvalErrorKind, Limits, NodeStatus, Rule, RuleSet, Schema};
+use dictum::{Ctx, DynMap, Dynamic, ErrorCode, EvalErrorKind, Limits, NodeStatus, Rule, RuleSet, Schema};
 use dictum_testkit::{Facts, sample, sample_now};
 
 fn schema() -> Schema<Facts> {
@@ -286,3 +286,182 @@ fn copying_out_a_shared_value_is_charged_per_reference() {
     let err = rule.eval(&Ctx::new(&facts)).unwrap_err();
     assert!(matches!(err.kind(), EvalErrorKind::AllocLimit), "{err:?}");
 }
+
+#[test]
+fn to_json_precharges_alloc_incrementally_and_matches_exact_boundary() {
+    let rule = Rule::<String, Facts>::compile("toJSON(user.Name)", &schema()).unwrap();
+    let check = |facts: &Facts, max_alloc: u64| {
+        let ctx = Ctx::new(facts).with_limits(Limits::default().with_max_alloc(max_alloc));
+        let fast = rule.eval(&ctx).map_err(|e| e.code());
+        let spec = rule.explain(&ctx).into_result().map_err(|e| e.code());
+        assert_eq!(fast, spec);
+        fast
+    };
+
+    // 6x HTML-escaped expansion and plain long strings fail on tight budgets.
+    let mut escaped_huge = sample();
+    escaped_huge.user.name = "<".repeat(20_000);
+    assert_eq!(check(&escaped_huge, 10), Err(ErrorCode::AllocLimit));
+
+    let mut plain_huge = sample();
+    plain_huge.user.name = "a".repeat(20_000);
+    assert_eq!(check(&plain_huge, 10), Err(ErrorCode::AllocLimit));
+
+    // Exact boundary for HTML-escaped text: `"\"\\u003ca\\u0026b\\u003e\""` is 22 bytes.
+    let mut escaped = sample();
+    escaped.user.name = "<a&b>".into();
+    assert_eq!(check(&escaped, 21), Err(ErrorCode::AllocLimit));
+    assert_eq!(check(&escaped, 22), Ok("\"\\u003ca\\u0026b\\u003e\"".into()));
+
+    // Exact boundary for base64-encoded bytes: 30 bytes -> 40 base64 chars + 2 quotes = 42 bytes.
+    let bytes_rule = Rule::<String, Facts>::compile("toJSON(user.Attrs)", &schema()).unwrap();
+    let mut with_bytes = sample();
+    with_bytes.user.attrs = Dynamic::Bytes(vec![0u8; 30]);
+    let ctx_fail = Ctx::new(&with_bytes).with_limits(Limits::default().with_max_alloc(41));
+    let ctx_ok = Ctx::new(&with_bytes).with_limits(Limits::default().with_max_alloc(42));
+    assert_eq!(bytes_rule.eval(&ctx_fail).unwrap_err().code(), ErrorCode::AllocLimit);
+    assert_eq!(bytes_rule.explain(&ctx_fail).into_result().unwrap_err().code(), ErrorCode::AllocLimit);
+    assert_eq!(bytes_rule.eval(&ctx_ok).unwrap().len(), 42);
+    assert_eq!(bytes_rule.explain(&ctx_ok).into_result().unwrap().len(), 42);
+}
+
+#[test]
+fn from_json_precharges_strings_and_object_entries() {
+    let str_rule = Rule::<Dynamic, Facts>::compile("fromJSON(user.Name)", &schema()).unwrap();
+    let check_dyn = |facts: &Facts, max_alloc: u64| {
+        let ctx = Ctx::new(facts).with_limits(Limits::default().with_max_alloc(max_alloc));
+        let fast = str_rule.eval(&ctx).map_err(|e| e.code());
+        let spec = str_rule.explain(&ctx).into_result().map_err(|e| e.code());
+        assert_eq!(fast, spec);
+        fast
+    };
+
+    // Large raw and escaped JSON strings fail under tight budgets.
+    let mut raw_huge = sample();
+    raw_huge.user.name = format!("\"{}\"", "x".repeat(20_000));
+    assert_eq!(check_dyn(&raw_huge, 10), Err(ErrorCode::AllocLimit));
+
+    let mut esc_huge = sample();
+    esc_huge.user.name = format!("\"{}\"", "\\u0041".repeat(5_000));
+    assert_eq!(check_dyn(&esc_huge, 10), Err(ErrorCode::AllocLimit));
+
+    // Exact boundary for mixed raw + escape + multi-byte UTF-8: `"a\nbé"` is 5 UTF-8 bytes.
+    let mut mixed = sample();
+    mixed.user.name = r#""a\nb\u00e9""#.into();
+    assert_eq!(check_dyn(&mixed, 4), Err(ErrorCode::AllocLimit));
+    assert_eq!(check_dyn(&mixed, 5), Ok(Dynamic::String("a\nbé".into())));
+
+    // Object with duplicate key: keys "a", "a", "b" (3 bytes) + 2 unique map entries = 5 alloc.
+    let len_rule = Rule::<i64, Facts>::compile("len(fromJSON(user.Name))", &schema()).unwrap();
+    let mut obj = sample();
+    obj.user.name = r#"{"a":1,"a":2,"b":3}"#.into();
+    let ctx_fail = Ctx::new(&obj).with_limits(Limits::default().with_max_alloc(4));
+    let ctx_ok = Ctx::new(&obj).with_limits(Limits::default().with_max_alloc(5));
+    assert_eq!(len_rule.eval(&ctx_fail).unwrap_err().code(), ErrorCode::AllocLimit);
+    assert_eq!(len_rule.explain(&ctx_fail).into_result().unwrap_err().code(), ErrorCode::AllocLimit);
+    assert_eq!(len_rule.eval(&ctx_ok).unwrap(), 2);
+    assert_eq!(len_rule.explain(&ctx_ok).into_result().unwrap(), 2);
+}
+
+#[test]
+fn string_builtins_precharge_alloc_on_tight_budgets() {
+    let b64_rule = Rule::<String, Facts>::compile("fromBase64(user.Name)", &schema()).unwrap();
+    let mut huge_b64 = sample();
+    huge_b64.user.name = "AAAA".repeat(5_000);
+    let tight = Ctx::new(&huge_b64).with_limits(Limits::default().with_max_alloc(10));
+    assert_eq!(b64_rule.eval(&tight).unwrap_err().code(), ErrorCode::AllocLimit);
+    assert_eq!(b64_rule.explain(&tight).into_result().unwrap_err().code(), ErrorCode::AllocLimit);
+
+    let mut small_b64 = sample();
+    small_b64.user.name = "YWJjZA==".into();
+    let fail = Ctx::new(&small_b64).with_limits(Limits::default().with_max_alloc(3));
+    let ok = Ctx::new(&small_b64).with_limits(Limits::default().with_max_alloc(4));
+    assert_eq!(b64_rule.eval(&fail).unwrap_err().code(), ErrorCode::AllocLimit);
+    assert_eq!(b64_rule.eval(&ok).unwrap(), "abcd");
+
+    let join_rule = Rule::<String, Facts>::compile("join(user.Tags, user.Name)", &schema()).unwrap();
+    let mut huge_sep = sample();
+    huge_sep.user.name = "-".repeat(10_000);
+    let tight_join = Ctx::new(&huge_sep).with_limits(Limits::default().with_max_alloc(10));
+    assert_eq!(join_rule.eval(&tight_join).unwrap_err().code(), ErrorCode::AllocLimit);
+    assert_eq!(join_rule.explain(&tight_join).into_result().unwrap_err().code(), ErrorCode::AllocLimit);
+
+    let upper_rule = Rule::<String, Facts>::compile("upper(user.Name)", &schema()).unwrap();
+    let mut huge_str = sample();
+    huge_str.user.name = "a".repeat(10_000);
+    let tight_upper = Ctx::new(&huge_str).with_limits(Limits::default().with_max_alloc(10));
+    assert_eq!(upper_rule.eval(&tight_upper).unwrap_err().code(), ErrorCode::AllocLimit);
+    assert_eq!(upper_rule.explain(&tight_upper).into_result().unwrap_err().code(), ErrorCode::AllocLimit);
+}
+
+#[test]
+fn folded_constant_containers_are_charged_when_copied_out() {
+    // `c` folds at compile time into a `Seq::Const` of 1,000 ints; embedding it 70 times
+    // into a dynamic array builds 71 outer elements and copies 71 + 70 * 1,000 = 70,071
+    // elements out into `Dynamic` (70,142 total alloc for `eval`).
+    let copies = vec!["c"; 70].join(", ");
+    let src = format!("let c = map(1..1000, #); [user.Age, {copies}]");
+    let rule = Rule::<Dynamic, Facts>::compile(&src, &schema()).unwrap();
+    let facts = sample();
+    let tight = Ctx::new(&facts).with_limits(Limits::default().with_max_alloc(70_141));
+    let err = rule.eval(&tight).unwrap_err();
+    assert!(matches!(err.kind(), EvalErrorKind::AllocLimit), "{err:?}");
+    let spec_err = rule.explain(&tight).into_result().unwrap_err();
+    assert!(matches!(spec_err.kind(), EvalErrorKind::AllocLimit), "{spec_err:?}");
+
+    let exact = Ctx::new(&facts).with_limits(Limits::default().with_max_alloc(70_142));
+    let out = rule.eval(&exact).unwrap();
+    assert!(matches!(out, Dynamic::Array(xs) if xs.len() == 71));
+
+    // Same for folded constant maps (`MapRef::Const`): 4 * 5 entries + 5 outer = 25 copied,
+    // plus 5 for the outer array literal = 30 total alloc.
+    let map_rule =
+        Rule::<Dynamic, Facts>::compile("let m = {a: 1, b: 2, c: 3, d: 4, e: 5}; [user.Age, m, m, m, m]", &schema())
+            .unwrap();
+    let fail = Ctx::new(&facts).with_limits(Limits::default().with_max_alloc(29));
+    let ok = Ctx::new(&facts).with_limits(Limits::default().with_max_alloc(30));
+    assert_eq!(map_rule.eval(&fail).unwrap_err().code(), ErrorCode::AllocLimit);
+    assert!(map_rule.eval(&ok).is_ok());
+}
+
+#[test]
+fn to_json_enforces_depth_limit_on_deeply_nested_dynamic() {
+    let rule = Rule::<String, Facts>::compile("toJSON(user.Attrs)", &schema()).unwrap();
+    let nest_array = |levels: usize| {
+        let mut v = Dynamic::Int(0);
+        for _ in 0..levels {
+            v = Dynamic::Array(vec![v]);
+        }
+        v
+    };
+    let nest_map = |levels: usize| {
+        let mut v = Dynamic::Int(0);
+        for _ in 0..levels {
+            let mut m = DynMap::new();
+            m.insert("a", v);
+            v = Dynamic::Map(m);
+        }
+        v
+    };
+
+    // Depth 256 (MAX_VALUE_DEPTH) succeeds with enough allocation budget for indentation.
+    let mut at_limit = sample();
+    at_limit.user.attrs = nest_array(256);
+    let big = Limits::default().with_max_alloc(1 << 20);
+    assert!(rule.eval(&Ctx::new(&at_limit).with_limits(big)).is_ok());
+    assert!(rule.explain(&Ctx::new(&at_limit).with_limits(big)).into_result().is_ok());
+
+    // Depth 257 and 500 fail cleanly with DepthLimit (E0312) for both arrays and maps.
+    for value in [nest_array(257), nest_array(500), nest_map(257), nest_map(500)] {
+        let mut facts = sample();
+        facts.user.attrs = value;
+        let ctx = Ctx::new(&facts).with_limits(big);
+        let fast = rule.eval(&ctx).unwrap_err();
+        assert!(matches!(fast.kind(), EvalErrorKind::DepthLimit), "{fast:?}");
+        assert_eq!(fast.code(), ErrorCode::DepthLimit);
+        assert_eq!(fast.code().as_str(), "E0312");
+        let spec = rule.explain(&ctx).into_result().unwrap_err();
+        assert_eq!(spec.code(), ErrorCode::DepthLimit);
+    }
+}
+

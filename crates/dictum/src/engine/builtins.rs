@@ -92,10 +92,19 @@ pub(crate) fn base64_encode(bytes: &[u8], out: &mut String) {
     }
 }
 
+/// Why [`base64_decode`] stopped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Base64Error {
+    /// Invalid input at this byte offset.
+    Invalid(usize),
+    /// Output would exceed the caller's byte budget.
+    Limit,
+}
+
 /// Go's `base64.StdEncoding.DecodeString`: padding is required, `\r` and `\n` are
-/// skipped anywhere, and the unused bits of the last character may be set. The error
-/// is the byte offset where the input stops being valid.
-pub(crate) fn base64_decode(text: &[u8]) -> Result<Vec<u8>, usize> {
+/// skipped anywhere, and the unused bits of the last character may be set. Stops
+/// before allocating past `limit` decoded bytes.
+pub(crate) fn base64_decode(text: &[u8], limit: usize) -> Result<Vec<u8>, Base64Error> {
     let sextet = |c: u8| match c {
         b'A'..=b'Z' => Some(c.wrapping_sub(b'A')),
         b'a'..=b'z' => Some(c.wrapping_sub(b'a').wrapping_add(26)),
@@ -104,28 +113,33 @@ pub(crate) fn base64_decode(text: &[u8]) -> Result<Vec<u8>, usize> {
         b'/' => Some(63),
         _ => None,
     };
-    let mut out = Vec::with_capacity((text.len() / 4).saturating_mul(3));
+    let mut out = Vec::with_capacity((text.len() / 4).saturating_mul(3).min(limit));
     let mut quantum: Vec<u8> = Vec::with_capacity(4);
     let (mut pads, mut done) = (0usize, false);
-    let flush = |quantum: &[u8], out: &mut Vec<u8>| {
+    let flush = |quantum: &[u8], out: &mut Vec<u8>| -> Result<(), Base64Error> {
+        let take = quantum.len().saturating_sub(1);
+        if out.len().saturating_add(take) > limit {
+            return Err(Base64Error::Limit);
+        }
         let n = quantum.iter().enumerate().fold(0u32, |n, (i, &six)| {
             n | u32::from(six).wrapping_shl(18_u32.wrapping_sub(u32::try_from(i).unwrap_or(0).wrapping_mul(6)))
         });
         let bytes = [n.wrapping_shr(16), n.wrapping_shr(8), n].map(|b| (b & 0xff) as u8);
-        out.extend(bytes.iter().take(quantum.len().saturating_sub(1)));
+        out.extend(bytes.iter().take(take));
+        Ok(())
     };
     for (i, &c) in text.iter().enumerate() {
         if c == b'\n' || c == b'\r' {
             continue;
         }
         if done {
-            return Err(i);
+            return Err(Base64Error::Invalid(i));
         }
         match sextet(c) {
             Some(six) if pads == 0 => {
                 quantum.push(six);
                 if quantum.len() == 4 {
-                    flush(&quantum, &mut out);
+                    flush(&quantum, &mut out)?;
                     quantum.clear();
                 }
             }
@@ -133,13 +147,13 @@ pub(crate) fn base64_decode(text: &[u8]) -> Result<Vec<u8>, usize> {
                 pads = pads.saturating_add(1);
                 done = quantum.len().saturating_add(pads) == 4;
             }
-            _ => return Err(i),
+            _ => return Err(Base64Error::Invalid(i)),
         }
     }
     if !quantum.is_empty() && !done {
-        return Err(text.len());
+        return Err(Base64Error::Invalid(text.len()));
     }
-    flush(&quantum, &mut out);
+    flush(&quantum, &mut out)?;
     Ok(out)
 }
 
@@ -511,7 +525,7 @@ mod tests {
             let mut text = String::new();
             base64_encode(prefix, &mut text);
             assert_eq!(text.len(), len.div_ceil(3).saturating_mul(4));
-            assert_eq!(base64_decode(text.as_bytes()), Ok(prefix.to_vec()), "{text}");
+            assert_eq!(base64_decode(text.as_bytes(), usize::MAX), Ok(prefix.to_vec()), "{text}");
         }
     }
 }
