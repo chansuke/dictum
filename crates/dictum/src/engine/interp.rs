@@ -829,7 +829,11 @@ pub(super) fn slice_value<'a>(
             match &b.0 {
                 // A slice of a borrowed string borrows too.
                 Repr::Str(Str::Borrowed(s)) => Ok(Value(Repr::Str(Str::Borrowed(s.get(r).unwrap_or(""))))),
-                _ => built(f, s.get(r).unwrap_or("").into(), span),
+                _ => {
+                    let slice = s.get(r).unwrap_or("");
+                    alloc(f, slice.len(), span)?;
+                    Ok(Value(Repr::Str(Str::Shared(slice.into()))))
+                }
             }
         }
         SliceOp::Bytes => {
@@ -924,7 +928,11 @@ pub(super) fn check<'a>(v: Value<'a>, ty: &Type, f: &mut Frame<'a>, span: Span) 
 fn narrowed<'a>(v: &Value<'a>, f: &mut Frame<'a>, span: Span, part: impl for<'x> Fn(&'x str) -> &'x str) -> Res<'a> {
     match &v.0 {
         Repr::Str(Str::Borrowed(b)) => Ok(Value(Repr::Str(Str::Borrowed(part(b))))),
-        _ => built(f, part(string(v, span)?).into(), span),
+        _ => {
+            let slice = part(string(v, span)?);
+            alloc(f, slice.len(), span)?;
+            Ok(Value(Repr::Str(Str::Shared(slice.into()))))
+        }
     }
 }
 
@@ -955,8 +963,8 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 stripped.unwrap_or(t)
             })
         }
-        Intrinsic::Upper => built(f, simple_case(s(0)?, true), span),
-        Intrinsic::Lower => built(f, simple_case(s(0)?, false), span),
+        Intrinsic::Upper => Ok(Value::string(simple_case(s(0)?, true, f, span)?)),
+        Intrinsic::Lower => Ok(Value::string(simple_case(s(0)?, false, f, span)?)),
         Intrinsic::Split { after } => {
             let (text, sep) = (s(0)?, s(1)?);
             let n = if args.len() > 2 { int(arg(2)?, span)? } else { -1 };
@@ -1053,12 +1061,15 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             steps(f, xs.len(), span)?;
             let mut out = String::new();
             for (i, x) in xs.iter().enumerate() {
+                let piece = x.as_str().ok_or_else(|| mismatch("string", &x, span))?;
+                let need = if i > 0 { sep.len().saturating_add(piece.len()) } else { piece.len() };
+                alloc(f, need, span)?;
                 if i > 0 {
                     out.push_str(sep);
                 }
-                out.push_str(x.as_str().ok_or_else(|| mismatch("string", &x, span))?);
+                out.push_str(piece);
             }
-            built(f, out, span)
+            Ok(Value::string(out))
         }
         Intrinsic::Concat => {
             let mut out = Vec::new();
@@ -1215,10 +1226,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             };
             Ok(Value(Repr::Decimal(d)))
         }
-        Intrinsic::ToJson => {
-            let out = json::encode(arg(0)?, f, span)?;
-            built(f, out, span)
-        }
+        Intrinsic::ToJson => Ok(Value::string(json::encode(arg(0)?, f, span)?)),
         Intrinsic::FromJson => json::decode(s(0)?, f, span),
         Intrinsic::ToBase64 => {
             let text = s(0)?;
@@ -1229,8 +1237,11 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         }
         Intrinsic::FromBase64 => {
             let text = s(0)?;
-            let bytes = builtins::base64_decode(text.as_bytes())
-                .map_err(|at| invalid("base64", builtins::excerpt(text, at)))?;
+            let limit = usize::try_from(f.budget.alloc_left()).unwrap_or(usize::MAX);
+            let bytes = builtins::base64_decode(text.as_bytes(), limit).map_err(|err| match err {
+                builtins::Base64Error::Invalid(at) => invalid("base64", builtins::excerpt(text, at)),
+                builtins::Base64Error::Limit => Frame::fault(EvalErrorKind::AllocLimit, span),
+            })?;
             let decoded = String::from_utf8(bytes).map_err(|_| invalid("base64, not UTF-8 text", text))?;
             built(f, decoded, span)
         }
@@ -1406,19 +1417,24 @@ fn sum<'a>(xs: &Seq<'a>, span: Span) -> Res<'a> {
 
 /// Go's `unicode.ToUpper`/`ToLower` per character: a character whose case mapping
 /// is more than one character (`ß`) stays as it is.
-fn simple_case(s: &str, upper: bool) -> String {
-    s.chars()
-        .map(|c| {
-            let mut mapped = alloc::vec::Vec::new();
-            if upper {
-                mapped.extend(c.to_uppercase())
-            } else {
-                mapped.extend(c.to_lowercase())
-            }
-            match mapped.as_slice() {
-                [one] => *one,
+fn simple_case(s: &str, upper: bool, f: &mut Frame<'_>, span: Span) -> Result<String, Fault> {
+    let mut out = String::new();
+    for c in s.chars() {
+        let mapped = if upper {
+            let mut it = c.to_uppercase();
+            match (it.next(), it.next()) {
+                (Some(one), None) => one,
                 _ => c,
             }
-        })
-        .collect()
+        } else {
+            let mut it = c.to_lowercase();
+            match (it.next(), it.next()) {
+                (Some(one), None) => one,
+                _ => c,
+            }
+        };
+        alloc(f, mapped.len_utf8(), span)?;
+        out.push(mapped);
+    }
+    Ok(out)
 }
