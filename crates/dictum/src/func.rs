@@ -38,10 +38,21 @@ pub(crate) struct FuncImpl {
 }
 
 /// A Rust function usable as a schema function: `Fn(A1, ..., An) -> R` for
-/// `n <= 4`, where each `Ai` is `bool`, `i64`, `f64`, `&str` or `jiff::Timestamp`,
-/// and `R` is `bool`, `i64`, `f64` or `String`, or `Result<that, E>` with
-/// `E: Error + Send + Sync + 'static`. The parameter and return lists are the
-/// `FromArg` and `RetValue` impls below; extend those, not this comment.
+/// `n <= 4`, where:
+///
+/// - Each parameter `Ai` is `bool`, `i64`, `f64`, `&str`, `jiff::Timestamp`,
+///   `jiff::SignedDuration`, `rust_decimal::Decimal` (`decimal` feature), or
+///   `Option<T>` for any of those non-optional parameter types (nested
+///   `Option<Option<T>>` is rejected at compile time).
+/// - The return type `R` is `bool`, `i64`, `f64`, `String`, `jiff::Timestamp`,
+///   `jiff::SignedDuration`, `rust_decimal::Decimal` (`decimal` feature), or
+///   `Option<T>` for any of those non-optional return types (nested
+///   `Option<Option<T>>` is rejected at compile time); or `Result<that, E>` with
+///   `E: core::error::Error + Send + Sync + 'static`.
+///
+/// Annotate closure parameter types so Rust can infer the signature. Values
+/// returned by user functions are not charged to the evaluation allocation
+/// budget ([`Limits::max_alloc`](crate::Limits::with_max_alloc)).
 ///
 /// The marker `M` only disambiguates arities; callers never name it.
 pub trait IntoFunc<M>: Send + Sync + 'static {
@@ -100,6 +111,31 @@ impl<T: RetValue, E: core::error::Error + Send + Sync + 'static> Ret for Result<
     }
 }
 
+mod sealed {
+    /// Marker for non-optional [`super::FromArg`] types, preventing nested `Option<Option<T>>`.
+    pub trait NonOptionArg: super::FromArg {}
+    /// Marker for non-optional [`super::RetValue`] types, preventing nested `Option<Option<T>>`.
+    pub trait NonOptionRet: super::RetValue {}
+
+    impl NonOptionArg for bool {}
+    impl NonOptionArg for i64 {}
+    impl NonOptionArg for f64 {}
+    impl NonOptionArg for &str {}
+    impl NonOptionArg for jiff::Timestamp {}
+    impl NonOptionArg for jiff::SignedDuration {}
+    #[cfg(feature = "decimal")]
+    impl NonOptionArg for rust_decimal::Decimal {}
+
+    impl NonOptionRet for bool {}
+    impl NonOptionRet for i64 {}
+    impl NonOptionRet for f64 {}
+    impl NonOptionRet for alloc::string::String {}
+    impl NonOptionRet for jiff::Timestamp {}
+    impl NonOptionRet for jiff::SignedDuration {}
+    #[cfg(feature = "decimal")]
+    impl NonOptionRet for rust_decimal::Decimal {}
+}
+
 impl FromArg for i64 {
     type Of<'s> = i64;
     fn ty() -> Type {
@@ -151,6 +187,37 @@ impl FromArg for jiff::Timestamp {
     }
 }
 
+impl FromArg for jiff::SignedDuration {
+    type Of<'s> = jiff::SignedDuration;
+    fn ty() -> Type {
+        Type::Duration
+    }
+    fn from_value(v: &Value<'_>) -> Option<jiff::SignedDuration> {
+        v.as_duration()
+    }
+}
+
+#[cfg(feature = "decimal")]
+impl FromArg for rust_decimal::Decimal {
+    type Of<'s> = rust_decimal::Decimal;
+    fn ty() -> Type {
+        Type::Decimal
+    }
+    fn from_value(v: &Value<'_>) -> Option<rust_decimal::Decimal> {
+        v.as_decimal()
+    }
+}
+
+impl<T: sealed::NonOptionArg> FromArg for Option<T> {
+    type Of<'s> = Option<T::Of<'s>>;
+    fn ty() -> Type {
+        Type::option(T::ty())
+    }
+    fn from_value<'s>(v: &'s Value<'_>) -> Option<Self::Of<'s>> {
+        if v.is_nil() { Some(None) } else { T::from_value(v).map(Some) }
+    }
+}
+
 impl RetValue for bool {
     fn ty() -> Type {
         Type::Bool
@@ -184,6 +251,46 @@ impl RetValue for String {
     }
     fn into_value(self) -> Value<'static> {
         Value::string(self)
+    }
+}
+
+impl RetValue for jiff::Timestamp {
+    fn ty() -> Type {
+        Type::Time
+    }
+    fn into_value(self) -> Value<'static> {
+        Value::time(self)
+    }
+}
+
+impl RetValue for jiff::SignedDuration {
+    fn ty() -> Type {
+        Type::Duration
+    }
+    fn into_value(self) -> Value<'static> {
+        Value::duration(self)
+    }
+}
+
+#[cfg(feature = "decimal")]
+impl RetValue for rust_decimal::Decimal {
+    fn ty() -> Type {
+        Type::Decimal
+    }
+    fn into_value(self) -> Value<'static> {
+        Value::decimal(self)
+    }
+}
+
+impl<T: sealed::NonOptionRet> RetValue for Option<T> {
+    fn ty() -> Type {
+        Type::option(T::ty())
+    }
+    fn into_value(self) -> Value<'static> {
+        match self {
+            Some(v) => v.into_value(),
+            None => Value::NIL,
+        }
     }
 }
 
