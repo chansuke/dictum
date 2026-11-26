@@ -157,6 +157,10 @@ pub enum EvalErrorKind {
     /// `reduce` nested a value deeper than 256 levels (`[#acc]` at each step), which
     /// would let a later walk over it exhaust the stack.
     DepthLimit,
+    /// The facts were read by a different schema than the rule was compiled against:
+    /// runtime facts from another `runtime::Root`, whose fields would otherwise be
+    /// read by the wrong ids. Derived facts always match, by type.
+    SchemaMismatch,
     /// A schema function returned `Err`.
     Function {
         /// The function's name.
@@ -177,7 +181,8 @@ impl EvalErrorKind {
             | EvalErrorKind::DivisionByZero
             | EvalErrorKind::StepLimit
             | EvalErrorKind::AllocLimit
-            | EvalErrorKind::ClockUnset => (Vec::new(), None),
+            | EvalErrorKind::ClockUnset
+            | EvalErrorKind::SchemaMismatch => (Vec::new(), None),
             EvalErrorKind::IndexOutOfBounds { index, len } => {
                 (vec![Arg::Int(*index), Arg::Int(i64::try_from(*len).unwrap_or(i64::MAX))], None)
             }
@@ -205,6 +210,7 @@ impl EvalErrorKind {
             EvalErrorKind::DuplicateKey(_) => ErrorCode::RuntimeDuplicateKey,
             EvalErrorKind::ClockUnset => ErrorCode::ClockUnset,
             EvalErrorKind::DepthLimit => ErrorCode::DepthLimit,
+            EvalErrorKind::SchemaMismatch => ErrorCode::SchemaMismatch,
             EvalErrorKind::Function { .. } => ErrorCode::FunctionFailed,
             EvalErrorKind::Internal(_) => ErrorCode::Internal,
         }

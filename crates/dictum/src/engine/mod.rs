@@ -195,8 +195,20 @@ impl Prepared {
         &self.checked.source
     }
 
+    /// Whether `frame`'s facts were read by this rule's schema. Fields are read by
+    /// index, so facts of another root would be read by the wrong ids; derived facts
+    /// match by type, runtime facts (one Rust type for every root) only by this check.
+    fn check_root(&self, frame: &Frame<'_>) -> Result<(), Fault> {
+        if core::ptr::eq(frame.root.desc(), self.schema.root()) {
+            Ok(())
+        } else {
+            Err(Fault { kind: EvalErrorKind::SchemaMismatch, span: self.checked.ir.body().span() })
+        }
+    }
+
     /// Evaluate for `eval`.
     pub(crate) fn run<'a>(&self, frame: &mut Frame<'a>) -> Result<Value<'a>, Fault> {
+        self.check_root(frame)?;
         let v = match &self.tree {
             Ok(tree) => tree.run(frame)?,
             Err(ice) => {
@@ -209,6 +221,10 @@ impl Prepared {
     /// Run `interp` with a trace for `explain`.
     pub(crate) fn explain<'a>(&self, frame: &mut Frame<'a>) -> (Result<Value<'a>, Fault>, ExplainNode) {
         let mut trace = Trace::new(self.checked.ir.node_count());
+        if let Err(fault) = self.check_root(frame) {
+            trace.record(self.checked.ir.body().id(), trace::Recorded::Failed(fault.kind.code()), None);
+            return (Err(fault), trace.into_report_tree(&self.checked.ir));
+        }
         let r = interp::eval(&self.checked.ir, &self.schema, &self.checked.patterns, frame, Some(&mut trace));
         let r = r.and_then(|v| self.charge_result(v, frame));
         (r, trace.into_report_tree(&self.checked.ir))
