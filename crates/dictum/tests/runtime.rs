@@ -181,3 +181,75 @@ fn schema_builder_for_runtime_facts_rejects_facts_from_a_root() {
     assert_eq!(report.root().status(), &NodeStatus::Failed(ErrorCode::SchemaMismatch));
 }
 
+#[test]
+fn failing_description_checks_all_structs_and_types_consistently() {
+    // Error in a later struct's field type after earlier valid structs and fields
+    // (previously leaked the earlier structs before parsing types).
+    let mut d = Description::new();
+    d.structure("User", [("Name", "string"), ("Age", "int")]);
+    d.structure("Order", [("Buyer", "User"), ("Coupon", "Missing")]);
+    for _ in 0..3 {
+        assert_eq!(
+            d.root([("order", "Order")]).err().unwrap().to_string(),
+            "`Order.Coupon` names an unknown type `Missing`"
+        );
+    }
+
+    // Invalid struct name, reserved struct name, duplicate "Facts", and struct field errors.
+    let mut bad_struct = Description::new();
+    bad_struct.structure("not", [("x", "int")]);
+    assert_eq!(bad_struct.root([("a", "int")]).err().unwrap().to_string(), "`not` is not a valid struct name");
+
+    let mut dup_facts = Description::new();
+    dup_facts.structure("Facts", [("x", "int")]);
+    assert_eq!(dup_facts.root([("a", "int")]).err().unwrap().to_string(), "`Facts` is described twice");
+
+    let mut bad_field = Description::new();
+    bad_field.structure("User", [("in", "int")]);
+    assert_eq!(bad_field.root([("u", "User")]).err().unwrap().to_string(), "`User.in` is not a valid field name");
+
+    let mut dup_field = Description::new();
+    dup_field.structure("User", [("Name", "string"), ("Name", "int")]);
+    assert_eq!(dup_field.root([("u", "User")]).err().unwrap().to_string(), "`User.Name` is described twice");
+}
+
+#[test]
+fn deeply_nested_type_strings_fail_cleanly() {
+    let wrap = |open: &str, close: &str, depth: usize| format!("{}int{}", open.repeat(depth), close.repeat(depth));
+    let max = dictum_syntax::MAX_DEPTH as usize;
+
+    // Exact boundary succeeds.
+    assert!(Description::new().root([("x", wrap("array<", ">", max))]).is_ok());
+
+    // One past MAX_DEPTH and much deeper strings fail cleanly without stack overflow.
+    for (open, close) in [("array<", ">"), ("Option<", ">"), ("map<string, ", ">")] {
+        for depth in [max + 1, 500] {
+            let err = Description::new().root([("x", wrap(open, close, depth))]).err().unwrap();
+            assert_eq!(err.to_string(), "`Facts.x` is nested too deep");
+        }
+    }
+}
+
+#[test]
+fn deeply_nested_facts_fail_cleanly() {
+    let mut d = Description::new();
+    d.structure("Node", [("Next", "Option<Node>")]);
+    let root = d.root([("node", "Option<Node>")]).unwrap();
+
+    let mut cur = map(&[]);
+    for _ in 0..500 {
+        cur = map(&[("Next", cur)]);
+    }
+    let err = root.facts(&map(&[("node", cur)])).err().unwrap();
+    assert!(err.to_string().ends_with(": is nested too deep"), "{err}");
+
+    let mut arr_desc = Description::new();
+    arr_desc.structure("Tree", [("Kids", "array<Tree>")]);
+    let arr_root = arr_desc.root([("tree", "Tree")]).unwrap();
+    let mut tree = map(&[("Kids", Dynamic::Array(vec![]))]);
+    for _ in 0..500 {
+        tree = map(&[("Kids", Dynamic::Array(vec![tree]))]);
+    }
+    let err = arr_root.facts(&map(&[("tree", tree)])).err().unwrap();
+    assert!(err.to_string().ends_with(": is nested too deep"), "{err}");
+}

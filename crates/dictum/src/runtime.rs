@@ -85,12 +85,9 @@ impl Description {
             }
             all.push((name, fields));
         }
-        // Every descriptor first, then the field types, which may name any of them.
-        let mut cells: Vec<Vec<&'static OnceLock<Type>>> = Vec::with_capacity(all.len());
-        let mut descs: Vec<(&str, &'static StructDesc)> = Vec::with_capacity(all.len());
+        // Validate every field name and parse every type before leaking anything, so
+        // an error never leaves leaked descriptors behind.
         for (name, fields) in &all {
-            let mut field_descs = Vec::with_capacity(fields.len());
-            let mut field_cells = Vec::with_capacity(fields.len());
             for (i, (field, _)) in fields.iter().enumerate() {
                 let path = alloc::format!("{name}.{field}");
                 if !dictum_syntax::is_identifier(field) {
@@ -99,37 +96,107 @@ impl Description {
                 if fields.get(..i).is_some_and(|before| before.iter().any(|(f, _)| f == field)) {
                     return Err(DescribeError::new(&path, "is described twice"));
                 }
-                let cell: &'static OnceLock<Type> = Box::leak(Box::new(OnceLock::new()));
-                let ty: &'static (dyn Fn() -> Type + Send + Sync) =
-                    Box::leak(Box::new(move || cell.get().cloned().unwrap_or(Type::Any)));
-                field_descs.push(FieldDesc::described(leak(field), ty));
-                field_cells.push(cell);
             }
-            let desc: &'static StructDesc =
-                Box::leak(Box::new(StructDesc::new(leak(name), Box::leak(field_descs.into()))));
-            descs.push((name, desc));
+        }
+        let names: Vec<&str> = all.iter().map(|(n, _)| *n).collect();
+        let mut parsed: Vec<Vec<ParsedType>> = Vec::with_capacity(all.len());
+        for (name, fields) in &all {
+            let mut field_types = Vec::with_capacity(fields.len());
+            for (field, text) in *fields {
+                let ty = parse_type(text, &names)
+                    .map_err(|why| DescribeError::new(&alloc::format!("{name}.{field}"), &why))?;
+                field_types.push(ty);
+            }
+            parsed.push(field_types);
+        }
+
+        // Everything is valid; leak every descriptor first, then tie recursive field
+        // types together. No error path exists past this point.
+        let (root_desc, root_cells) = leak_struct("Facts", &root);
+        let mut cells: Vec<Vec<&'static OnceLock<Type>>> = Vec::with_capacity(all.len());
+        let mut descs: Vec<&'static StructDesc> = Vec::with_capacity(all.len());
+        descs.push(root_desc);
+        cells.push(root_cells);
+        for &(name, fields) in all.get(1..).unwrap_or(&[]) {
+            let (desc, field_cells) = leak_struct(name, fields);
+            descs.push(desc);
             cells.push(field_cells);
         }
-        for ((name, fields), field_cells) in all.iter().zip(&cells) {
-            for ((field, text), cell) in fields.iter().zip(field_cells) {
-                let ty = parse_type(text, &descs)
-                    .map_err(|why| DescribeError::new(&alloc::format!("{name}.{field}"), &why))?;
-                let _ = cell.set(ty);
+        for (field_types, field_cells) in parsed.iter().zip(&cells) {
+            for (parsed_ty, cell) in field_types.iter().zip(field_cells) {
+                let _ = cell.set(parsed_ty.resolve(&descs));
             }
         }
-        let desc = descs.first().map(|(_, d)| *d).ok_or_else(|| DescribeError::new("Facts", "has no descriptor"))?;
-        Ok(Root { desc })
+        Ok(Root { desc: root_desc })
     }
+}
+
+fn leak_struct(name: &str, fields: &[(String, String)]) -> (&'static StructDesc, Vec<&'static OnceLock<Type>>) {
+    let mut field_descs = Vec::with_capacity(fields.len());
+    let mut field_cells = Vec::with_capacity(fields.len());
+    for (field, _) in fields {
+        let cell: &'static OnceLock<Type> = Box::leak(Box::new(OnceLock::new()));
+        let ty: &'static (dyn Fn() -> Type + Send + Sync) =
+            Box::leak(Box::new(move || cell.get().cloned().unwrap_or(Type::Any)));
+        field_descs.push(FieldDesc::described(leak(field), ty));
+        field_cells.push(cell);
+    }
+    let desc: &'static StructDesc = Box::leak(Box::new(StructDesc::new(leak(name), Box::leak(field_descs.into()))));
+    (desc, field_cells)
 }
 
 fn leak(s: &str) -> &'static str {
     Box::leak(s.into())
 }
 
-/// `ty` from the description language; `structs` are the named descriptors.
-fn parse_type(text: &str, structs: &[(&str, &'static StructDesc)]) -> Result<Type, String> {
+/// A parsed field type before descriptors are allocated: struct references are
+/// indices into the description's struct table, so a bad type fails before anything
+/// is leaked.
+enum ParsedType {
+    Bool,
+    Int,
+    Float,
+    String,
+    Bytes,
+    Time,
+    Duration,
+    Location,
+    Any,
+    #[cfg(feature = "decimal")]
+    Decimal,
+    Array(Box<ParsedType>),
+    Option(Box<ParsedType>),
+    Map(Box<ParsedType>),
+    Struct(usize),
+}
+
+impl ParsedType {
+    fn resolve(&self, descs: &[&'static StructDesc]) -> Type {
+        match self {
+            ParsedType::Bool => Type::Bool,
+            ParsedType::Int => Type::Int,
+            ParsedType::Float => Type::Float,
+            ParsedType::String => Type::String,
+            ParsedType::Bytes => Type::Bytes,
+            ParsedType::Time => Type::Time,
+            ParsedType::Duration => Type::Duration,
+            ParsedType::Location => Type::Location,
+            ParsedType::Any => Type::Any,
+            #[cfg(feature = "decimal")]
+            ParsedType::Decimal => Type::Decimal,
+            ParsedType::Array(inner) => Type::array(inner.resolve(descs)),
+            ParsedType::Option(inner) => Type::option(inner.resolve(descs)),
+            ParsedType::Map(value) => Type::map(value.resolve(descs)),
+            ParsedType::Struct(idx) => descs.get(*idx).copied().map_or(Type::Any, Type::Struct),
+        }
+    }
+}
+
+/// `ty` from the description language; `structs` are the struct names in descriptor
+/// order.
+fn parse_type(text: &str, structs: &[&str]) -> Result<ParsedType, String> {
     let mut p = TypeParser { rest: text, structs };
-    let ty = p.ty()?;
+    let ty = p.ty(0)?;
     if !p.rest.trim().is_empty() {
         return Err(alloc::format!("has a type with extra text: `{text}`"));
     }
@@ -138,7 +205,7 @@ fn parse_type(text: &str, structs: &[(&str, &'static StructDesc)]) -> Result<Typ
 
 struct TypeParser<'t, 's> {
     rest: &'t str,
-    structs: &'s [(&'s str, &'static StructDesc)],
+    structs: &'s [&'s str],
 }
 
 impl<'t> TypeParser<'t, '_> {
@@ -161,46 +228,49 @@ impl<'t> TypeParser<'t, '_> {
         word
     }
 
-    fn inner(&mut self) -> Result<Type, String> {
+    fn inner(&mut self, depth: u32) -> Result<ParsedType, String> {
         if !self.eat("<") {
             return Err("needs `<` after a generic type".into());
         }
-        let ty = self.ty()?;
+        let ty = self.ty(depth)?;
         if !self.eat(">") {
             return Err("needs `>` to close a generic type".into());
         }
         Ok(ty)
     }
 
-    fn ty(&mut self) -> Result<Type, String> {
+    fn ty(&mut self, depth: u32) -> Result<ParsedType, String> {
+        if depth > dictum_syntax::MAX_DEPTH {
+            return Err("is nested too deep".into());
+        }
         let word = self.word();
         Ok(match word {
-            "bool" => Type::Bool,
-            "int" => Type::Int,
-            "float" => Type::Float,
-            "string" => Type::String,
-            "bytes" => Type::Bytes,
-            "time" => Type::Time,
-            "duration" => Type::Duration,
-            "location" => Type::Location,
-            "any" => Type::Any,
+            "bool" => ParsedType::Bool,
+            "int" => ParsedType::Int,
+            "float" => ParsedType::Float,
+            "string" => ParsedType::String,
+            "bytes" => ParsedType::Bytes,
+            "time" => ParsedType::Time,
+            "duration" => ParsedType::Duration,
+            "location" => ParsedType::Location,
+            "any" => ParsedType::Any,
             #[cfg(feature = "decimal")]
-            "decimal" => Type::Decimal,
-            "array" => Type::array(self.inner()?),
-            "Option" => Type::option(self.inner()?),
+            "decimal" => ParsedType::Decimal,
+            "array" => ParsedType::Array(Box::new(self.inner(depth.saturating_add(1))?)),
+            "Option" => ParsedType::Option(Box::new(self.inner(depth.saturating_add(1))?)),
             "map" => {
                 if !(self.eat("<") && self.eat("string") && self.eat(",")) {
                     return Err("needs `map<string, T>`; map keys are always strings".into());
                 }
-                let value = self.ty()?;
+                let value = self.ty(depth.saturating_add(1))?;
                 if !self.eat(">") {
                     return Err("needs `>` to close a generic type".into());
                 }
-                Type::map(value)
+                ParsedType::Map(Box::new(value))
             }
             "" => return Err("needs a type".into()),
-            name => match self.structs.iter().find(|(n, _)| *n == name) {
-                Some((_, desc)) => Type::Struct(desc),
+            name => match self.structs.iter().position(|n| *n == name) {
+                Some(idx) => ParsedType::Struct(idx),
                 None => return Err(alloc::format!("names an unknown type `{name}`")),
             },
         })
@@ -246,7 +316,7 @@ impl Root {
     /// float from any number. A missing or `nil` field is allowed only for `Option`
     /// types; a key the struct does not declare is an error.
     pub fn facts(&self, value: &Dynamic) -> Result<Facts, FactsError> {
-        match read_struct(self.desc, value, "$env")? {
+        match read_struct(self.desc, value, "$env", 0)? {
             Fact::Struct(record) => Ok(Facts(*record)),
             _ => Err(FactsError::new("$env", "is not a struct")),
         }
@@ -340,29 +410,36 @@ impl Field for Fact {
     }
 }
 
-fn read_struct(desc: &'static StructDesc, value: &Dynamic, path: &str) -> Result<Fact, FactsError> {
+fn read_struct(desc: &'static StructDesc, value: &Dynamic, path: &str, depth: u32) -> Result<Fact, FactsError> {
+    if depth > dictum_syntax::MAX_DEPTH {
+        return Err(FactsError::new(path, "is nested too deep"));
+    }
     let Dynamic::Map(map) = value else { return Err(FactsError::new(path, "needs an object")) };
     for (key, _) in map.iter() {
         if desc.field(key).is_none() {
             return Err(FactsError::new(&alloc::format!("{path}.{key}"), "is not a field of the schema"));
         }
     }
+    let next = depth.saturating_add(1);
     let mut fields = Vec::with_capacity(desc.fields().len());
     for f in desc.fields() {
         let at = alloc::format!("{path}.{}", f.name());
         let v = map.get(f.name()).unwrap_or(&Dynamic::Nil);
-        fields.push(read(&f.ty(), v, &at)?);
+        fields.push(read(&f.ty(), v, &at, next)?);
     }
     Ok(Fact::Struct(Box::new(Record { desc, fields })))
 }
 
-fn read(ty: &Type, v: &Dynamic, path: &str) -> Result<Fact, FactsError> {
+fn read(ty: &Type, v: &Dynamic, path: &str, depth: u32) -> Result<Fact, FactsError> {
+    if depth > dictum_syntax::MAX_DEPTH {
+        return Err(FactsError::new(path, "is nested too deep"));
+    }
     let mismatch = |want: &str| FactsError::new(path, &alloc::format!("needs {want}, found {}", kind(v)));
     let value = |d: Dynamic| Ok(Fact::Value(d));
     match (ty, v) {
         (Type::Any, _) => value(v.clone()),
         (Type::Option(_), Dynamic::Nil) => value(Dynamic::Nil),
-        (Type::Option(o), _) => read(o.inner(), v, path),
+        (Type::Option(o), _) => read(o.inner(), v, path, depth),
         (Type::Bool, Dynamic::Bool(_)) | (Type::Int, Dynamic::Int(_)) | (Type::Float, Dynamic::Float(_)) => {
             value(v.clone())
         }
@@ -393,17 +470,19 @@ fn read(ty: &Type, v: &Dynamic, path: &str) -> Result<Fact, FactsError> {
         #[cfg(feature = "decimal")]
         (Type::Decimal, Dynamic::Int(n)) => value(Dynamic::Decimal((*n).into())),
         (Type::Array(t), Dynamic::Array(xs)) => {
-            let read_one = |(i, x): (usize, &Dynamic)| read(t, x, &alloc::format!("{path}[{i}]"));
+            let next = depth.saturating_add(1);
+            let read_one = |(i, x): (usize, &Dynamic)| read(t, x, &alloc::format!("{path}[{i}]"), next);
             Ok(Fact::Array(xs.iter().enumerate().map(read_one).collect::<Result<_, _>>()?))
         }
         (Type::Map(t), Dynamic::Map(m)) => {
+            let next = depth.saturating_add(1);
             let mut out = BTreeMap::new();
             for (k, x) in m.iter() {
-                out.insert(k.to_string(), read(t, x, &alloc::format!("{path}.{k}"))?);
+                out.insert(k.to_string(), read(t, x, &alloc::format!("{path}.{k}"), next)?);
             }
             Ok(Fact::Map(out))
         }
-        (Type::Struct(desc), _) => read_struct(desc, v, path),
+        (Type::Struct(desc), _) => read_struct(desc, v, path, depth),
         (Type::Bool, _) => Err(mismatch("a bool")),
         (Type::Int, _) => Err(mismatch("an integer")),
         (Type::Float, _) => Err(mismatch("a number")),
