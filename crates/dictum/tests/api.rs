@@ -482,3 +482,94 @@ fn to_json_enforces_depth_limit_on_deeply_nested_dynamic() {
     }
 }
 
+#[test]
+fn schema_functions_arities_and_extended_types() {
+    use dictum::jiff::{SignedDuration, Timestamp};
+
+    let schema = Schema::<Facts>::builder()
+        .pure_func("const42", || 42i64)
+        .pure_func("inc", |a: i64| a + 1)
+        .pure_func("add2", |a: i64, b: i64| a + b)
+        .pure_func("sum3", |a: i64, b: i64, c: i64| a + b + c)
+        .pure_func("sum4", |a: i64, b: i64, c: i64, d: i64| a + b + c + d)
+        .pure_func("shift", |t: Timestamp, d: SignedDuration| t + d)
+        .pure_func("halfDur", |d: SignedDuration| SignedDuration::from_secs(d.as_secs() / 2))
+        .pure_func("greet", |name: Option<&str>| name.unwrap_or("anon").to_owned())
+        .pure_func("posOrNil", |x: i64| (x > 0).then_some(x))
+        .pure_func("optDouble", |x: Option<i64>| x.map(|n| n * 2))
+        .build()
+        .unwrap();
+
+    let facts = sample();
+    let ctx = Ctx::new(&facts).with_now(sample_now());
+
+    // Arities 0..=4 (both compiled fast path and explain interpreter).
+    for (src, expected) in [
+        ("const42()", 42),
+        ("inc(user.Age)", 37),
+        ("add2(user.Age, limit)", 46),
+        ("sum3(user.Age, limit, level)", 246),
+        ("sum4(user.Age, limit, level, delta)", 146),
+    ] {
+        let rule = Rule::<i64, Facts>::compile(src, &schema).unwrap();
+        assert_eq!(rule.eval(&ctx).unwrap(), expected, "{src}");
+        assert_eq!(rule.explain(&ctx).into_result().unwrap(), expected, "{src}");
+    }
+
+    // Timestamp & SignedDuration arguments and returns.
+    let shift = Rule::<Timestamp, Facts>::compile(r#"shift(user.Created, duration("1h"))"#, &schema).unwrap();
+    let want_ts = facts.user.created + SignedDuration::from_hours(1);
+    assert_eq!(shift.eval(&ctx).unwrap(), want_ts);
+    assert_eq!(shift.explain(&ctx).into_result().unwrap(), want_ts);
+
+    let half = Rule::<SignedDuration, Facts>::compile(r#"halfDur(duration("10s"))"#, &schema).unwrap();
+    assert_eq!(half.eval(&ctx).unwrap(), SignedDuration::from_secs(5));
+    assert_eq!(half.explain(&ctx).into_result().unwrap(), SignedDuration::from_secs(5));
+
+    // Option<&str> parameter: None from optional field and Some via promotion.
+    let greet_none = Rule::<String, Facts>::compile("greet(user.Email)", &schema).unwrap();
+    assert_eq!(greet_none.eval(&ctx).unwrap(), "anon");
+    let greet_some = Rule::<String, Facts>::compile("greet(user.Name)", &schema).unwrap();
+    assert_eq!(greet_some.eval(&ctx).unwrap(), "Ada");
+    let mut with_email = sample();
+    with_email.user.email = Some("ada@example.com".into());
+    assert_eq!(greet_none.eval(&Ctx::new(&with_email)).unwrap(), "ada@example.com");
+
+    // Option<T> return & chaining into Option<T> parameter.
+    let pos = Rule::<Option<i64>, Facts>::compile("posOrNil(delta)", &schema).unwrap();
+    assert_eq!(pos.eval(&ctx).unwrap(), None);
+    let pos_ok = Rule::<Option<i64>, Facts>::compile("posOrNil(user.Age)", &schema).unwrap();
+    assert_eq!(pos_ok.eval(&ctx).unwrap(), Some(36));
+
+    let chained_nil = Rule::<Option<i64>, Facts>::compile("optDouble(posOrNil(delta))", &schema).unwrap();
+    assert_eq!(chained_nil.eval(&ctx).unwrap(), None);
+    let chained_some = Rule::<Option<i64>, Facts>::compile("optDouble(posOrNil(user.Age))", &schema).unwrap();
+    assert_eq!(chained_some.eval(&ctx).unwrap(), Some(72));
+}
+
+#[cfg(feature = "decimal")]
+#[test]
+fn schema_functions_support_decimal_and_optional_decimal() {
+    use dictum::rust_decimal::Decimal;
+
+    let schema = Schema::<Facts>::builder()
+        .pure_func("tax", |amount: Decimal, rate: Option<Decimal>| rate.map(|r| amount * r).unwrap_or(Decimal::ZERO))
+        .pure_func("maybeDec", |positive: bool| positive.then_some(Decimal::new(125, 2)))
+        .build()
+        .unwrap();
+
+    let facts = sample();
+    let ctx = Ctx::new(&facts);
+
+    let with_rate = Rule::<Decimal, Facts>::compile(r#"tax(decimal("100"), decimal("0.1"))"#, &schema).unwrap();
+    assert_eq!(with_rate.eval(&ctx).unwrap(), Decimal::new(100, 1));
+    assert_eq!(with_rate.explain(&ctx).into_result().unwrap(), Decimal::new(100, 1));
+
+    let no_rate = Rule::<Decimal, Facts>::compile(r#"tax(decimal("100"), nil)"#, &schema).unwrap();
+    assert_eq!(no_rate.eval(&ctx).unwrap(), Decimal::ZERO);
+
+    let some_dec = Rule::<Option<Decimal>, Facts>::compile("maybeDec(user.Active)", &schema).unwrap();
+    assert_eq!(some_dec.eval(&ctx).unwrap(), Some(Decimal::new(125, 2)));
+    let none_dec = Rule::<Option<Decimal>, Facts>::compile("maybeDec(!user.Active)", &schema).unwrap();
+    assert_eq!(none_dec.eval(&ctx).unwrap(), None);
+}

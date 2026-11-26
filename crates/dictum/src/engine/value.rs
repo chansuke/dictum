@@ -246,6 +246,22 @@ impl<'a> Value<'a> {
         Value(Repr::Str(Str::Shared(Arc::from(s))))
     }
 
+    /// A timestamp in UTC.
+    pub(crate) const fn time(t: jiff::Timestamp) -> Self {
+        Value(Repr::Time(t, jiff::tz::TimeZone::UTC))
+    }
+
+    /// A duration.
+    pub(crate) const fn duration(d: jiff::SignedDuration) -> Self {
+        Value(Repr::Duration(d))
+    }
+
+    /// A decimal.
+    #[cfg(feature = "decimal")]
+    pub(crate) const fn decimal(d: rust_decimal::Decimal) -> Self {
+        Value(Repr::Decimal(d))
+    }
+
     /// A computed array.
     pub(crate) fn array(xs: Vec<Value<'a>>) -> Self {
         let depth = nesting(xs.iter());
@@ -388,6 +404,14 @@ impl<'a> Value<'a> {
     pub(crate) fn as_duration(&self) -> Option<jiff::SignedDuration> {
         match self.0 {
             Repr::Duration(d) => Some(d),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "decimal")]
+    pub(crate) fn as_decimal(&self) -> Option<rust_decimal::Decimal> {
+        match self.0 {
+            Repr::Decimal(d) => Some(d),
             _ => None,
         }
     }
