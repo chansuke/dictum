@@ -17,7 +17,7 @@ Each dictum iteration is one `Rule::eval`, which builds a new `Frame`. Each Go i
 | arithmetic | 374.9 ns | 1058 ns | 2.8 |
 | compile | 5.59 µs | 45.9 µs | 8.2 |
 
-The closure tree has not been profiled yet. The overflow-check elision, algebraic simplification and `&&`/`||` reordering of the design are not implemented, so these numbers do not include them.
+This table was recorded at M4, before the interval-analysis, algebraic-simplification and `&&`/`||` reordering optimizations (`crates/dictum/src/engine/optimize.rs`) landed, so these numbers do not include them.
 
 ## M5 (RuleSet)
 
