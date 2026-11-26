@@ -39,10 +39,16 @@ def union (a b : Range) : Range := ⟨min a.lo b.lo, max a.hi b.hi⟩
 /-- The largest absolute value in the range. -/
 def absMax (r : Range) : Int := max r.lo.natAbs r.hi.natAbs
 
+/-- Intersect with `i64` (`minInt..=maxInt`); `none` if the intersection is empty. -/
+def clampI64 (r : Range) : Option Range :=
+  let lo := max r.lo minInt
+  let hi := min r.hi maxInt
+  if lo ≤ hi then some ⟨lo, hi⟩ else none
+
 end Range
 
 /-- The exact range of `a op b` for `a ∈ ra`, `b ∈ rb`, before any overflow check;
-`none` for the operators it does not track. -/
+`none` for the operators it does not track or a guaranteed division by zero. -/
 def opRange : BinOp → Range → Range → Option Range
   | .add, a, b => some ⟨a.lo + b.lo, a.hi + b.hi⟩
   | .sub, a, b => some ⟨a.lo - b.hi, a.hi - b.lo⟩
@@ -53,9 +59,11 @@ def opRange : BinOp → Range → Range → Option Range
     let s := a.hi * b.hi
     some ⟨min (min p q) (min r s), max (max p q) (max r s)⟩
   | .mod, a, b =>
-    -- `|a % b| ≤ |a|` and `|a % b| < |b|`.
-    let m := min a.absMax (b.absMax - 1)
-    some ⟨-m, m⟩
+    -- `|a % b| ≤ |a|` and `|a % b| < |b|`; `b.absMax = 0` means the divisor is 0.
+    if b.absMax = 0 then none
+    else
+      let m := min a.absMax (b.absMax - 1)
+      some ⟨-m, m⟩
   | _, _, _ => none
 
 /-- Declared field ranges, by `FieldId`. `none` for fields that are not integers. -/
@@ -65,14 +73,15 @@ abbrev REnv := List (Option Range)
 def EnvRange (env : List Val) (ρ : REnv) : Prop :=
   ∀ (i : Nat) (r : Range), ρ[i]? = some (some r) → ∀ v, env[i]? = some v → ∃ n, v = .int n ∧ r.Mem n
 
-/-- A range for every `int` the expression can succeed with, if one is known. -/
+/-- A range for every `int` the expression can succeed with, if one is known.
+Every returned range lies within `i64` (`rangeOf_fits`). -/
 def rangeOf (ρ : REnv) : Expr → Option Range
-  | .lit (.int n) => some ⟨n, n⟩
+  | .lit (.int n) => Range.clampI64 ⟨n, n⟩
   | .lit (.bool _) => none
-  | .var i => ρ[i]?.join
+  | .var i => (ρ[i]?.join).filter Range.fits
   | .bin op a b =>
     match rangeOf ρ a, rangeOf ρ b with
-    | some ra, some rb => opRange op ra rb
+    | some ra, some rb => opRange op ra rb >>= Range.clampI64
     | _, _ => none
   | .ite _ t e =>
     match rangeOf ρ t, rangeOf ρ e with
@@ -179,16 +188,80 @@ theorem opRange_mem {op : BinOp} {ra rb r : Range} {x y : Int} (hx : ra.Mem x) (
     try rw [Int.mul_comm y ra.hi] at h3
     omega
   · intro hy0
-    have h := Int.natAbs_tmod x y
-    have : x.natAbs % y.natAbs < y.natAbs := Nat.mod_lt _ (by omega)
-    have : x.natAbs % y.natAbs ≤ x.natAbs := Nat.mod_le _ _
-    unfold Range.absMax
-    omega
+    split at hr
+    · cases hr
+    · simp only [Option.some.injEq] at hr
+      subst hr
+      have h := Int.natAbs_tmod x y
+      have : x.natAbs % y.natAbs < y.natAbs := Nat.mod_lt _ (by omega)
+      have : x.natAbs % y.natAbs ≤ x.natAbs := Nat.mod_le _ _
+      unfold Range.absMax at *
+      simp only
+      omega
 
 theorem fits_inI64 {r : Range} {n : Int} (hf : r.fits = true) (h : r.Mem n) : InI64 n := by
   unfold Range.fits at hf; unfold Range.Mem at h; unfold InI64
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hf
   omega
+
+theorem clampI64_fits {r r' : Range} (h : r.clampI64 = some r') : r'.fits = true := by
+  simp only [Range.clampI64] at h
+  split at h
+  · simp only [Option.some.injEq] at h
+    subst h
+    unfold Range.fits
+    simp only [Bool.and_eq_true, decide_eq_true_eq]
+    omega
+  · cases h
+
+theorem clampI64_mem {r r' : Range} {n : Int} (hm : r.Mem n) (hi : InI64 n)
+    (hc : r.clampI64 = some r') : r'.Mem n := by
+  simp only [Range.clampI64] at hc
+  split at hc
+  · simp only [Option.some.injEq] at hc
+    subst hc
+    unfold Range.Mem at *
+    unfold InI64 at hi
+    simp only
+    omega
+  · cases hc
+
+/-- Every range `rangeOf` returns fits in `i64`, so `opRange` on two `rangeOf`
+outputs never overflows `i128` in Rust. -/
+theorem rangeOf_fits {ρ : REnv} : ∀ {e : Expr} {r : Range}, rangeOf ρ e = some r → r.fits = true := by
+  intro e
+  induction e with
+  | lit v =>
+    intro r hr
+    cases v with
+    | int _ => exact clampI64_fits hr
+    | bool _ => simp [rangeOf] at hr
+  | var i =>
+    intro r hr
+    simp only [rangeOf, Option.filter_eq_some_iff] at hr
+    exact hr.2
+  | bin _ _ _ _ _ =>
+    intro r hr
+    simp only [rangeOf] at hr
+    split at hr
+    · simp only [Bind.bind, Option.bind_eq_some_iff] at hr
+      obtain ⟨_, _, hc⟩ := hr
+      exact clampI64_fits hc
+    · cases hr
+  | and _ _ _ _ | or _ _ _ _ | not _ _ => intro r hr; simp [rangeOf] at hr
+  | ite _ _ _ _ iht ihe =>
+    intro r hr
+    simp only [rangeOf] at hr
+    split at hr
+    · next rt re hrt hre =>
+      simp only [Option.some.injEq] at hr
+      subst hr
+      have ht := iht hrt
+      have he := ihe hre
+      unfold Range.fits Range.union at *
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at *
+      omega
+    · cases hr
 
 /-- The analysis is sound: a successful `int` result lies in the computed range. -/
 theorem rangeOf_sound {env ρ} (hρ : EnvRange env ρ) :
@@ -199,17 +272,24 @@ theorem rangeOf_sound {env ρ} (hρ : EnvRange env ρ) :
     intro r n hr he
     cases v with
     | int m =>
-      simp only [rangeOf, Option.some.injEq] at hr
       simp only [eval, Except.ok.injEq, Val.int.injEq] at he
-      subst hr he; exact ⟨Int.le_refl _, Int.le_refl _⟩
+      subst he
+      simp only [rangeOf, Range.clampI64] at hr
+      split at hr
+      · simp only [Option.some.injEq] at hr
+        subst hr
+        unfold Range.Mem
+        simp only
+        omega
+      · cases hr
     | bool b => simp [rangeOf] at hr
   | var i =>
     intro r n hr he
-    simp only [rangeOf, Option.join_eq_some_iff] at hr
+    simp only [rangeOf, Option.filter_eq_some_iff, Option.join_eq_some_iff] at hr
     simp only [eval] at he
     split at he
     · next v hv =>
-      obtain ⟨m, rfl, hm⟩ := hρ i r hr v hv
+      obtain ⟨m, rfl, hm⟩ := hρ i r hr.1 v hv
       simp only [Except.ok.injEq, Val.int.injEq] at he
       subst he; exact hm
     · cases he
@@ -218,7 +298,8 @@ theorem rangeOf_sound {env ρ} (hρ : EnvRange env ρ) :
     simp only [rangeOf] at hr
     split at hr
     · next ra rb hra hrb =>
-      have hr0 := hr
+      simp only [Bind.bind, Option.bind_eq_some_iff] at hr
+      obtain ⟨r0, hr0, hc⟩ := hr
       simp only [eval] at he
       split at he
       · cases he
@@ -239,9 +320,11 @@ theorem rangeOf_sound {env ρ} (hρ : EnvRange env ρ) :
               | add | sub | mul =>
                 simp only [applyBin, checked] at he
                 split at he
-                · simp only [Except.ok.injEq, Val.int.injEq] at he
+                · next h64 =>
+                  simp only [Except.ok.injEq, Val.int.injEq] at he
                   subst he
-                  first | exact hm.1 rfl | exact hm.2.1 rfl | exact hm.2.2.1 rfl
+                  exact clampI64_mem
+                    (by first | exact hm.1 rfl | exact hm.2.1 rfl | exact hm.2.2.1 rfl) h64 hc
                 · cases he
               | mod =>
                 simp only [applyBin] at he
@@ -250,7 +333,8 @@ theorem rangeOf_sound {env ρ} (hρ : EnvRange env ρ) :
                 · next hy0 =>
                   simp only [Except.ok.injEq, Val.int.injEq] at he
                   subst he
-                  exact hm.2.2.2 rfl hy0
+                  have h64 := tmod_inI64 (a := x) (fits_inI64 (rangeOf_fits hrb) my) hy0
+                  exact clampI64_mem (hm.2.2.2 rfl hy0) h64 hc
               | eq | lt | le | gt | ge => simp [opRange] at hr0
     · cases hr
   | and a b _ _ => intro r n hr _; simp [rangeOf] at hr
@@ -348,5 +432,9 @@ example :
     let a := Expr.var 0
     let a4 := Expr.bin .mul (.bin .mul a a) (.bin .mul a a)
     skipCheck [some ⟨0, 255⟩] .mul a4 a4 = false := by decide
+example : rangeOf [] (.bin .mod (.lit (.int 7)) (.lit (.int 0))) = none := by decide
+example : rangeOf [some Range.full] (.bin .add (.var 0) (.lit (.int 1))) =
+    some ⟨minInt + 1, maxInt⟩ := by decide
+example : rangeOf [some ⟨maxInt, maxInt⟩] (.bin .add (.var 0) (.lit (.int 1))) = none := by decide
 
 end Dictum
