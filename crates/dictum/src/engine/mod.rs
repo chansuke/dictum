@@ -212,7 +212,9 @@ impl Prepared {
         opt: &Optimized,
         slots: Option<&[Option<analysis::CacheSlot>]>,
     ) -> Prepared {
-        let tree = compile::Compiler::new(&schema, &checked.patterns, slots, &opt.unchecked).tree(&opt.ir);
+        let child_spans = compile::child_spans(&checked.ir);
+        let tree =
+            compile::Compiler::new(&schema, &checked.patterns, slots, &opt.unchecked, Some(&child_spans)).tree(&opt.ir);
         Prepared { checked, schema, tree }
     }
 

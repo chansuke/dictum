@@ -143,3 +143,37 @@ fn short_circuit_operands_are_not_shared_across_orders() {
     assert_eq!(err.rule(), Some("unsafe"));
     assert_eq!(err.code().as_str(), "E0302");
 }
+
+/// Rewrites that replace a child with its sub-expression (`if false { a } else { b }`
+/// -> `b`, `x + 0` -> `x`) must not change the error span reported by a parent that
+/// blames that child (`Slice` bounds, `Map` keys, `Predicate` sequences), while an
+/// error raised *inside* `b` still reports `b`'s own span.
+#[test]
+fn optimized_child_rewrites_keep_eval_and_explain_spans_identical() {
+    let schema = schema();
+    let facts = sample();
+    let ctx = Ctx::new(&facts).with_now(sample_now());
+    let cases = [
+        // Proptest regression: `Slice` `from` simplified by `if false` hits E0304.
+        (
+            r#"(reduce(user.Tags, #acc + #, (("é") + "")) + "")[((("" contains ("")) ? false : false) ? 0 : (findLastIndex(nums, (user.Active) && # > 2) - (findLast(nums, # > 0) ?? 0))):]"#,
+            "E0304",
+        ),
+        // `Slice` `to` simplified by `x + 0` hits E0304.
+        (r#""é"[:(level - 199) + 0]"#, "E0304"),
+        // `Map` duplicate key simplified by `if false` hits E0310.
+        (r#"{"Ada": 1, (false ? "other" : user.Name): 2}"#, "E0310"),
+        // `Predicate` sequence simplified by `if false` hits E0307 (`user.Attrs` is int).
+        (r#"all(false ? [1] : user.Attrs, # > 0)"#, "E0307"),
+        // Error raised *inside* the surviving child still reports that child's span.
+        (r#""é"[(false ? 0 : 7 % 0):]"#, "E0302"),
+    ];
+    for (src, want_code) in cases {
+        let rule = Rule::<Dynamic, Facts>::compile(src, &schema).unwrap();
+        let fast = outcome(rule.eval(&ctx)).unwrap();
+        let spec = outcome(rule.explain(&ctx).into_result()).unwrap();
+        assert_eq!(fast, spec, "{src}");
+        let Err((code, _)) = fast else { panic!("expected error {want_code} for {src}") };
+        assert_eq!(code, want_code, "{src}");
+    }
+}

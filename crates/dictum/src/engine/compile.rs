@@ -113,6 +113,50 @@ impl Tree {
 /// Internal compiler error: an IR invariant did not hold.
 pub(crate) struct Ice(pub(crate) &'static str);
 
+/// Original child spans from the unoptimized IR for nodes that report a runtime
+/// error at a child's span (`Slice` bounds, `Map` keys, `Predicate` sequence).
+///
+/// `optimize` rewrites like `if false { a } else { b }` → `b` (`replace_with_child`)
+/// replace a child with its sub-expression (and that sub-expression's narrower span),
+/// which is right for errors raised *inside* `b`, but would shrink the span when the
+/// *parent* reports a `CharBoundary`, `DuplicateKey`, or `TypeMismatch` against the
+/// operand as written. Keeping the original child spans here keeps `eval` and
+/// `explain` reporting identical spans.
+pub(crate) enum ChildSpans {
+    Slice(Span, Span),
+    Map(Vec<Span>),
+    Predicate(Span),
+}
+
+/// Collect the pre-optimization child spans of every `Slice`, `Map`, and `Predicate`
+/// node in `program`, keyed by the parent's `NodeId`.
+pub(crate) fn child_spans(program: &ir::Program) -> BTreeMap<NodeId, ChildSpans> {
+    fn visit(e: &ir::Expr, out: &mut BTreeMap<NodeId, ChildSpans>) {
+        match e.kind() {
+            ExprKind::Slice { from, to, .. } => {
+                let s = e.span();
+                let spans = (from.as_deref().map_or(s, ir::Expr::span), to.as_deref().map_or(s, ir::Expr::span));
+                out.insert(e.id(), ChildSpans::Slice(spans.0, spans.1));
+            }
+            ExprKind::Map(pairs) => {
+                out.insert(e.id(), ChildSpans::Map(pairs.iter().map(|(k, _)| k.span()).collect()));
+            }
+            ExprKind::Predicate { seq, .. } => {
+                out.insert(e.id(), ChildSpans::Predicate(seq.span()));
+            }
+            _ => {}
+        }
+        for c in e.children() {
+            visit(c, out);
+        }
+    }
+    let mut out = BTreeMap::new();
+    for root in program.lets().iter().chain(core::iter::once(program.body())) {
+        visit(root, &mut out);
+    }
+    out
+}
+
 pub(crate) struct Compiler<'c> {
     schema: &'c Arc<SchemaCore>,
     patterns: &'c BTreeMap<NodeId, Arc<regex::Regex>>,
@@ -120,6 +164,8 @@ pub(crate) struct Compiler<'c> {
     slots: Option<&'c [Option<CacheSlot>]>,
     /// Integer operations proved not to overflow (`optimize::optimize`).
     unchecked: &'c BTreeSet<NodeId>,
+    /// Pre-optimization child spans from `Checked::ir`, for `Slice`/`Map`/`Predicate`.
+    child_spans: Option<&'c BTreeMap<NodeId, ChildSpans>>,
 }
 
 impl<'c> Compiler<'c> {
@@ -128,8 +174,9 @@ impl<'c> Compiler<'c> {
         patterns: &'c BTreeMap<NodeId, Arc<regex::Regex>>,
         slots: Option<&'c [Option<CacheSlot>]>,
         unchecked: &'c BTreeSet<NodeId>,
+        child_spans: Option<&'c BTreeMap<NodeId, ChildSpans>>,
     ) -> Self {
-        Compiler { schema, patterns, slots, unchecked }
+        Compiler { schema, patterns, slots, unchecked, child_spans }
     }
 
     pub(crate) fn tree(&self, program: &ir::Program) -> Result<Tree, Ice> {
@@ -273,7 +320,10 @@ impl<'c> Compiler<'c> {
             }
             ExprKind::Slice { base, from, to, op, optional } => {
                 let (b, op, optional) = (self.value(base)?, *op, *optional);
-                let spans = (from.as_deref().map_or(span, ir::Expr::span), to.as_deref().map_or(span, ir::Expr::span));
+                let spans = match self.child_spans.and_then(|m| m.get(&e.id())) {
+                    Some(ChildSpans::Slice(a, b)) => (*a, *b),
+                    _ => (from.as_deref().map_or(span, ir::Expr::span), to.as_deref().map_or(span, ir::Expr::span)),
+                };
                 let from = from.as_deref().map(|x| self.int(x)).transpose()?;
                 let to = to.as_deref().map(|x| self.int(x)).transpose()?;
                 Compiled::Value(value_node(move |f| {
@@ -383,9 +433,17 @@ impl<'c> Compiler<'c> {
                 }))
             }
             ExprKind::Map(pairs) => {
+                let key_spans = match self.child_spans.and_then(|m| m.get(&e.id())) {
+                    Some(ChildSpans::Map(ks)) => ks.as_slice(),
+                    _ => &[],
+                };
                 let pairs = pairs
                     .iter()
-                    .map(|(k, v)| Ok((self.value(k)?, k.span(), self.value(v)?)))
+                    .enumerate()
+                    .map(|(idx, (k, v))| {
+                        let k_span = key_spans.get(idx).copied().unwrap_or_else(|| k.span());
+                        Ok((self.value(k)?, k_span, self.value(v)?))
+                    })
                     .collect::<Result<Vec<_>, Ice>>()?;
                 Compiled::Value(value_node(move |f| {
                     frame::alloc(f, pairs.len(), span)?;
@@ -410,7 +468,11 @@ impl<'c> Compiler<'c> {
                 }))
             }
             ExprKind::Predicate { op, seq, arg, body } => {
-                let (s, op, seq_span) = (self.value(seq)?, *op, seq.span());
+                let seq_span = match self.child_spans.and_then(|m| m.get(&e.id())) {
+                    Some(ChildSpans::Predicate(s)) => *s,
+                    _ => seq.span(),
+                };
+                let (s, op) = (self.value(seq)?, *op);
                 let arg = arg.as_deref().map(|a| self.value(a)).transpose()?;
                 let body = body.as_deref().map(|b| self.value(b)).transpose()?;
                 Compiled::Value(value_node(move |f| {
