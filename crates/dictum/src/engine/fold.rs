@@ -33,7 +33,7 @@ const FOLD_LIMITS: Limits = Limits { max_steps: 10_000, max_alloc: 1 << 16 };
 pub(crate) fn fold(program: &mut ir::Program, schema: &Arc<SchemaCore>, deps: &[Dependence]) {
     let patterns = BTreeMap::new();
     let unchecked = alloc::collections::BTreeSet::new();
-    let compiler = Compiler::new(schema, &patterns, None, &unchecked);
+    let compiler = Compiler::new(schema, &patterns, None, &unchecked, None);
     for root in program.roots_mut() {
         visit(root, &compiler, deps);
     }
