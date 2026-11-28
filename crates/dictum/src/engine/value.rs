@@ -71,8 +71,9 @@ pub(crate) const MAX_VALUE_DEPTH: u16 = 256;
 /// How deep a recursive walk over a value may go. A computed value nests at most
 /// [`MAX_VALUE_DEPTH`] levels, but a host's `Dynamic` can nest without bound, and
 /// `string(x)` on one about 300 levels deep overflowed a debug build's 2 MiB test
-/// thread (`a_host_dynamic_nested_past_the_walk_limit_is_a_depth_error` in
-/// `crates/dictum/tests/api.rs` walks one at this limit).
+/// thread. `a_host_dynamic_nested_past_the_walk_limit_is_a_depth_error` in
+/// `crates/dictum/tests/api.rs` walks one at this limit, also under `just wasm`
+/// with its 1 MiB stack.
 pub(crate) const MAX_WALK_DEPTH: u16 = MAX_VALUE_DEPTH;
 
 /// How deep a recursive walk over a value has gone. A function that recurses into
