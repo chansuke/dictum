@@ -41,7 +41,7 @@ impl<T: Output, F: Dictum<Static = F>> Rule<T, F> {
     pub fn eval<G: Dictum<Static = F>>(&self, ctx: &Ctx<'_, G>) -> Result<T, EvalError> {
         let mut frame = Frame::new(ctx.facts, ctx.now, &ctx.limits, 0);
         let value = self.prepared.run(&mut frame).map_err(|f| self.prepared.error(f))?;
-        T::from_value(value).ok_or_else(|| self.prepared.internal("output conversion"))
+        T::from_value(value).map_err(|kind| self.prepared.output_error(kind))
     }
 
     /// Evaluate with the spec interpreter, recording every node, and return the
@@ -58,7 +58,7 @@ pub(crate) fn explain<T: Output, G: Dictum>(prepared: &Prepared, ctx: &Ctx<'_, G
     let (result, root) = prepared.explain(&mut frame);
     let result = result
         .map_err(|f| prepared.error(f))
-        .and_then(|v| T::from_value(v).ok_or_else(|| prepared.internal("output conversion")));
+        .and_then(|v| T::from_value(v).map_err(|kind| prepared.output_error(kind)));
     Report { result, root, source: prepared.source().into() }
 }
 

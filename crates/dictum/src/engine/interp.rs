@@ -49,13 +49,13 @@ use dictum_syntax::ast::{self, CompareOp, LogicOp, Pointer};
 use crate::EvalErrorKind;
 use crate::engine::SchemaCore;
 use crate::engine::builtins;
-use crate::engine::frame::{Fault, Frame, Res, Scope, Text, alloc, at, internal, steps};
+use crate::engine::frame::{Fault, Frame, Res, Scope, Text, alloc, at, deeper, internal, steps};
 use crate::engine::json;
 use crate::engine::methods;
 use crate::engine::ops;
 use crate::engine::sprint::go_string;
 use crate::engine::trace::{Recorded, Trace};
-use crate::engine::value::{Bytes, MAX_VALUE_DEPTH, MapRef, Repr, Seq, Str, Value};
+use crate::engine::value::{Bytes, Depth, MAX_VALUE_DEPTH, MapRef, Repr, Seq, Str, Value};
 use crate::func::CallError;
 
 /// Evaluate `program` in `frame`. When `trace` is given, record every node's outcome
@@ -649,7 +649,7 @@ pub(super) fn equal(kind: EqKind, l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_
         EqKind::Bytes => l.as_bytes() == r.as_bytes(),
         EqKind::Time => time(l, span)? == time(r, span)?,
         EqKind::Duration => duration(l, span)? == duration(r, span)?,
-        EqKind::Structural => deep_equal(l, r, f, span)?,
+        EqKind::Structural => deep_equal(l, r, Depth::TOP, f, span)?,
         EqKind::Dyn => {
             let Some((kind, pl, pr)) = resolve::equality(l.tag(), r.tag()) else {
                 return Err(Frame::fault(
@@ -666,7 +666,13 @@ pub(super) fn equal(kind: EqKind, l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_
 /// Structural equality: `nil` equals only `nil`, arrays element-wise, maps by key
 /// regardless of order. Values that cannot be compared are unequal (as Go's `==` on
 /// interfaces of different types). One step per element compared.
-pub(super) fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<bool, Fault> {
+pub(super) fn deep_equal(
+    l: &Value<'_>,
+    r: &Value<'_>,
+    depth: Depth,
+    f: &mut Frame<'_>,
+    span: Span,
+) -> Result<bool, Fault> {
     let Some((kind, pl, pr)) = resolve::equality(l.tag(), r.tag()) else { return Ok(false) };
     if kind != EqKind::Structural {
         let (l, r) = (promote(l.clone(), pl, span)?, promote(r.clone(), pr, span)?);
@@ -680,7 +686,7 @@ pub(super) fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: 
             }
             steps(f, a.len(), span)?;
             for (x, y) in a.iter().zip(b.iter()) {
-                if !deep_equal(&x, &y, f, span)? {
+                if !deep_equal(&x, &y, deeper(depth, span)?, f, span)? {
                     return Ok(false);
                 }
             }
@@ -698,7 +704,7 @@ pub(super) fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: 
             });
             for (k, x) in entries {
                 match b.get(&k) {
-                    Some(y) if deep_equal(&x, &y, f, span)? => {}
+                    Some(y) if deep_equal(&x, &y, deeper(depth, span)?, f, span)? => {}
                     _ => return Ok(false),
                 }
             }
@@ -752,7 +758,7 @@ pub(super) fn membership(op: InOp, n: &Value<'_>, h: &Value<'_>, f: &mut Frame<'
             Repr::Array(s) => {
                 steps(f, s.len(), span)?;
                 for x in s.iter() {
-                    if deep_equal(n, &x, f, span)? {
+                    if deep_equal(n, &x, Depth::TOP, f, span)? {
                         return Ok(true);
                     }
                 }
@@ -1088,7 +1094,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         }
         Intrinsic::Flatten => {
             let mut out = Vec::new();
-            flatten(seq(arg(0)?, span)?, &mut out, f, span)?;
+            flatten(seq(arg(0)?, span)?, &mut out, Depth::TOP, f, span)?;
             Ok(Value::array(out))
         }
         Intrinsic::Uniq(kind) => {
@@ -1189,7 +1195,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             for x in xs.iter() {
                 let text = |f: &mut Frame<'a>, v: &Value<'_>| -> Result<String, Fault> {
                     let mut out = Text::new();
-                    go_string(v, &mut out, f, span)?;
+                    go_string(v, &mut out, Depth::TOP, f, span)?;
                     Ok(out.as_str().into())
                 };
                 let Some((k, v)) = x.as_seq().filter(|p| p.len() == 2).and_then(|p| Some((p.get(0)?, p.get(1)?)))
@@ -1238,7 +1244,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 return Ok(v.clone());
             }
             let mut out = Text::new();
-            go_string(v, &mut out, f, span)?;
+            go_string(v, &mut out, Depth::TOP, f, span)?;
             Ok(out.into_value())
         }
         #[cfg(feature = "decimal")]
@@ -1400,11 +1406,17 @@ fn sorted<'a, T>(
 }
 
 /// `flatten`: the elements of `xs`, with every nested array spliced in, to any depth.
-fn flatten<'a>(xs: &Seq<'a>, out: &mut Vec<Value<'a>>, f: &mut Frame<'a>, span: Span) -> Result<(), Fault> {
+fn flatten<'a>(
+    xs: &Seq<'a>,
+    out: &mut Vec<Value<'a>>,
+    depth: Depth,
+    f: &mut Frame<'a>,
+    span: Span,
+) -> Result<(), Fault> {
     steps(f, xs.len(), span)?;
     for x in xs.iter() {
         match x.as_seq() {
-            Some(inner) => flatten(inner, out, f, span)?,
+            Some(inner) => flatten(inner, out, deeper(depth, span)?, f, span)?,
             None => {
                 alloc(f, 1, span)?;
                 out.push(x);

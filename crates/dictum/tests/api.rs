@@ -573,3 +573,29 @@ fn schema_functions_support_decimal_and_optional_decimal() {
     let none_dec = Rule::<Option<Decimal>, Facts>::compile("maybeDec(!user.Active)", &schema).unwrap();
     assert_eq!(none_dec.eval(&ctx).unwrap(), None);
 }
+
+/// A host's `Dynamic` can nest without bound. Every recursive walk over a value
+/// takes a `Depth` (`crates/dictum/tests/bounded_walks.rs`), so one nested past
+/// 256 levels is `DepthLimit`, in `eval` and `explain` alike, instead of a stack
+/// overflow that aborts the process.
+#[test]
+fn a_host_dynamic_nested_past_the_walk_limit_is_a_depth_error() {
+    fn nested(levels: usize) -> Dynamic {
+        (0..levels).fold(Dynamic::Int(1), |d, _| Dynamic::Array(vec![d]))
+    }
+    let walks =
+        ["string(user.Attrs)", "toJSON(user.Attrs)", "user.Attrs == user.Attrs", "flatten([user.Attrs])", "user.Attrs"];
+    for (levels, expected) in [(256, Ok(())), (1_000, Err(ErrorCode::DepthLimit))] {
+        let mut facts = sample();
+        facts.user.attrs = nested(levels);
+        for src in walks {
+            let rule = Rule::<Dynamic, Facts>::compile(src, &schema()).unwrap();
+            let ctx = Ctx::new(&facts);
+            let report = rule.explain(&ctx);
+            assert!(!report.to_string().is_empty());
+            assert_eq!(rule.eval(&ctx).map(drop).map_err(|e| e.code()), expected, "{src} at {levels} levels");
+            assert_eq!(report.into_result().map(drop).map_err(|e| e.code()), expected, "{src} explained");
+        }
+    }
+    assert!(nested(1_000).to_string().contains("[[..."), "Display stops at the limit too");
+}

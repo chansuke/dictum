@@ -10,7 +10,7 @@ use dictum_syntax::Span;
 
 use crate::EvalErrorKind;
 use crate::ctx::Limits;
-use crate::engine::value::{Object, Repr, Str, Value};
+use crate::engine::value::{Depth, Object, Repr, Str, Value};
 
 /// An error inside the engine: kind + span. Converted to `EvalError` (which adds the
 /// source and rule name) at the public boundary.
@@ -105,6 +105,11 @@ pub(super) fn internal(what: &'static str, span: Span) -> Fault {
 /// Attach `span` to an `ops` error.
 pub(super) fn at(span: Span) -> impl Fn(EvalErrorKind) -> Fault {
     move |kind| Frame::fault(kind, span)
+}
+
+/// One level deeper into a value, or `DepthLimit` past `MAX_WALK_DEPTH`.
+pub(super) fn deeper(depth: Depth, span: Span) -> Result<Depth, Fault> {
+    depth.deeper().ok_or_else(|| Frame::fault(EvalErrorKind::DepthLimit, span))
 }
 
 pub(super) fn steps(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {

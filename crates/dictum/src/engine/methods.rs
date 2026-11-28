@@ -11,7 +11,7 @@ use jiff::{SignedDuration, Timestamp};
 use super::frame::{Fault, Frame, Res, Text, at, internal};
 use super::layout;
 use super::sprint::go_string;
-use super::value::{Repr, Value};
+use super::value::{Depth, Repr, Value};
 use crate::EvalErrorKind;
 
 /// Seconds from 1970 to January 1, year 1, 00:00 UTC: Go's zero time.
@@ -34,7 +34,7 @@ pub(super) fn call<'a>(method: Method, recv: &Value<'a>, args: &[Value<'a>], f: 
     };
     if method == Method::String {
         let mut out = Text::new();
-        go_string(recv, &mut out, f, span)?;
+        go_string(recv, &mut out, Depth::TOP, f, span)?;
         return Ok(out.into_value());
     }
     if let Some(d) = recv.as_duration() {

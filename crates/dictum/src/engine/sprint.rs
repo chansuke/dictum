@@ -8,11 +8,17 @@ use core::ops::ControlFlow;
 use dictum_syntax::Span;
 
 use super::builtins;
-use super::frame::{Fault, Frame, Text, internal, steps};
-use super::value::{Repr, Value};
+use super::frame::{Fault, Frame, Text, deeper, internal, steps};
+use super::value::{Depth, Repr, Value};
 
 /// `string(x)`: Go's `fmt.Sprint(x)`. One step per container element.
-pub(super) fn go_string(v: &Value<'_>, out: &mut Text, f: &mut Frame<'_>, span: Span) -> Result<(), Fault> {
+pub(super) fn go_string(
+    v: &Value<'_>,
+    out: &mut Text,
+    depth: Depth,
+    f: &mut Frame<'_>,
+    span: Span,
+) -> Result<(), Fault> {
     // A scalar's text is short; it is formatted aside and charged as it is copied in.
     let scalar = |write: &dyn Fn(&mut String), out: &mut Text, f: &mut Frame<'_>| {
         let mut text = String::new();
@@ -38,7 +44,7 @@ pub(super) fn go_string(v: &Value<'_>, out: &mut Text, f: &mut Frame<'_>, span: 
                 if i > 0 {
                     out.push(f, ' ', span)?;
                 }
-                go_string(&x, out, f, span)?;
+                go_string(&x, out, deeper(depth, span)?, f, span)?;
             }
             out.push(f, ']', span)?;
         }
@@ -58,7 +64,7 @@ pub(super) fn go_string(v: &Value<'_>, out: &mut Text, f: &mut Frame<'_>, span: 
                 }
                 out.push_str(f, k, span)?;
                 out.push(f, ':', span)?;
-                go_string(x, out, f, span)?;
+                go_string(x, out, deeper(depth, span)?, f, span)?;
             }
             out.push(f, ']', span)?;
         }
@@ -71,7 +77,7 @@ pub(super) fn go_string(v: &Value<'_>, out: &mut Text, f: &mut Frame<'_>, span: 
                     out.push(f, ' ', span)?;
                 }
                 let id = u16::try_from(i).map_err(|_| internal("too many fields", span))?;
-                go_string(&o.field(dictum_check::FieldId::new(id)), out, f, span)?;
+                go_string(&o.field(dictum_check::FieldId::new(id)), out, deeper(depth, span)?, f, span)?;
             }
             out.push(f, '}', span)?;
         }
