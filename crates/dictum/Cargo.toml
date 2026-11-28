@@ -41,6 +41,9 @@ proptest.workspace = true
 insta.workspace = true
 trybuild.workspace = true
 criterion.workspace = true
+# tests/charged_strings.rs reads the crate's source; line numbers need span-locations.
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+syn = { workspace = true, features = ["full", "visit"] }
 
 # Differential test against the Lean definition of evaluation (formal/lean/Dictum/Core.lean).
 [[test]]

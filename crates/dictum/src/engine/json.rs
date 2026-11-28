@@ -17,8 +17,8 @@ use dictum_check::FieldId;
 use dictum_syntax::{MAX_DEPTH, Span};
 
 use crate::EvalErrorKind;
-use crate::engine::frame::{Fault, Frame, Res, alloc, internal, steps};
-use crate::engine::value::{MAX_VALUE_DEPTH, Object, Repr, Seq, Str, Value};
+use crate::engine::frame::{Fault, Frame, Res, Text, alloc, internal, steps};
+use crate::engine::value::{MAX_VALUE_DEPTH, Object, Repr, Seq, Value};
 use crate::engine::{builtins, layout};
 
 fn invalid(what: &'static str, value: &str, span: Span) -> Fault {
@@ -28,8 +28,8 @@ fn invalid(what: &'static str, value: &str, span: Span) -> Fault {
 /// `toJSON(v)`, one step per value visited and one alloc per byte written, charged
 /// before appending to the output buffer. Uses an explicit stack so deeply nested
 /// values stay within small stacks (e.g. WASM and `no_std`) up to [`MAX_VALUE_DEPTH`].
-pub(crate) fn encode<'a>(v: &Value<'a>, f: &mut Frame<'_>, span: Span) -> Result<String, Fault> {
-    let mut e = Encoder { out: String::new(), f, span };
+pub(crate) fn encode<'a>(v: &Value<'a>, f: &mut Frame<'_>, span: Span) -> Result<Text, Fault> {
+    let mut e = Encoder { out: Text::new(), f, span };
     let mut stack: Vec<EncodeFrame<'a>> = Vec::new();
     e.value(v, &mut stack)?;
     loop {
@@ -107,22 +107,18 @@ enum EncodeFrame<'a> {
 }
 
 struct Encoder<'f, 'a> {
-    out: String,
+    out: Text,
     f: &'f mut Frame<'a>,
     span: Span,
 }
 
 impl Encoder<'_, '_> {
     fn push_str(&mut self, s: &str) -> Result<(), Fault> {
-        alloc(self.f, s.len(), self.span)?;
-        self.out.push_str(s);
-        Ok(())
+        self.out.push_str(self.f, s, self.span)
     }
 
     fn push_char(&mut self, c: char) -> Result<(), Fault> {
-        alloc(self.f, c.len_utf8(), self.span)?;
-        self.out.push(c);
-        Ok(())
+        self.out.push(self.f, c, self.span)
     }
 
     fn value<'a>(&mut self, v: &Value<'a>, stack: &mut Vec<EncodeFrame<'a>>) -> Result<(), Fault> {
@@ -152,10 +148,12 @@ impl Encoder<'_, '_> {
                     .checked_mul(4)
                     .and_then(|n| n.checked_add(2))
                     .ok_or_else(|| Frame::fault(EvalErrorKind::AllocLimit, self.span))?;
-                alloc(self.f, encoded, self.span)?;
-                self.out.push('"');
-                builtins::base64_encode(bytes, &mut self.out);
-                self.out.push('"');
+                self.out.reserve(self.f, encoded, self.span)?;
+                self.out.write_reserved(self.span, |buf| {
+                    buf.push('"');
+                    builtins::base64_encode(bytes, buf);
+                    buf.push('"');
+                })?;
             }
             Repr::Time(t, z) => self.time(*t, z)?,
             // Go's `*time.Location` has no exported fields.
@@ -204,12 +202,11 @@ impl Encoder<'_, '_> {
     }
 
     fn newline(&mut self, depth: usize) -> Result<(), Fault> {
-        alloc(self.f, depth.saturating_mul(2).saturating_add(1), self.span)?;
-        self.out.push('\n');
-        for _ in 0..depth {
-            self.out.push_str("  ");
-        }
-        Ok(())
+        self.out.reserve(self.f, depth.saturating_mul(2).saturating_add(1), self.span)?;
+        self.out.write_reserved(self.span, |buf| {
+            buf.push('\n');
+            (0..depth).for_each(|_| buf.push_str("  "));
+        })
     }
 
     /// Go's `floatEncoder`: `strconv.FormatFloat` with `'f'`, or `'e'` below 1e-6 and
@@ -259,8 +256,10 @@ impl Encoder<'_, '_> {
                     }
                 }
                 if esc.is_empty() {
-                    alloc(self.f, 6, self.span)?;
-                    let _ = write!(self.out, "\\u{:04x}", u32::from(c));
+                    self.out.reserve(self.f, 6, self.span)?;
+                    self.out.write_reserved(self.span, |buf| {
+                        let _ = write!(buf, "\\u{:04x}", u32::from(c));
+                    })?;
                 } else {
                     self.push_str(esc)?;
                 }
@@ -359,7 +358,7 @@ impl<'a> Decoder<'_, '_, 'a> {
             Some(b'{') => self.object(depth.saturating_add(1)),
             Some(b'"') => {
                 let s = self.string()?;
-                Ok(Value(Repr::Str(Str::Shared(s.into()))))
+                Ok(s.into_value())
             }
             Some(b't') => self.literal("true", Value::bool(true)),
             Some(b'f') => self.literal("false", Value::bool(false)),
@@ -424,9 +423,9 @@ impl<'a> Decoder<'_, '_, 'a> {
 
     /// A string at `"`, unescaped. A `\u` escape of an unpaired surrogate is U+FFFD,
     /// as in Go.
-    fn string(&mut self) -> Result<String, Fault> {
+    fn string(&mut self) -> Result<Text, Fault> {
         self.expect(b'"')?;
-        let mut out = String::new();
+        let mut out = Text::new();
         loop {
             let run = self.pos;
             while let Some(c) = self.peek() {
@@ -437,8 +436,7 @@ impl<'a> Decoder<'_, '_, 'a> {
             }
             let chunk = self.text.get(run..self.pos).unwrap_or("");
             if !chunk.is_empty() {
-                alloc(self.f, chunk.len(), self.span)?;
-                out.push_str(chunk);
+                out.push_str(self.f, chunk, self.span)?;
             }
             match self.peek() {
                 None => return Err(self.fail("JSON, unexpected end")),
@@ -453,7 +451,7 @@ impl<'a> Decoder<'_, '_, 'a> {
         Ok(out)
     }
 
-    fn escape(&mut self, out: &mut String) -> Result<(), Fault> {
+    fn escape(&mut self, out: &mut Text) -> Result<(), Fault> {
         let at = self.pos;
         self.bump();
         let c = match self.peek() {
@@ -482,17 +480,12 @@ impl<'a> Decoder<'_, '_, 'a> {
                 } else {
                     char::from_u32(unit)
                 };
-                let c = c.unwrap_or(char::REPLACEMENT_CHARACTER);
-                alloc(self.f, c.len_utf8(), self.span)?;
-                out.push(c);
-                return Ok(());
+                return out.push(self.f, c.unwrap_or(char::REPLACEMENT_CHARACTER), self.span);
             }
             Some(_) => return Err(self.fail("JSON, unexpected text")),
         };
         self.bump();
-        alloc(self.f, c.len_utf8(), self.span)?;
-        out.push(c);
-        Ok(())
+        out.push(self.f, c, self.span)
     }
 
     /// The code unit of a `\uXXXX` escape at the current position, without moving.
@@ -548,7 +541,7 @@ impl<'a> Decoder<'_, '_, 'a> {
             if !out.contains_key(key.as_str()) {
                 alloc(self.f, 1, self.span)?;
             }
-            out.insert(key.into(), x);
+            out.insert(key.into_shared(), x);
             self.space();
             match self.peek() {
                 Some(b',') => self.bump(),

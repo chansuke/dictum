@@ -5,7 +5,6 @@
 //! `Field` impls use. Changing the representation touches this file and the engine,
 //! nothing else.
 
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::ControlFlow;
@@ -239,11 +238,6 @@ impl<'a> Value<'a> {
 
     pub(crate) const fn float(x: f64) -> Self {
         Value(Repr::Float(x))
-    }
-
-    /// A computed string.
-    pub(crate) fn string(s: String) -> Self {
-        Value(Repr::Str(Str::Shared(Arc::from(s))))
     }
 
     /// A timestamp in UTC.
