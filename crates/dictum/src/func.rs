@@ -6,7 +6,7 @@ use alloc::sync::Arc;
 
 use dictum_check::{FuncSig, Type};
 
-use crate::engine::value::Value;
+use crate::engine::value::{Repr, Str, Value};
 
 /// Whether a function may be folded and shared.
 ///
@@ -250,7 +250,9 @@ impl RetValue for String {
         Type::String
     }
     fn into_value(self) -> Value<'static> {
-        Value::string(self)
+        // The host function allocated this string before dictum saw it, so there is
+        // no allocation to charge first. Strings a rule computes use `engine::frame::Text`.
+        Value(Repr::Str(Str::Shared(Arc::from(self))))
     }
 }
 

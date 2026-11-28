@@ -7,13 +7,21 @@ where each one lives; use those names in commits and pull requests.
 [docs/verification.md](docs/verification.md) says which check is the
 evidence for each invariant.
 
-The checks hold the rules: `[workspace.lints]` and `clippy.toml` (no
-panics, no `#[allow]`, an `expect` with a reason), `tests/architecture.rs`
-in each crate (module layers), `crates/dictum-testkit/tests/crate_dependencies.rs`,
-`crates/dictum-check/tests/exhaustive.rs` (no catch-all arm on `Builtin`),
-`crates/dictum/tests/formal_names.rs`, and `scripts/check-escape-hatches.sh`
-on added lines. When one fails, its message names the fix. Change the
-design to pass it; do not silence the check.
+The checks hold the rules. When one fails, its message names the fix.
+Change the design to pass it; do not silence the check.
+
+| rule | enforced by |
+| --- | --- |
+| no panics, no `#[allow]`, an `expect` with a reason | `[workspace.lints]`, `clippy.toml` |
+| a module uses only lower layers | `tests/architecture.rs` in each crate |
+| a crate depends only on the crates docs/architecture.md allows | `crates/dictum-testkit/tests/crate_dependencies.rs` |
+| a match on `Builtin` or `ErrorCode` lists every variant | `crates/dictum-check/tests/exhaustive.rs` |
+| every Lean name the optimizations cite exists | `crates/dictum/tests/formal_names.rs` |
+| no TODO, workaround, unexplained `#[ignore]` or fixed case count on added lines | `scripts/check-escape-hatches.sh` |
+| a computed string is charged to `max_alloc` before it grows: build it with `engine::frame::Text` | `crates/dictum/tests/charged_strings.rs`; `Value::string` and `built` no longer exist |
+| a recursive walk over a value takes a `Depth` | `crates/dictum/tests/bounded_walks.rs`, `a_host_dynamic_nested_past_the_walk_limit_is_a_depth_error` |
+| the checks that run locally are the ones CI runs | CI runs `scripts/verify` |
+| a change to a rule's meaning or typing changes `formal/lean`; a change to sharing, caching or budgets changes `formal/tla` | nothing: judgment, below. `scripts/verify` runs `drt` and `tla` for the files that need them |
 
 ## Before you call a change done
 

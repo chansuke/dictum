@@ -52,7 +52,7 @@ impl<T: Output, F: Dictum<Static = F>> RuleSet<T, F> {
                 frame.next_rule(&ctx.limits, 0);
             }
             let value = rule.run(&mut frame).map_err(|f| rule.error(f))?;
-            values.push(T::from_value(value).ok_or_else(|| rule.internal("output conversion"))?);
+            values.push(T::from_value(value).map_err(|kind| rule.output_error(kind))?);
             names.push(rule.name().unwrap_or_default());
         }
         Ok(Outcomes { names, values })

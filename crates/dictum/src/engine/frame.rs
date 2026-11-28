@@ -3,13 +3,14 @@
 //! mutable state and stay `Send + Sync`.
 
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use dictum_syntax::Span;
 
 use crate::EvalErrorKind;
 use crate::ctx::Limits;
-use crate::engine::value::{Object, Value};
+use crate::engine::value::{Depth, Object, Repr, Str, Value};
 
 /// An error inside the engine: kind + span. Converted to `EvalError` (which adds the
 /// source and rule name) at the public boundary.
@@ -106,6 +107,11 @@ pub(super) fn at(span: Span) -> impl Fn(EvalErrorKind) -> Fault {
     move |kind| Frame::fault(kind, span)
 }
 
+/// One level deeper into a value, or `DepthLimit` past `MAX_WALK_DEPTH`.
+pub(super) fn deeper(depth: Depth, span: Span) -> Result<Depth, Fault> {
+    depth.deeper().ok_or_else(|| Frame::fault(EvalErrorKind::DepthLimit, span))
+}
+
 pub(super) fn steps(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
     f.budget.step(u64::try_from(n).unwrap_or(u64::MAX)).map_err(at(span))
 }
@@ -114,10 +120,75 @@ pub(super) fn alloc(f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault
     f.budget.alloc(u64::try_from(n).unwrap_or(u64::MAX)).map_err(at(span))
 }
 
-/// A computed string, charged one alloc per byte before it is kept.
-pub(super) fn built(f: &mut Frame<'_>, s: String, span: Span) -> Res<'static> {
-    alloc(f, s.len(), span)?;
-    Ok(Value::string(s))
+/// A string a rule computes. It is the only way to make a computed string value:
+/// every write charges `max_alloc` one per byte before the buffer grows, so a
+/// builtin cannot build a string first and charge it after (which let
+/// `string([s, s, ...])` allocate gigabytes under a one-megabyte limit).
+/// `crates/dictum/tests/charged_strings.rs` fails on any other construction of
+/// `Str::Shared`.
+pub(crate) struct Text {
+    buf: String,
+    /// Bytes already charged; `buf.len() <= paid`.
+    paid: usize,
+}
+
+impl Text {
+    pub(super) const fn new() -> Self {
+        Text { buf: String::new(), paid: 0 }
+    }
+
+    /// A computed copy of `s`.
+    pub(super) fn copy(f: &mut Frame<'_>, s: &str, span: Span) -> Res<'static> {
+        let mut text = Text::new();
+        text.push_str(f, s, span)?;
+        Ok(text.into_value())
+    }
+
+    /// Charge for `n` more bytes now, so the writes that fill them charge nothing.
+    pub(super) fn reserve(&mut self, f: &mut Frame<'_>, n: usize, span: Span) -> Result<(), Fault> {
+        let want = self.buf.len().saturating_add(n);
+        if want > self.paid {
+            alloc(f, want.saturating_sub(self.paid), span)?;
+            self.paid = want;
+            self.buf.reserve(want.saturating_sub(self.buf.len()));
+        }
+        Ok(())
+    }
+
+    pub(super) fn push_str(&mut self, f: &mut Frame<'_>, s: &str, span: Span) -> Result<(), Fault> {
+        self.reserve(f, s.len(), span)?;
+        self.buf.push_str(s);
+        Ok(())
+    }
+
+    pub(super) fn push(&mut self, f: &mut Frame<'_>, c: char, span: Span) -> Result<(), Fault> {
+        self.reserve(f, c.len_utf8(), span)?;
+        self.buf.push(c);
+        Ok(())
+    }
+
+    /// Let a writer from a lower layer (`builtins`, `layout`) append into bytes
+    /// already paid for with [`Text::reserve`]. Writing past them is an engine bug,
+    /// reported as `Internal`, so the reservation must be an upper bound.
+    pub(super) fn write_reserved(&mut self, span: Span, write: impl FnOnce(&mut String)) -> Result<(), Fault> {
+        write(&mut self.buf);
+        if self.buf.len() > self.paid {
+            return Err(internal("a writer passed the bytes reserved for it", span));
+        }
+        Ok(())
+    }
+
+    pub(super) fn as_str(&self) -> &str {
+        &self.buf
+    }
+
+    pub(super) fn into_shared(self) -> Arc<str> {
+        Arc::from(self.buf)
+    }
+
+    pub(super) fn into_value(self) -> Value<'static> {
+        Value(Repr::Str(Str::Shared(self.into_shared())))
+    }
 }
 
 #[cfg(test)]

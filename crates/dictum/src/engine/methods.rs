@@ -8,10 +8,10 @@ use dictum_syntax::Span;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
-use super::frame::{Fault, Frame, Res, at, built, internal};
+use super::frame::{Fault, Frame, Res, Text, at, internal};
 use super::layout;
 use super::sprint::go_string;
-use super::value::{Repr, Value};
+use super::value::{Depth, Repr, Value};
 use crate::EvalErrorKind;
 
 /// Seconds from 1970 to January 1, year 1, 00:00 UTC: Go's zero time.
@@ -33,9 +33,9 @@ pub(super) fn call<'a>(method: Method, recv: &Value<'a>, args: &[Value<'a>], f: 
         Ok::<_, Fault>(Value(Repr::Duration(SignedDuration::from_nanos(n))))
     };
     if method == Method::String {
-        let mut out = String::new();
-        go_string(recv, &mut out, f, span)?;
-        return built(f, out, span);
+        let mut out = Text::new();
+        go_string(recv, &mut out, Depth::TOP, f, span)?;
+        return Ok(out.into_value());
     }
     if let Some(d) = recv.as_duration() {
         let d = d.as_nanos();
@@ -108,9 +108,11 @@ pub(super) fn call<'a>(method: Method, recv: &Value<'a>, args: &[Value<'a>], f: 
         }),
         Method::Format => {
             let layout_text = arg(0)?.as_str().ok_or_else(|| internal("expected a string", span))?;
+            // Formatted aside: its length is a small multiple of the layout's, which
+            // was charged when it was built.
             let mut out = String::new();
             layout::format(t, z, layout_text, &mut out);
-            return built(f, out, span);
+            return Text::copy(f, &out, span);
         }
         Method::In => time(t, arg(0)?.as_location().ok_or_else(|| internal("expected a location", span))?),
         Method::Utc => time(t, &TimeZone::UTC),

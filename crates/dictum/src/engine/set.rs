@@ -85,6 +85,8 @@ fn find<T, Q: ?Sized>(xs: &[T], x: &Q, cmp: impl Fn(&T, &Q) -> core::cmp::Orderi
 mod tests {
     use alloc::sync::Arc;
 
+    use crate::engine::value::{Repr, Str};
+
     use super::*;
 
     fn ints(xs: &[i64]) -> ConstSet {
@@ -117,8 +119,8 @@ mod tests {
     fn strings_and_mixed_elements() {
         let s = |x: &str| Const::Str(Arc::from(x));
         let set = ConstSet::new(&[s("b"), s("a"), s("c"), s("a")], EqKind::String).unwrap();
-        assert!(set.contains(&Value::string("a".into())));
-        assert!(!set.contains(&Value::string("d".into())));
+        assert!(set.contains(&Value(Repr::Str(Str::Borrowed("a")))));
+        assert!(!set.contains(&Value(Repr::Str(Str::Borrowed("d")))));
         assert!(ConstSet::new(&[s("a"), Const::Int(1)], EqKind::String).is_none());
         assert!(ConstSet::new(&[Const::Int(1)], EqKind::Structural).is_none());
     }

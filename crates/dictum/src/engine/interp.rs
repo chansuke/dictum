@@ -49,13 +49,13 @@ use dictum_syntax::ast::{self, CompareOp, LogicOp, Pointer};
 use crate::EvalErrorKind;
 use crate::engine::SchemaCore;
 use crate::engine::builtins;
-use crate::engine::frame::{Fault, Frame, Res, Scope, alloc, at, built, internal, steps};
+use crate::engine::frame::{Fault, Frame, Res, Scope, Text, alloc, at, deeper, internal, steps};
 use crate::engine::json;
 use crate::engine::methods;
 use crate::engine::ops;
 use crate::engine::sprint::go_string;
 use crate::engine::trace::{Recorded, Trace};
-use crate::engine::value::{Bytes, MAX_VALUE_DEPTH, MapRef, Repr, Seq, Str, Value};
+use crate::engine::value::{Bytes, Depth, MAX_VALUE_DEPTH, MapRef, Repr, Seq, Str, Value};
 use crate::func::CallError;
 
 /// Evaluate `program` in `frame`. When `trace` is given, record every node's outcome
@@ -182,7 +182,7 @@ impl<'a> Walk<'_, '_, 'a> {
                     return Ok(Value::NIL);
                 }
                 let i = self.expr(index, f)?;
-                index_value(*op, &b, &i, span)
+                index_value(*op, &b, &i, f, span)
             }
             ExprKind::Slice { base, from, to, op, optional } => {
                 let b = self.expr(base, f)?;
@@ -383,11 +383,11 @@ pub(super) fn binary<'a>(
         }
         BinaryOp::Concat => {
             let (a, b) = (string(&l, span)?, string(&r, span)?);
-            alloc(f, a.len().saturating_add(b.len()), span)?;
-            let mut s = String::with_capacity(a.len().saturating_add(b.len()));
-            s.push_str(a);
-            s.push_str(b);
-            Ok(Value::string(s))
+            let mut s = Text::new();
+            s.reserve(f, a.len().saturating_add(b.len()), span)?;
+            s.push_str(f, a, span)?;
+            s.push_str(f, b, span)?;
+            Ok(s.into_value())
         }
         BinaryOp::ConcatBytes => {
             let a = l.as_bytes().ok_or_else(|| internal("expected bytes", span))?;
@@ -649,7 +649,7 @@ pub(super) fn equal(kind: EqKind, l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_
         EqKind::Bytes => l.as_bytes() == r.as_bytes(),
         EqKind::Time => time(l, span)? == time(r, span)?,
         EqKind::Duration => duration(l, span)? == duration(r, span)?,
-        EqKind::Structural => deep_equal(l, r, f, span)?,
+        EqKind::Structural => deep_equal(l, r, Depth::TOP, f, span)?,
         EqKind::Dyn => {
             let Some((kind, pl, pr)) = resolve::equality(l.tag(), r.tag()) else {
                 return Err(Frame::fault(
@@ -666,7 +666,13 @@ pub(super) fn equal(kind: EqKind, l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_
 /// Structural equality: `nil` equals only `nil`, arrays element-wise, maps by key
 /// regardless of order. Values that cannot be compared are unequal (as Go's `==` on
 /// interfaces of different types). One step per element compared.
-pub(super) fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: Span) -> Result<bool, Fault> {
+pub(super) fn deep_equal(
+    l: &Value<'_>,
+    r: &Value<'_>,
+    depth: Depth,
+    f: &mut Frame<'_>,
+    span: Span,
+) -> Result<bool, Fault> {
     let Some((kind, pl, pr)) = resolve::equality(l.tag(), r.tag()) else { return Ok(false) };
     if kind != EqKind::Structural {
         let (l, r) = (promote(l.clone(), pl, span)?, promote(r.clone(), pr, span)?);
@@ -680,7 +686,7 @@ pub(super) fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: 
             }
             steps(f, a.len(), span)?;
             for (x, y) in a.iter().zip(b.iter()) {
-                if !deep_equal(&x, &y, f, span)? {
+                if !deep_equal(&x, &y, deeper(depth, span)?, f, span)? {
                     return Ok(false);
                 }
             }
@@ -698,7 +704,7 @@ pub(super) fn deep_equal(l: &Value<'_>, r: &Value<'_>, f: &mut Frame<'_>, span: 
             });
             for (k, x) in entries {
                 match b.get(&k) {
-                    Some(y) if deep_equal(&x, &y, f, span)? => {}
+                    Some(y) if deep_equal(&x, &y, deeper(depth, span)?, f, span)? => {}
                     _ => return Ok(false),
                 }
             }
@@ -752,7 +758,7 @@ pub(super) fn membership(op: InOp, n: &Value<'_>, h: &Value<'_>, f: &mut Frame<'
             Repr::Array(s) => {
                 steps(f, s.len(), span)?;
                 for x in s.iter() {
-                    if deep_equal(n, &x, f, span)? {
+                    if deep_equal(n, &x, Depth::TOP, f, span)? {
                         return Ok(true);
                     }
                 }
@@ -764,7 +770,7 @@ pub(super) fn membership(op: InOp, n: &Value<'_>, h: &Value<'_>, f: &mut Frame<'
     }
 }
 
-pub(super) fn index_value<'a>(op: IndexOp, b: &Value<'a>, i: &Value<'a>, span: Span) -> Res<'a> {
+pub(super) fn index_value<'a>(op: IndexOp, b: &Value<'a>, i: &Value<'a>, f: &mut Frame<'a>, span: Span) -> Res<'a> {
     match op {
         IndexOp::Array => {
             let s = seq(b, span)?;
@@ -774,7 +780,7 @@ pub(super) fn index_value<'a>(op: IndexOp, b: &Value<'a>, i: &Value<'a>, span: S
         IndexOp::Map => Ok(map(b, span)?.get(string(i, span)?).unwrap_or(Value::NIL)),
         IndexOp::String => {
             let c = ops::index_str(string(b, span)?, int(i, span)?).map_err(at(span))?;
-            Ok(Value(Repr::Str(Str::Shared(c.into()))))
+            Text::copy(f, c, span)
         }
         IndexOp::Bytes => {
             let bytes = b.as_bytes().ok_or_else(|| internal("expected bytes", span))?;
@@ -782,10 +788,10 @@ pub(super) fn index_value<'a>(op: IndexOp, b: &Value<'a>, i: &Value<'a>, span: S
             Ok(Value::int(bytes.get(at).copied().map(i64::from).unwrap_or_default()))
         }
         IndexOp::Dyn => match (&b.0, &i.0) {
-            (Repr::Array(_), Repr::Int(_)) => index_value(IndexOp::Array, b, i, span),
-            (Repr::Str(_), Repr::Int(_)) => index_value(IndexOp::String, b, i, span),
-            (Repr::Bytes(_), Repr::Int(_)) => index_value(IndexOp::Bytes, b, i, span),
-            (Repr::Map(_), Repr::Str(_)) => index_value(IndexOp::Map, b, i, span),
+            (Repr::Array(_), Repr::Int(_)) => index_value(IndexOp::Array, b, i, f, span),
+            (Repr::Str(_), Repr::Int(_)) => index_value(IndexOp::String, b, i, f, span),
+            (Repr::Bytes(_), Repr::Int(_)) => index_value(IndexOp::Bytes, b, i, f, span),
+            (Repr::Map(_), Repr::Str(_)) => index_value(IndexOp::Map, b, i, f, span),
             // An unknown name on a struct reads as nil, as a missing map key does.
             (Repr::Object(o), Repr::Str(name)) => {
                 Ok(o.desc().field(name.as_str()).map_or(Value::NIL, |(id, _)| o.field(id)))
@@ -829,11 +835,7 @@ pub(super) fn slice_value<'a>(
             match &b.0 {
                 // A slice of a borrowed string borrows too.
                 Repr::Str(Str::Borrowed(s)) => Ok(Value(Repr::Str(Str::Borrowed(s.get(r).unwrap_or(""))))),
-                _ => {
-                    let slice = s.get(r).unwrap_or("");
-                    alloc(f, slice.len(), span)?;
-                    Ok(Value(Repr::Str(Str::Shared(slice.into()))))
-                }
+                _ => Text::copy(f, s.get(r).unwrap_or(""), span),
             }
         }
         SliceOp::Bytes => {
@@ -928,11 +930,7 @@ pub(super) fn check<'a>(v: Value<'a>, ty: &Type, f: &mut Frame<'a>, span: Span) 
 fn narrowed<'a>(v: &Value<'a>, f: &mut Frame<'a>, span: Span, part: impl for<'x> Fn(&'x str) -> &'x str) -> Res<'a> {
     match &v.0 {
         Repr::Str(Str::Borrowed(b)) => Ok(Value(Repr::Str(Str::Borrowed(part(b))))),
-        _ => {
-            let slice = part(string(v, span)?);
-            alloc(f, slice.len(), span)?;
-            Ok(Value(Repr::Str(Str::Shared(slice.into()))))
-        }
+        _ => Text::copy(f, part(string(v, span)?), span),
     }
 }
 
@@ -963,22 +961,33 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 stripped.unwrap_or(t)
             })
         }
-        Intrinsic::Upper => Ok(Value::string(simple_case(s(0)?, true, f, span)?)),
-        Intrinsic::Lower => Ok(Value::string(simple_case(s(0)?, false, f, span)?)),
+        Intrinsic::Upper => simple_case(s(0)?, true, f, span),
+        Intrinsic::Lower => simple_case(s(0)?, false, f, span),
         Intrinsic::Split { after } => {
             let (text, sep) = (s(0)?, s(1)?);
             let n = if args.len() > 2 { int(arg(2)?, span)? } else { -1 };
             let parts = builtins::go_split(text, sep, after, n);
-            alloc(f, parts.len().saturating_add(text.len()), span)?;
-            Ok(Value::array(parts.into_iter().map(|p| Value(Repr::Str(Str::Shared(p.into())))).collect()))
+            alloc(f, parts.len(), span)?;
+            let parts = parts.into_iter().map(|p| Text::copy(f, p, span)).collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::array(parts))
         }
         Intrinsic::Replace => {
             let (text, from, to) = (s(0)?, s(1)?, s(2)?);
             let hits =
                 if from.is_empty() { text.chars().count().saturating_add(1) } else { text.matches(from).count() };
             let len = text.len().saturating_add(hits.saturating_mul(to.len()));
-            alloc(f, len, span)?;
-            Ok(Value::string(text.replace(from, to)))
+            let mut out = Text::new();
+            out.reserve(f, len, span)?;
+            out.write_reserved(span, |buf| {
+                let mut last = 0;
+                for (i, hit) in text.match_indices(from) {
+                    buf.push_str(text.get(last..i).unwrap_or(""));
+                    buf.push_str(to);
+                    last = i.saturating_add(hit.len());
+                }
+                buf.push_str(text.get(last..).unwrap_or(""));
+            })?;
+            Ok(out.into_value())
         }
         Intrinsic::Repeat => {
             let (text, n) = (s(0)?, int(arg(1)?, span)?);
@@ -988,8 +997,12 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             let too_large = || Frame::fault(EvalErrorKind::AllocLimit, span);
             let n = usize::try_from(n).map_err(|_| too_large())?;
             let len = text.len().checked_mul(n).ok_or_else(too_large)?;
-            alloc(f, len, span)?;
-            Ok(Value::string(text.repeat(n)))
+            let mut out = Text::new();
+            out.reserve(f, len, span)?;
+            if !text.is_empty() {
+                out.write_reserved(span, |buf| (0..n).for_each(|_| buf.push_str(text)))?;
+            }
+            Ok(out.into_value())
         }
         Intrinsic::HasPrefix => Ok(Value::bool(s(0)?.starts_with(s(1)?))),
         Intrinsic::HasSuffix => Ok(Value::bool(s(0)?.ends_with(s(1)?))),
@@ -1059,17 +1072,15 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             let xs = seq(arg(0)?, span)?;
             let sep = if args.len() > 1 { s(1)? } else { "" };
             steps(f, xs.len(), span)?;
-            let mut out = String::new();
+            let mut out = Text::new();
             for (i, x) in xs.iter().enumerate() {
                 let piece = x.as_str().ok_or_else(|| mismatch("string", &x, span))?;
-                let need = if i > 0 { sep.len().saturating_add(piece.len()) } else { piece.len() };
-                alloc(f, need, span)?;
                 if i > 0 {
-                    out.push_str(sep);
+                    out.push_str(f, sep, span)?;
                 }
-                out.push_str(piece);
+                out.push_str(f, piece, span)?;
             }
-            Ok(Value::string(out))
+            Ok(out.into_value())
         }
         Intrinsic::Concat => {
             let mut out = Vec::new();
@@ -1083,7 +1094,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
         }
         Intrinsic::Flatten => {
             let mut out = Vec::new();
-            flatten(seq(arg(0)?, span)?, &mut out, f, span)?;
+            flatten(seq(arg(0)?, span)?, &mut out, Depth::TOP, f, span)?;
             Ok(Value::array(out))
         }
         Intrinsic::Uniq(kind) => {
@@ -1136,22 +1147,45 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             steps(f, m.len(), span)?;
             alloc(f, m.len(), span)?;
             let mut out = Vec::with_capacity(m.len());
+            let mut failed = None;
             m.for_each(&mut |k, v| {
-                out.push(if op == Intrinsic::Keys { Value(Repr::Str(Str::Shared(k.into()))) } else { v });
-                ControlFlow::Continue(())
+                let x = if op == Intrinsic::Keys { Text::copy(f, k, span) } else { Ok(v) };
+                match x {
+                    Ok(x) => {
+                        out.push(x);
+                        ControlFlow::Continue(())
+                    }
+                    Err(e) => {
+                        failed = Some(e);
+                        ControlFlow::Break(())
+                    }
+                }
             });
-            Ok(Value::array(out))
+            match failed {
+                Some(e) => Err(e),
+                None => Ok(Value::array(out)),
+            }
         }
         Intrinsic::ToPairs => {
             let m = map(arg(0)?, span)?;
             steps(f, m.len(), span)?;
             alloc(f, m.len().saturating_mul(3), span)?;
             let mut out = Vec::with_capacity(m.len());
-            m.for_each(&mut |k, v| {
-                out.push(Value::array(alloc::vec![Value(Repr::Str(Str::Shared(k.into()))), v]));
-                ControlFlow::Continue(())
+            let mut failed = None;
+            m.for_each(&mut |k, v| match Text::copy(f, k, span) {
+                Ok(k) => {
+                    out.push(Value::array(alloc::vec![k, v]));
+                    ControlFlow::Continue(())
+                }
+                Err(e) => {
+                    failed = Some(e);
+                    ControlFlow::Break(())
+                }
             });
-            Ok(Value::array(out))
+            match failed {
+                Some(e) => Err(e),
+                None => Ok(Value::array(out)),
+            }
         }
         Intrinsic::FromPairs => {
             let xs = seq(arg(0)?, span)?;
@@ -1160,9 +1194,9 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             let mut out: BTreeMap<Arc<str>, Value<'a>> = BTreeMap::new();
             for x in xs.iter() {
                 let text = |f: &mut Frame<'a>, v: &Value<'_>| -> Result<String, Fault> {
-                    let mut out = String::new();
-                    go_string(v, &mut out, f, span)?;
-                    Ok(out)
+                    let mut out = Text::new();
+                    go_string(v, &mut out, Depth::TOP, f, span)?;
+                    Ok(out.as_str().into())
                 };
                 let Some((k, v)) = x.as_seq().filter(|p| p.len() == 2).and_then(|p| Some((p.get(0)?, p.get(1)?)))
                 else {
@@ -1209,9 +1243,9 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             if let Repr::Str(_) = v.0 {
                 return Ok(v.clone());
             }
-            let mut out = String::new();
-            go_string(v, &mut out, f, span)?;
-            built(f, out, span)
+            let mut out = Text::new();
+            go_string(v, &mut out, Depth::TOP, f, span)?;
+            Ok(out.into_value())
         }
         #[cfg(feature = "decimal")]
         Intrinsic::ToDecimal(_) => {
@@ -1226,14 +1260,14 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
             };
             Ok(Value(Repr::Decimal(d)))
         }
-        Intrinsic::ToJson => Ok(Value::string(json::encode(arg(0)?, f, span)?)),
+        Intrinsic::ToJson => Ok(json::encode(arg(0)?, f, span)?.into_value()),
         Intrinsic::FromJson => json::decode(s(0)?, f, span),
         Intrinsic::ToBase64 => {
             let text = s(0)?;
-            alloc(f, text.len().div_ceil(3).saturating_mul(4), span)?;
-            let mut out = String::new();
-            builtins::base64_encode(text.as_bytes(), &mut out);
-            Ok(Value::string(out))
+            let mut out = Text::new();
+            out.reserve(f, text.len().div_ceil(3).saturating_mul(4), span)?;
+            out.write_reserved(span, |buf| builtins::base64_encode(text.as_bytes(), buf))?;
+            Ok(out.into_value())
         }
         Intrinsic::FromBase64 => {
             let text = s(0)?;
@@ -1243,7 +1277,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 builtins::Base64Error::Limit => Frame::fault(EvalErrorKind::AllocLimit, span),
             })?;
             let decoded = String::from_utf8(bytes).map_err(|_| invalid("base64, not UTF-8 text", text))?;
-            built(f, decoded, span)
+            Text::copy(f, &decoded, span)
         }
         Intrinsic::TypeName => {
             // Go names a time and a duration by their package path, as its docs show
@@ -1253,7 +1287,7 @@ pub(super) fn intrinsic<'a>(op: Intrinsic, args: &[Value<'a>], f: &mut Frame<'a>
                 Tag::Duration => "time.Duration",
                 t => t.name(),
             };
-            Ok(Value(Repr::Str(Str::Shared(name.into()))))
+            Text::copy(f, name, span)
         }
         Intrinsic::Now => {
             let zone = if args.is_empty() { jiff::tz::TimeZone::UTC } else { location(arg(0)?, span)?.clone() };
@@ -1372,11 +1406,17 @@ fn sorted<'a, T>(
 }
 
 /// `flatten`: the elements of `xs`, with every nested array spliced in, to any depth.
-fn flatten<'a>(xs: &Seq<'a>, out: &mut Vec<Value<'a>>, f: &mut Frame<'a>, span: Span) -> Result<(), Fault> {
+fn flatten<'a>(
+    xs: &Seq<'a>,
+    out: &mut Vec<Value<'a>>,
+    depth: Depth,
+    f: &mut Frame<'a>,
+    span: Span,
+) -> Result<(), Fault> {
     steps(f, xs.len(), span)?;
     for x in xs.iter() {
         match x.as_seq() {
-            Some(inner) => flatten(inner, out, f, span)?,
+            Some(inner) => flatten(inner, out, deeper(depth, span)?, f, span)?,
             None => {
                 alloc(f, 1, span)?;
                 out.push(x);
@@ -1417,8 +1457,8 @@ fn sum<'a>(xs: &Seq<'a>, span: Span) -> Res<'a> {
 
 /// Go's `unicode.ToUpper`/`ToLower` per character: a character whose case mapping
 /// is more than one character (`ß`) stays as it is.
-fn simple_case(s: &str, upper: bool, f: &mut Frame<'_>, span: Span) -> Result<String, Fault> {
-    let mut out = String::new();
+fn simple_case(s: &str, upper: bool, f: &mut Frame<'_>, span: Span) -> Res<'static> {
+    let mut out = Text::new();
     for c in s.chars() {
         let mapped = if upper {
             let mut it = c.to_uppercase();
@@ -1433,8 +1473,7 @@ fn simple_case(s: &str, upper: bool, f: &mut Frame<'_>, span: Span) -> Result<St
                 _ => c,
             }
         };
-        alloc(f, mapped.len_utf8(), span)?;
-        out.push(mapped);
+        out.push(f, mapped, span)?;
     }
-    Ok(out)
+    Ok(out.into_value())
 }

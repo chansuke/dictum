@@ -5,7 +5,6 @@
 //! `Field` impls use. Changing the representation touches this file and the engine,
 //! nothing else.
 
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::ControlFlow;
@@ -68,6 +67,32 @@ pub trait MapView {
 /// that a `fromJSON` value (at most [`dictum_syntax::MAX_DEPTH`]) fits inside an
 /// accumulator, while every recursive walk over a value stays well within the stack.
 pub(crate) const MAX_VALUE_DEPTH: u16 = 256;
+
+/// How deep a recursive walk over a value may go. A computed value nests at most
+/// [`MAX_VALUE_DEPTH`] levels, but a host's `Dynamic` can nest without bound, and
+/// `string(x)` on one about 300 levels deep overflowed a debug build's 2 MiB test
+/// thread. `a_host_dynamic_nested_past_the_walk_limit_is_a_depth_error` in
+/// `crates/dictum/tests/api.rs` walks one at this limit, also under `just wasm`
+/// with its 1 MiB stack.
+pub(crate) const MAX_WALK_DEPTH: u16 = MAX_VALUE_DEPTH;
+
+/// How deep a recursive walk over a value has gone. A function that recurses into
+/// a value's elements takes one and calls [`Depth::deeper`] before each descent,
+/// so a host `Dynamic` nested a million levels stops the walk instead of
+/// overflowing the stack. `crates/dictum/tests/bounded_walks.rs` fails on a
+/// recursive function over a value that takes no `Depth`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Depth(u16);
+
+impl Depth {
+    /// The value the walk starts from.
+    pub(crate) const TOP: Depth = Depth(0);
+
+    /// One level down, or `None` past [`MAX_WALK_DEPTH`].
+    pub(crate) fn deeper(self) -> Option<Depth> {
+        self.0.checked_add(1).filter(|d| *d <= MAX_WALK_DEPTH).map(Depth)
+    }
+}
 
 /// The most elements a folded constant holds (as the folder's allocation budget).
 const MAX_CONST_ELEMENTS: usize = 1 << 16;
@@ -239,11 +264,6 @@ impl<'a> Value<'a> {
 
     pub(crate) const fn float(x: f64) -> Self {
         Value(Repr::Float(x))
-    }
-
-    /// A computed string.
-    pub(crate) fn string(s: String) -> Self {
-        Value(Repr::Str(Str::Shared(Arc::from(s))))
     }
 
     /// A timestamp in UTC.

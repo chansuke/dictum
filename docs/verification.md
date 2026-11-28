@@ -56,6 +56,8 @@ All tests, fuzz targets and benchmarks use one fixture (`dictum_testkit::Facts`,
 | sharing never makes a rule pay more | TLA+ `NeverChargedMore`, `LimitMeansStandaloneLimit` |
 | the implemented `RuleSet::eval` follows the model | TLA+ trace validation (`RuleSetTrace.tla`) of hand-written traces; the Rust side does not record traces yet (see below) |
 | hot reload: readers see only complete sets, one per evaluation, never freed under them | TLA+ `HotReload`: `OnlyCompleteSetsArePublished`, `OneSetPerEvaluation`, `NoUseAfterFree`, `EvaluationsFinish` |
+| a computed string is charged to `max_alloc` before its buffer grows | `engine::frame::Text` is the only builder of a computed string; `Str::Shared` is built only in `value.rs`, `frame.rs` and `func.rs` (`crates/dictum/tests/charged_strings.rs`) |
+| a value nested past 256 levels (a host's `Dynamic` can be) is `DepthLimit`, not a stack overflow | every recursive walk over a value takes a `Depth` (`crates/dictum/tests/bounded_walks.rs`); test `a_host_dynamic_nested_past_the_walk_limit_is_a_depth_error` |
 | a new builtin fails the build until it is typed and implemented | no `_ =>` or catch-all binding in a `match` on `Builtin` or `ErrorCode` (`crates/dictum-check/tests/exhaustive.rs`); the parser and the checker agree on predicate builtins (`predicate_builtins_agree_with_the_parser`) |
 | modules use only lower layers | `tests/architecture.rs` in `dictum-syntax`, `dictum-check` and `dictum` (`dictum_testkit::layers`, self-test `crates/dictum-testkit/tests/layers.rs`) |
 | each crate depends only on the crates docs/architecture.md allows; dev-dependency cycles are listed | `crates/dictum-testkit/tests/crate_dependencies.rs` |

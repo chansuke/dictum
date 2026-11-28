@@ -321,9 +321,12 @@ dependencies = [
  "jiff",
  "libm",
  "libtest-mimic",
+ "proc-macro2",
  "proptest",
+ "quote",
  "regex",
  "rust_decimal",
+ "syn 2.0.119",
  "trybuild",
 ]
 

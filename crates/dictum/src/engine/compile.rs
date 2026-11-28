@@ -315,7 +315,7 @@ impl<'c> Compiler<'c> {
                         return Ok(Value::NIL);
                     }
                     let i = i(f)?;
-                    interp::index_value(op, &b, &i, span)
+                    interp::index_value(op, &b, &i, f, span)
                 }))
             }
             ExprKind::Slice { base, from, to, op, optional } => {

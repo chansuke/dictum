@@ -6,7 +6,7 @@ use core::ops::ControlFlow;
 
 use dictum_check::{FieldId, Type};
 
-use crate::engine::value::{Bytes, MapRef, MapView, Repr, Seq, SeqView, Str, Value, missing_field};
+use crate::engine::value::{Bytes, Depth, MapRef, MapView, Repr, Seq, SeqView, Str, Value, missing_field};
 use crate::facts::Field;
 
 /// An owned value whose type is known only at run time.
@@ -47,9 +47,10 @@ pub enum Dynamic {
 
 impl Dynamic {
     /// A deep, owned copy of an evaluated value. Structs become maps keyed by field
-    /// name.
-    pub(crate) fn copy_of(v: &Value<'_>) -> Dynamic {
-        match &v.0 {
+    /// name. `None` when the value nests past `MAX_WALK_DEPTH`.
+    pub(crate) fn copy_of(v: &Value<'_>, depth: Depth) -> Option<Dynamic> {
+        let inner = |x: &Value<'_>| depth.deeper().and_then(|d| Dynamic::copy_of(x, d));
+        Some(match &v.0 {
             Repr::Nil => Dynamic::Nil,
             Repr::Bool(b) => Dynamic::Bool(*b),
             Repr::Int(n) => Dynamic::Int(*n),
@@ -61,24 +62,34 @@ impl Dynamic {
             Repr::Time(t, z) => Dynamic::Time(t.to_zoned(z.clone())),
             Repr::Duration(d) => Dynamic::Duration(*d),
             Repr::Location(z) => Dynamic::Location(z.clone()),
-            Repr::Array(seq) => Dynamic::Array(seq.iter().map(|x| Dynamic::copy_of(&x)).collect()),
+            Repr::Array(seq) => Dynamic::Array(seq.iter().map(|x| inner(&x)).collect::<Option<_>>()?),
             Repr::Map(m) => {
                 let mut out = DynMap::new();
-                m.for_each(&mut |k, v| {
-                    out.insert(k, Dynamic::copy_of(&v));
-                    ControlFlow::Continue(())
+                let mut deep = false;
+                m.for_each(&mut |k, v| match inner(&v) {
+                    Some(x) => {
+                        out.insert(k, x);
+                        ControlFlow::Continue(())
+                    }
+                    None => {
+                        deep = true;
+                        ControlFlow::Break(())
+                    }
                 });
+                if deep {
+                    return None;
+                }
                 Dynamic::Map(out)
             }
             Repr::Object(o) => {
                 let mut out = DynMap::new();
                 for (i, f) in o.desc().fields().iter().enumerate() {
                     let id = u16::try_from(i).map_or_else(|_| missing_field(), |i| o.field(FieldId::new(i)));
-                    out.insert(f.name(), Dynamic::copy_of(&id));
+                    out.insert(f.name(), inner(&id)?);
                 }
                 Dynamic::Map(out)
             }
-        }
+        })
     }
 }
 
@@ -88,13 +99,18 @@ impl Dynamic {
 impl core::fmt::Display for Dynamic {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut out = String::new();
-        write_value(self, &mut out);
+        write_value(self, &mut out, Depth::TOP);
         f.write_str(&out)
     }
 }
 
-/// A value as a rule literal would write it.
-fn write_value(v: &Dynamic, out: &mut String) {
+/// A value as a rule literal would write it; `...` for what nests past
+/// `MAX_WALK_DEPTH`.
+fn write_value(v: &Dynamic, out: &mut String, depth: Depth) {
+    let Some(inner) = depth.deeper() else {
+        out.push_str("...");
+        return;
+    };
     use core::fmt::Write;
     match v {
         Dynamic::Nil => out.push_str("nil"),
@@ -127,7 +143,7 @@ fn write_value(v: &Dynamic, out: &mut String) {
                 if i > 0 {
                     out.push_str(", ");
                 }
-                write_value(x, out);
+                write_value(x, out, inner);
             }
             out.push(']');
         }
@@ -143,7 +159,7 @@ fn write_value(v: &Dynamic, out: &mut String) {
                 } else {
                     let _ = write!(out, "{k:?}: ");
                 }
-                write_value(x, out);
+                write_value(x, out, inner);
             }
             out.push('}');
         }

@@ -6,7 +6,7 @@ use dictum_check::ir::{self, ExprKind, NodeId};
 use dictum_syntax::ErrorCode;
 
 use crate::Dynamic;
-use crate::engine::value::Value;
+use crate::engine::value::{Depth, Value};
 use crate::explain::{ExplainNode, NodeStatus};
 
 /// What one node did in the iteration being shown.
@@ -64,7 +64,7 @@ impl<'a> Trace<'a> {
             None => NodeStatus::Skipped,
             Some(Recorded::Failed(code)) => NodeStatus::Failed(*code),
             Some(Recorded::Value(v)) if size(v) > MAX_REPORTED_ELEMENTS => NodeStatus::Elided,
-            Some(Recorded::Value(v)) => NodeStatus::Value(Dynamic::copy_of(v)),
+            Some(Recorded::Value(v)) => Dynamic::copy_of(v, Depth::TOP).map_or(NodeStatus::Elided, NodeStatus::Value),
         };
         let element = self.elements.get(id).copied().flatten();
         let children = match shown.kind() {
@@ -103,11 +103,16 @@ fn literal(e: &ir::Expr) -> bool {
 /// that many visits.
 fn size(v: &Value<'_>) -> u64 {
     let mut n = 0u64;
-    count(v, &mut n);
+    count(v, &mut n, Depth::TOP);
     n
 }
 
-fn count(v: &Value<'_>, n: &mut u64) {
+/// Past `MAX_WALK_DEPTH` the value counts as too large to report.
+fn count(v: &Value<'_>, n: &mut u64, depth: Depth) {
+    let Some(inner) = depth.deeper() else {
+        *n = MAX_REPORTED_ELEMENTS.saturating_add(1);
+        return;
+    };
     let add = |n: &mut u64, k: usize| *n = n.saturating_add(u64::try_from(k).unwrap_or(u64::MAX));
     if let Some(s) = v.as_seq() {
         add(n, s.len());
@@ -115,7 +120,7 @@ fn count(v: &Value<'_>, n: &mut u64) {
             if *n > MAX_REPORTED_ELEMENTS {
                 return;
             }
-            count(&x, n);
+            count(&x, n, inner);
         }
     } else if let Some(m) = v.as_map() {
         add(n, m.len());
@@ -123,7 +128,7 @@ fn count(v: &Value<'_>, n: &mut u64) {
             if *n > MAX_REPORTED_ELEMENTS {
                 return core::ops::ControlFlow::Break(());
             }
-            count(&x, n);
+            count(&x, n, inner);
             core::ops::ControlFlow::Continue(())
         });
     }

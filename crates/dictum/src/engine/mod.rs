@@ -277,9 +277,10 @@ impl Prepared {
     }
 
     /// The public error for a result that did not convert to the output type.
-    pub(crate) fn internal(&self, what: &'static str) -> EvalError {
+    /// An error converting the result to the rule's output type, at the body.
+    pub(crate) fn output_error(&self, kind: EvalErrorKind) -> EvalError {
         let span = self.checked.ir.body().span();
-        self.error(Fault { kind: EvalErrorKind::Internal(what), span })
+        self.error(Fault { kind, span })
     }
 }
 
